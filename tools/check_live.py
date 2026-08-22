@@ -522,30 +522,65 @@ LEDGER = [
     {
         "id": "GET /charts-data, combined filters",
         "surface": "route",
-        "claim": "the combined-filter parameter shape the chips send "
-                 "(0.9-M3-S24, #438, building the design ruled at "
-                 "#384): repeated `filter=`/`value=` pairs, paired by "
-                 "position, at most one value per categorical field and "
-                 "at most MAX_FILTERS fields per request, aggregated "
-                 "over the population matching ALL of them. "
-                 "tests/charts-aggregate.test.mjs section 10 decides "
-                 "every rule of it off-line against real seals - the "
-                 "intersection rather than the union on a fixture where "
-                 "the two numbers differ, the refusals (a repeated "
-                 "field, an unpaired name, a value the effective spec "
-                 "no longer offers, one filter past the cap), the floor "
-                 "applied to the intersection exactly as to the whole, "
-                 "and the disclosure claim that a combination matching "
-                 "one member and a combination matching nobody come "
-                 "back as the same document. WHAT STAYS LIVE-ONLY is "
+        "claim": "the multi-select filter shape the chips send "
+                 "(0.9-M3-S31, #455, generalizing 0.9-M3-S24's #438 to "
+                 "the chips ruled at #454 items 16-18): repeated "
+                 "`filter=`/`value=` pairs, paired by position, SEVERAL "
+                 "pairs allowed to name one field and forming that "
+                 "field's set, at most MAX_FILTER_PAIRS pairs per "
+                 "request, aggregated over the population that holds "
+                 "one of each named field's values - OR within a "
+                 "field, AND across fields. "
+                 "tests/charts-aggregate.test.mjs sections 10 and 11 "
+                 "decide every rule of it off-line against real seals - "
+                 "the union and the intersection on fixtures where the "
+                 "two numbers differ, the identity between a set "
+                 "naming every value of a field and no set at all, the "
+                 "refusals (a duplicate value in one set, an unpaired "
+                 "name, a value the effective spec no longer offers, "
+                 "one pair past the cap), the floor applied to a union "
+                 "and to an intersection exactly as to the whole, and "
+                 "the disclosure claim that an ask matching one member "
+                 "and an ask matching nobody come back as the same "
+                 "document across all twenty-seven pairs of sets. WHAT "
+                 "STAYS LIVE-ONLY is "
                  "the CPU a multi-predicate aggregation really costs on "
                  "a Worker: every current row is opened per request and "
-                 "each predicate is another read per person, so the "
+                 "each named field is another read per person, so the "
                  "shape of the answer is proven off-line but its cost "
-                 "under a real platform limit is not. Send two chips "
-                 "and then the cap's worth against a corpus with "
+                 "under a real platform limit is not. Send two chips, "
+                 "then a field's whole set, then the cap's worth of "
+                 "pairs against a corpus with "
                  "several members, and watch one answer come back "
                  "inside the limit",
+        "covers": ["server/worker.js", "server/charts-agg.js"],
+        "status": "never",
+    },
+    {
+        "id": "GET /charts-data, the present-values list",
+        "surface": "route",
+        "claim": "the group-makeup block is where a page learns which "
+                 "values a big list should offer (0.9-M3-S31, #455 "
+                 "scope 4, serving the owner's ruling at #454 item 18): "
+                 "a line whose count is above zero and whose value is "
+                 "not null, the blank and the pooled bucket being "
+                 "keyed by null and neither of them a value. Because "
+                 "those cells are floored before they leave, presence "
+                 "obeys the floor with no rule of its own - a value too "
+                 "few members hold has no line, so it is never offered "
+                 "as a filter. tests/charts-aggregate.test.mjs section "
+                 "11e arms both directions on one corpus: at the "
+                 "shipped floor of 0 the list is exactly what the group "
+                 "holds, and at a raised floor the value one member "
+                 "holds is gone from it while the block still names "
+                 "another. WHAT STAYS LIVE-ONLY is what a REAL group's "
+                 "list looks like: the country codes a real membership "
+                 "holds are the one input no fixture can stand for, and "
+                 "0.9-M3-S14's drop list is built from them. Read the "
+                 "group-makeup block of an unfiltered view against a "
+                 "corpus with several countries in it and check the "
+                 "list a member is offered against the codes really "
+                 "entered",
         "covers": ["server/worker.js", "server/charts-agg.js"],
         "status": "never",
     },
@@ -644,7 +679,8 @@ LEDGER = [
         "covers": ["server/worker.js"],
         "status": "never",
     },
-    # The form builder added at 0.9-M3-S11 (#419). The three rows below
+    # The form builder added at 0.9-M3-S11 (#419) and the admin read of
+    # its retired set added at 0.9-M3-S25 (#440). The four rows below
     # are owed rather than performed because the pages that drive them
     # are parallel slices, and each claim is written against what a
     # sitting will actually be able to see once they land.
@@ -656,6 +692,29 @@ LEDGER = [
                  "real table rather than a stub's empty result - and a "
                  "caller with no session gets 401 while rows exist to "
                  "withhold",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
+    {
+        "id": "GET /admin-fields",
+        "surface": "route",
+        "claim": "an admin on a real deployment reads what is retired "
+                 "in a session that did not retire it, and un-retires "
+                 "it from that read's own bytes - handed back to PUT "
+                 "/admin-fields/<id> with no rename step, because this "
+                 "read spells a value the way that write reads one - a "
+                 "whole field and a single value, both offered again on "
+                 "the next member load. "
+                 "The half a stub cannot reach is `retiredAt`: it is "
+                 "the row's own `updated_at`, written by D1 rather than "
+                 "by a fixture, so whether the string a page renders is "
+                 "the ISO instant this Worker bound is a claim about "
+                 "the column and not about the composer. And the fence "
+                 "wants a real table under it - the same deployment's "
+                 "GET /spec, GET /content, GET /config and GET "
+                 "/charts-data carrying no retired field, no retired "
+                 "value and no marker while rows holding all three sit "
+                 "in `site_content`",
         "covers": ["server/worker.js"],
         "status": "never",
     },

@@ -17,14 +17,16 @@
  *                            seals it at rest. Needs a member session.
  *   GET    /charts-data      aggregate the whole corpus on request and
  *                            answer one measure over the population
- *                            matching every filter given - at most one
- *                            value per categorical field, ANDed
- *                            (0.9-M3-S24, #438): the trend, the
- *                            distribution and the group makeup, with
- *                            the suppression floor the settings hold
- *                            already applied by server/charts-agg.js,
- *                            to the intersection exactly as to the
- *                            whole. Needs a member session. The Worker
+ *                            matching every filter given - a SET of
+ *                            values per categorical field, ORed inside
+ *                            the field and ANDed across fields
+ *                            (0.9-M3-S31, #455, generalizing #438):
+ *                            the trend, the distribution and the group
+ *                            makeup, with the suppression floor the
+ *                            settings hold already applied by
+ *                            server/charts-agg.js, to a union and to an
+ *                            intersection exactly as to the whole.
+ *                            Needs a member session. The Worker
  *                            opens every current row
  *                            to compute it - DESIGN.md, "Charts": "The
  *                            Worker aggregates on request".
@@ -56,6 +58,24 @@
  *                            /content serves; see handleReadConfig.
  *   GET    /admin-log        every admin change, newest first and
  *                            bounded. Admin.
+ *   GET    /spec             the form as the admins have built it: the
+ *                            shipped spec overlaid by their edits, with
+ *                            every retired field and retired value
+ *                            omitted (#385 rule 7). Needs a session,
+ *                            member or admin alike - it is what the
+ *                            pages draw the form and the chips from.
+ *   GET    /admin-fields     the same document with what is RETIRED
+ *                            still in it and marked, so an admin can
+ *                            bring it back (0.9-M3-S25, #440). Admin,
+ *                            and the only credential-bearing read of a
+ *                            retired row. HYPHENATED, never
+ *                            /admin/<anything> - see API_SEGMENTS.
+ *   PUT    /admin-fields/:id add a categorical field or set one to its
+ *                            whole desired state, un-retiring included.
+ *                            Admin.
+ *   DELETE /admin-fields/:id retire one field. Its values stay in the
+ *                            row and every sealed answer stays where it
+ *                            is; the PUT above brings it back. Admin.
  *   GET    /membership       the admin and always-allow lists. Admin.
  *   POST   /membership       add one, or relabel one. Admin.
  *   DELETE /membership/:role/:accountId
@@ -701,8 +721,30 @@ const FIELD_FORMAT = 1;
  */
 const CONTENT_ROWS_SQL = "SELECT name, value FROM site_content " +
   "WHERE name NOT LIKE ? ORDER BY name";
-const FIELD_ROWS_SQL = "SELECT name, value FROM site_content " +
-  "WHERE name LIKE ? ORDER BY name";
+
+/*
+ * The including half, and the ONE tail both of its spellings share.
+ *
+ * There are two spellings because there are two readers and only one of
+ * them holds a credential (0.9-M3-S25, #440): the member read composes
+ * the effective spec, and the admin read composes the same spec with
+ * what is retired still in it, which needs the column saying when each
+ * row was last written. THE TAIL IS SHARED SO THE WINDOW CANNOT WIDEN
+ * BY ACCIDENT - same table, same LIKE, same order, and the only
+ * difference a reader can introduce is a column list. A second
+ * hand-written statement is how a credentialed read quietly becomes a
+ * read of more rows rather than of more columns, and that is the exact
+ * shape this namespace's whole fence exists to refuse.
+ * tests/fields-overlay.test.mjs section 10d asserts the two statements
+ * against each other off the database stub's own record of what it was
+ * handed, because a comment claiming they agree is a claim nothing
+ * falsifies.
+ */
+const FIELD_ROWS_TAIL =
+  " FROM site_content WHERE name LIKE ? ORDER BY name";
+const FIELD_ROWS_SQL = "SELECT name, value" + FIELD_ROWS_TAIL;
+const FIELD_ADMIN_ROWS_SQL =
+  "SELECT name, value, updated_at" + FIELD_ROWS_TAIL;
 
 /*
  * Whether a content name addresses the field namespace.
@@ -3280,24 +3322,66 @@ function readFieldDoc(text) {
  * carries the VALUE - so the stable id a relabel needs is the string
  * members' rows have always held. Nothing stored is rewritten and
  * nothing has to be, which is why there is no migration step to run.
+ *
+ * THE ADMIN READ RENAMES IT BACK, in asWriteShape() below and nowhere
+ * here: this function serves the member spec as well, and a spelling
+ * that changed with the caller is what F2 of this slice's review found
+ * costing a page its whole offered list.
  */
-function offeredValues(doc) {
-  return (doc.values || [])
-    .filter((one) => one && typeof one === "object" && one.retired !== true)
-    .map((one) => ({ value: one.id, label: one.label }));
+function offeredValues(doc, retiredToo) {
+  const out = [];
+  for (const one of doc.values || []) {
+    if (!one || typeof one !== "object") continue;
+    if (one.retired !== true) {
+      out.push({ value: one.id, label: one.label });
+      continue;
+    }
+    /*
+     * `retiredToo` IS THE ADMIN READ AND NOTHING ELSE (0.9-M3-S25,
+     * #440). Called with one argument this is what it has always been -
+     * the offered list, retired values dropped - and that is the shape
+     * GET /spec, the charts and the write route's log line all take.
+     * The marker rides ON the value rather than in a list beside it so
+     * that an admin page renders one array and reads one key, which is
+     * the same argument the response contract makes for `filters` in
+     * server/charts-agg.js: a shape that changes with the case is a
+     * shape a page gets wrong.
+     */
+    if (retiredToo === true) {
+      out.push({ value: one.id, label: one.label, retired: true });
+    }
+  }
+  return out;
 }
 
 /*
- * Every overlay row, keyed by field id.
+ * Every overlay row, keyed by field id: `docs` always, and `stamps` -
+ * each row's own `updated_at` - only for the admin read that asked for
+ * them.
  *
  * ORDER BY name, so two admin-added fields land in the effective spec
  * in the same order on every request - a form whose boxes swapped
  * places between page loads would be this Worker handing SQLite's row
  * order to a person.
+ *
+ * THE STAMP IS KEPT BESIDE THE DOC, NEVER INSIDE IT (0.9-M3-S25, #440).
+ * A doc here is the STORED FORMAT, read back out of the row by
+ * readFieldDoc, and the two write routes below build the next row from
+ * exactly this shape - so a key this reader added to it would be one
+ * key away from being written back into the table as though the format
+ * carried it. A second Map cannot make that mistake.
+ *
+ * `withStamps` also picks the STATEMENT, and that is the point rather
+ * than an optimization: the member read never asks the database for a
+ * column it does not serve, so widening the admin read cannot widen the
+ * member one by sharing a query with it.
  */
-async function fieldDocs(env) {
-  const rows = await env.DB.prepare(FIELD_ROWS_SQL).bind(FIELD_LIKE).all();
+async function fieldDocs(env, withStamps) {
+  const rows = await env.DB.prepare(
+    withStamps === true ? FIELD_ADMIN_ROWS_SQL : FIELD_ROWS_SQL
+  ).bind(FIELD_LIKE).all();
   const docs = new Map();
+  const stamps = new Map();
   for (const row of (rows && rows.results) || []) {
     /*
      * REFUSED, NOT DROPPED, the same wall handleReadConfig and
@@ -3327,9 +3411,37 @@ async function fieldDocs(env) {
     // readFieldDoc's reason.
     if (!SPEC_ID.test(id)) continue;
     const doc = readFieldDoc(row.value);
-    if (doc) docs.set(id, doc);
+    if (!doc) continue;
+    docs.set(id, doc);
+    if (withStamps === true && typeof row.updated_at === "string") {
+      stamps.set(id, row.updated_at);
+    }
   }
-  return docs;
+  return { docs: docs, stamps: stamps };
+}
+
+/*
+ * A retired field, marked for the one read that may see it.
+ *
+ * `retiredAt` IS THE ROW'S OWN `updated_at` AND NOTHING MINTED HERE
+ * (0.9-M3-S25, #440), which makes it the last time the retired row was
+ * written rather than a separate record of the retirement instant: an
+ * admin who edits a field's values while it is retired writes the row
+ * again and moves this stamp, so the retirement is at or before what a
+ * page renders. That is the honest reading and it is the one the column
+ * supports. The alternative was a stamp the write routes mint into the
+ * stored document, and it was rejected twice over - it would put a key
+ * in a format this slice has no business changing, and a row written by
+ * `wrangler d1 execute`, which is how every restore is applied, would
+ * carry no stamp at all while the column always does.
+ *
+ * The key is always present on a retired field, `null` when the row
+ * could not say: a page rendering a list has one shape to read rather
+ * than a key that appears only sometimes.
+ */
+function markRetired(field, at) {
+  field.retired = true;
+  field.retiredAt = typeof at === "string" && at !== "" ? at : null;
 }
 
 /*
@@ -3339,16 +3451,29 @@ async function fieldDocs(env) {
  * write route refuses one, so the only way to store it is the other
  * door, and a Worker that composed it would let a hand-written row move
  * a chart band - which is exactly what #385 rule 6 keeps in the
- * release.
+ * release. That refusal is unconditional: it is checked before
+ * `retiredToo` is consulted, so the admin read below cannot become a
+ * way to see a hand-written row the member read ignores.
+ *
+ * `retiredToo` IS THE ADMIN READ (0.9-M3-S25, #440). Without it a
+ * retired field leaves the composed spec entirely, which is what #385
+ * rule 7 requires of everything a member touches. With it the field
+ * stays, composed exactly as it would be if it were not retired, and
+ * carries the two markers - because the page that offers to un-retire
+ * has to render the field's real label and its real values, and a
+ * summary shape of its own would be a second reader of the same rows.
  */
-function applyOverlay(site, id, doc) {
+function applyOverlay(site, id, doc, retiredToo, at) {
   const index = site.fields.findIndex((one) => one.name === id);
+  const retired = doc.retired === true;
 
   if (index === -1) {
     // A retired field the shipped spec never had is simply not there;
     // the row stays so that un-retiring can bring it back with its
-    // values, which is the whole of #385 rule 7 for a whole field.
-    if (doc.retired === true) return;
+    // values, which is the whole of #385 rule 7 for a whole field. The
+    // admin read is where the row becomes visible again, and it is the
+    // only thing that remembers such a field exists at all.
+    if (retired && retiredToo !== true) return;
     const made = { name: id, kind: "choice" };
     if (doc.multiple === true) made.multiple = true;
     made.label = typeof doc.label === "string" ? doc.label : id;
@@ -3356,19 +3481,20 @@ function applyOverlay(site, id, doc) {
     if (typeof doc.blank === "string" && doc.blank !== "") {
       made.blank = doc.blank;
     }
-    made.choices = offeredValues(doc);
+    made.choices = offeredValues(doc, retiredToo);
     // Charted always, which is #385 rule 6's other half: a categorical
     // field an admin adds becomes a filter chip and a group-makeup
     // block with no code change, and an admin-facing switch for that
     // would be a setting nobody asked for.
     made.chart = true;
+    if (retired) markRetired(made, at);
     site.fields.push(made);
     return;
   }
 
   const field = site.fields[index];
   if (field.kind !== "choice") return;
-  if (doc.retired === true) {
+  if (retired && retiredToo !== true) {
     site.fields.splice(index, 1);
     return;
   }
@@ -3380,8 +3506,55 @@ function applyOverlay(site, id, doc) {
   // every sealed row under a shape they were not written in. The write
   // route refuses the change; this is the second refusal.
   if (Array.isArray(doc.values) && !field.choicesFrom) {
-    field.choices = offeredValues(doc);
+    field.choices = offeredValues(doc, retiredToo);
   }
+  // Reached only on the admin read - the branch above returns a retired
+  // field to its caller spliced out on every other one. It is marked
+  // LAST so that a retired field carries the same composed label, term
+  // and values an offered one does, and the markers are the whole
+  // difference.
+  if (retired) markRetired(field, at);
+}
+
+/*
+ * The composed spec IN THE WRITE ROUTE'S OWN SPELLING, for the one read
+ * whose answer is meant to be handed straight back.
+ *
+ * ONE SHAPE FOR THE READ AND THE WRITE (0.9-M3-S25 fix wave 1, #440,
+ * review finding F2). GET /spec spells a value `{value, label}`,
+ * because there it is a box on a form and the string a member's stored
+ * row carries. PUT /admin-fields/<id> spells the same string `id`,
+ * because there it is a claim that the value already exists - an item
+ * WITHOUT an id is a new value and mintId() gives it one. So a page
+ * that echoed the admin read's `choices` into the write's `values` got
+ * a 200 that minted a second id for every value it sent and carried
+ * every original over retired: three values became six and every word
+ * members were being offered went out of their reach, from one request
+ * that answered ok.
+ *
+ * THE READ IS THE HALF THAT MOVES. The write's spelling is what decides
+ * whether a value is an existing one or a new one, and changing it
+ * would make a stale admin pane invent options; the member read's
+ * spelling is what every page and every stored row already uses.
+ *
+ * THE RENAME IS HERE, ON THE WAY OUT, RATHER THAN IN offeredValues():
+ * a shipped field with no overlay row never reaches that function at
+ * all - its choices come from apps/web/site.config.js untouched - so a
+ * rename there would hand back half a spec in each spelling, which is
+ * worse for a page than either spelling alone. The price is that the
+ * admin read is no longer the member read's bytes, and effectiveSpec()
+ * below says so.
+ */
+function asWriteShape(site) {
+  for (const field of site.fields) {
+    if (!Array.isArray(field.choices)) continue;
+    field.choices = field.choices.map((one) => {
+      const made = { id: one.value, label: one.label };
+      if (one.retired === true) made.retired = true;
+      return made;
+    });
+  }
+  return site;
 }
 
 /*
@@ -3399,13 +3572,52 @@ function applyOverlay(site, id, doc) {
  * the property the static file's whole role rests on: it is the
  * fallback, the fork's starting point and the thing a release review
  * reads, so a composed answer that differed from it by so much as a key
- * order would make all three claims approximate.
+ * order would make all three claims approximate. It is a claim about
+ * the MEMBER reading, and only that one: the admin reading is the same
+ * document with every value spelled the way the write route reads one,
+ * for the reason asWriteShape() above carries. The two agree field for
+ * field and value for value with nothing retired; they do not agree
+ * byte for byte, and a page that wants the member spelling asks the
+ * member route for it.
+ *
+ * `retiredToo` IS A SECOND READING, NOT A SECOND COMPOSER (0.9-M3-S25,
+ * #440). GET /admin-fields has to show what is retired so an admin can
+ * bring it back, and the argument for one place is unchanged by it: a
+ * composer of its own would be a second form, and the one that decided
+ * what may be un-retired would not be the one that decided what may be
+ * offered. Every caller but that route leaves the flag off and gets
+ * exactly what it always got.
  */
-async function effectiveSpec(env) {
+async function effectiveSpec(env, retiredToo) {
   const site = staticSpec();
-  const docs = await fieldDocs(env);
-  for (const [id, doc] of docs) applyOverlay(site, id, doc);
-  return site;
+  const { docs, stamps } = await fieldDocs(env, retiredToo);
+  for (const [id, doc] of docs) {
+    applyOverlay(site, id, doc, retiredToo, stamps.get(id) || null);
+  }
+  return retiredToo === true ? asWriteShape(site) : site;
+}
+
+/*
+ * A composed spec, answered.
+ *
+ * ONE PLACE FOR THE HEADERS because there are two routes and only one
+ * of them is member-facing: `private, no-store` is what stops a shared
+ * cache handing one binder's form - or its retired set - to the next
+ * caller, and a second hand-written header block is how the newer route
+ * ends up without it.
+ */
+function specResponse(site, origin) {
+  return new Response(JSON.stringify({ ok: true, spec: site }), {
+    status: 200,
+    headers: Object.assign(
+      {
+        "Content-Type": "application/json",
+        "Cache-Control": "private, no-store",
+        Vary: VARY,
+      },
+      origin ? corsHeaders(origin) : {}
+    ),
+  });
 }
 
 /*
@@ -3423,18 +3635,50 @@ async function effectiveSpec(env) {
  * caller.
  */
 async function handleReadSpec(env, origin) {
-  const site = await effectiveSpec(env);
-  return new Response(JSON.stringify({ ok: true, spec: site }), {
-    status: 200,
-    headers: Object.assign(
-      {
-        "Content-Type": "application/json",
-        "Cache-Control": "private, no-store",
-        Vary: VARY,
-      },
-      origin ? corsHeaders(origin) : {}
-    ),
-  });
+  return specResponse(await effectiveSpec(env), origin);
+}
+
+/*
+ * The same spec with what is retired still in it, read by an admin.
+ *
+ * WHY IT HAS TO EXIST (0.9-M3-S25, #440). #385 rule 7 keeps a retired
+ * field and a retired value out of everything a member touches, and
+ * handleReadSpec above is where that happens - so an admin page could
+ * only offer to un-retire what it watched leave in the same session,
+ * and a reload lost the list for good. PUT /admin-fields/<id> has
+ * accepted an un-retire since 0.9-M3-S11 (#419); this is the read that
+ * makes it reachable.
+ *
+ * ITS ANSWER IS THE WRITE ROUTE'S OWN INPUT, value for value: a page
+ * hands this read's `choices` back as that write's `values` with no
+ * rename in between, which is what asWriteShape() above is for and what
+ * tests/fields-overlay.test.mjs section 10e drives end to end. The
+ * un-retire is one bit flipped on bytes that came off the wire, so
+ * there is no place for a pane to translate a value wrongly.
+ *
+ * THE ONLY CREDENTIAL-BEARING READ OF A RETIRED ROW, and the fence it
+ * stands inside is unchanged in every other direction: GET /content
+ * answers without a credential and is refused the namespace in its
+ * statement and again in its reader, GET /config serves three names
+ * fixed in code, GET /spec composes without the flag for member and
+ * admin sessions alike, and GET /charts-data reads what GET /spec
+ * reads. tests/fields-overlay.test.mjs section 10d arms all five
+ * against a table that really holds a retired field and a retired
+ * value, so each absence is forced rather than read off an empty
+ * database.
+ *
+ * ADMIN AND NOT MERELY A SESSION, unlike GET /spec, and the gate is in
+ * the router with every other admin gate. What is withheld from a
+ * member here is not a name they could not see anyway - it is which of
+ * the words on their own form the group has retired, and the group's
+ * own history of changing its mind about them.
+ *
+ * NO MEMBER DATA AND NO COUNTS. How many people answered a retired
+ * value is a question GET /charts-data answers under the floor; putting
+ * a number here would be a second aggregation with no floor near it.
+ */
+async function handleReadAdminFields(env, origin) {
+  return specResponse(await effectiveSpec(env, true), origin);
 }
 
 /*
@@ -3645,7 +3889,10 @@ async function handleWriteField(request, env, origin, id, caller) {
     return json({ error: NOT_A_CHOICE_FIELD }, 400, origin);
   }
 
-  const docs = await fieldDocs(env);
+  // Destructured, so the write routes keep asking for exactly the
+  // rows they always asked for: the stamps half is the admin read's
+  // and this statement never selects the column.
+  const { docs } = await fieldDocs(env);
   const held = docs.get(id) || null;
 
   const text = (name, given, fallback) => {
@@ -3813,7 +4060,10 @@ async function handleRetireField(env, origin, id, caller) {
     return json({ error: NOT_A_CHOICE_FIELD }, 400, origin);
   }
 
-  const docs = await fieldDocs(env);
+  // Destructured, so the write routes keep asking for exactly the
+  // rows they always asked for: the stamps half is the admin read's
+  // and this statement never selects the column.
+  const { docs } = await fieldDocs(env);
   const held = docs.get(id) || null;
   if (!shipped && !held) return json({ error: "Not found." }, 404, origin);
 
@@ -4423,6 +4673,15 @@ async function route(request, env, url, allowed, admitted) {
    * the defect the /charts route hit in #365, and the comment above
    * API_SEGMENTS carries the whole of it.
    */
+  // What is retired, so an admin can bring it back (0.9-M3-S25, #440).
+  // Admin rather than any session, which is the one place this family
+  // and GET /spec differ: the spec is the form members are filling in,
+  // and this is the same document with the group's retired words still
+  // in it. handleReadAdminFields carries the whole argument.
+  if (method === "GET" && path === "/admin-fields") {
+    if (!admin) return unauthorized(allowed);
+    return handleReadAdminFields(env, allowed);
+  }
   const adminField = /^\/admin-fields\/([^/]+)$/.exec(path);
   if (method === "PUT" && adminField) {
     if (!admin) return unauthorized(allowed);
