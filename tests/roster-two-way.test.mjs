@@ -54,13 +54,15 @@
  * scratch "tests/" directory holding a handful of trivial fixture arms
  * and its own tests/ROSTER, is the REAL mechanism running over a small
  * world this file controls completely, rather than a reimplementation
- * that could drift from what actually ships. Only preflight.mjs is not
- * the real file - a stub stands in for it, printing the one line the
- * vacuity guard requires and nothing else, because preflight's own job
- * (worktree hygiene) is proven elsewhere
- * (tests/worktree-contract.test.mjs) and re-deriving --verify's answer
- * for a directory with no git repository under it would test nothing
- * this file is about.
+ * that could drift from what actually ships. gate-pool.mjs (0.9-M3-S35,
+ * #460) is copied byte-identical alongside it for the same reason - the
+ * runner imports it as a sibling module now, so the copy needs its own
+ * copy to import. Only preflight.mjs is not the real file - a stub
+ * stands in for it, printing the one line the vacuity guard requires
+ * and nothing else, because preflight's own job (worktree hygiene) is
+ * proven elsewhere (tests/worktree-contract.test.mjs) and re-deriving
+ * --verify's answer for a directory with no git repository under it
+ * would test nothing this file is about.
  *
  * The fixture arms are one-line scripts that print a verdict and exit
  * 0 - what they check is not the point; whether the roster mechanism
@@ -75,6 +77,18 @@ import { fileURLToPath } from "node:url";
 
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 const REAL_RUNNER = await readFile(HERE("run.mjs"), "utf8");
+// The runner's own pool (0.9-M3-S35, #460): run.mjs now imports
+// "./gate-pool.mjs" as a sibling module, so a byte-identical copy of
+// run.mjs is not runnable on its own any more - the copy's relative
+// import would resolve against the FIXTURE directory, where nothing
+// answered it, and every scenario below would fail at module load
+// before the roster logic this file is actually about ever ran. Copied
+// alongside run.mjs for the same "real mechanism, not a
+// reimplementation" reason the module docstring above gives for run.mjs
+// itself - gate-pool.mjs is not roster-gated (it is not a `.test.mjs`
+// file and run.mjs's own NOT_ARMS names it), so no fixture ROSTER row
+// is needed for it, only the file.
+const REAL_GATE_POOL = await readFile(HERE("gate-pool.mjs"), "utf8");
 
 const STUB_PREFLIGHT =
   "console.log(\"initialized: CI path (stub for the roster-two-way " +
@@ -92,6 +106,7 @@ async function buildFixture(rosterText, arms) {
   const testsDir = join(root, "tests");
   await mkdir(testsDir);
   await writeFile(join(testsDir, "run.mjs"), REAL_RUNNER);
+  await writeFile(join(testsDir, "gate-pool.mjs"), REAL_GATE_POOL);
   await writeFile(join(testsDir, "preflight.mjs"), STUB_PREFLIGHT);
   await writeFile(join(testsDir, "ROSTER"), rosterText);
   for (const name of arms) {

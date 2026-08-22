@@ -206,12 +206,15 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { cpus } from "node:os";
+import { runPool } from "./gate-pool.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const ARM_SUFFIX = ".test.mjs";
 const PREFLIGHT = "tests/preflight.mjs";
 const ROSTER = "tests/ROSTER";
+const GATE_POOL = "tests/gate-pool.mjs";
 
 /* Repo-relative and forward-slashed, so a name reads the same in a
    Windows terminal and in the Actions log. */
@@ -222,9 +225,52 @@ const rel = (absolute) =>
    itself. The sweep below is over every file in tests/, so a spelled-
    out "tests/run.mjs" is a second copy of this file's own path: rename
    the runner and it reports itself as a stray it is in the middle of
-   running. */
+   running. GATE_POOL is the runner's own helper (0.9-M3-S35, #460): it
+   exports a function and calls no check(), so it is a non-arm the same
+   way this file, PREFLIGHT and ROSTER already are - see gate-pool.mjs's
+   own header for the argument this set's own doc comment asks for. */
 const NOT_ARMS = new Set([rel(fileURLToPath(import.meta.url)), PREFLIGHT,
-                          ROSTER]);
+                          ROSTER, GATE_POOL]);
+
+/* THE POOL (0.9-M3-S35, #460). Arms used to run one at a time - not for
+   speed, the header above said, because a suite that binds a socket or
+   writes a scratch directory is one this ordering let stay simple. That
+   reasoning is now the FLOOR the pool has to clear rather than a
+   standing prohibition: every arm was read for shared, colliding state
+   (fixed ports, the fleet's real records under BINDER_FLEET_STATE, a
+   temp directory named by branch rather than randomly) and each one
+   that touches anything like that drives it through an isolated
+   `tempfile`-rooted fixture with its own `--state`/env override -
+   tools/reaper_suite.py, tools/fleet_status_suite.py, tools/
+   prime_lock_suite.py, tools/agent_init_suite.py, tools/
+   claim_vs_diff_suite.py, tools/ship_check_suite.py and tools/
+   session_open_suite.py all say so in their own header comments, and
+   none of them reads or writes this repository's own real git state,
+   the real fleet directory, or a fixed port. The two `wrangler --help`
+   arms (operations-sit-procedure, operations-bot-rotation) make no
+   write at all. Twenty consecutive pool runs with zero flakes is the
+   proof this reading earns, carried in the ticket rather than pinned
+   here as a comment nothing re-checks - the READING is what licenses
+   the pool, and the twenty-run proof is what confirms the reading was
+   right, not a substitute for either half.
+   POOL SIZE defaults to the CPU count (falling back to 4 if that comes
+   back empty or zero, which `os.cpus()` can on some containers) and
+   `BINDER_GATE_POOL` overrides it - the suppressed lever the mutation
+   battery uses to prove pool size 1 restores the old sequential wall
+   time. */
+const DEFAULT_POOL = cpus().length || 4;
+const POOL_SIZE = Number(process.env.BINDER_GATE_POOL) || DEFAULT_POOL;
+
+/* THE BUDGET (0.9-M3-S35, #460). Slowness is a red here, never a
+   surprise a reader has to notice by eye in a scrolling log. 300s is
+   the figure this slice measured room under on an idle machine after
+   the pool and the reaper-suite cut landed; BINDER_GATE_BUDGET_SECONDS
+   overrides it for a machine known to run slower (a contended worktree,
+   a loaded CI runner) - always with the reason stated where it is
+   raised, never silently. */
+const DEFAULT_BUDGET_SECONDS = 300;
+const BUDGET_SECONDS = Number(process.env.BINDER_GATE_BUDGET_SECONDS) ||
+  DEFAULT_BUDGET_SECONDS;
 
 const exists = async (path) => {
   try {
@@ -291,6 +337,7 @@ function spill(name, result) {
 }
 
 const problems = [];
+const gateStarted = Date.now();
 console.log("the 0.9 gate - " + rel(HERE) + "\n");
 
 /* Stage zero: the seam. */
@@ -349,9 +396,20 @@ const strays = files.filter((path) =>
   !path.endsWith(ARM_SUFFIX) && !NOT_ARMS.has(rel(path)));
 
 console.log("");
-for (const path of arms) {
+/* Run concurrently, print in the same fixed order discovery already
+   sorted `arms` into. runPool's whole contract is that its returned
+   array is ordered by INPUT position regardless of finish order (see
+   gate-pool.mjs), so this loop reads exactly as it did one arm at a
+   time - only the `await runPool(...)` line above it is new. */
+const armsStarted = Date.now();
+const results = await runPool(
+  arms.map((path) => () => runFile(path)), POOL_SIZE);
+const armsMs = Date.now() - armsStarted;
+
+for (let index = 0; index < arms.length; index += 1) {
+  const path = arms[index];
+  const result = results[index];
   const name = rel(path);
-  const result = await runFile(path);
   const ok = result.code === 0;
   report(name, ok, result.ms);
   if (ok) console.log("    " + verdictLine(result.output));
@@ -581,6 +639,35 @@ if (!(await exists(rosterPath))) {
         "about this gate. Delete whichever of the two lines is wrong.");
     }
   }
+}
+
+/* THE PRINTED BUDGET (0.9-M3-S35, #460). Wall time is the whole gate's,
+   from the first line this file printed to here - preflight and the
+   roster checks included, not only the pooled arms - because a reader
+   deciding whether this run was slow does not care which stage the time
+   went into. The three slowest ARMS specifically (not preflight, which
+   is one seam rather than a roster of many) are what a reader chases
+   next when the total is a surprise. */
+const wallMs = Date.now() - gateStarted;
+const slowest = arms
+  .map((path, index) => ({ name: rel(path), ms: results[index].ms }))
+  .sort((a, b) => b.ms - a.ms)
+  .slice(0, 3);
+console.log("\nwall time    " + (wallMs / 1000).toFixed(1) +
+  "s (pool size " + POOL_SIZE + ")");
+console.log("slowest      " + (slowest.length
+  ? slowest.map((arm) => arm.name + " " + (arm.ms / 1000).toFixed(1) + "s")
+      .join(", ")
+  : "(no arms ran)"));
+
+if (wallMs > BUDGET_SECONDS * 1000) {
+  problems.push("over budget");
+  console.log("\nOVER BUDGET: this run took " + (wallMs / 1000).toFixed(1) +
+    "s wall, over the " + BUDGET_SECONDS + "s budget. Slowness is a red " +
+    "here, not a surprise left for the next reader to notice by eye in a " +
+    "scrolling log - BINDER_GATE_BUDGET_SECONDS raises the figure, with a " +
+    "reason stated where it is set, for a machine known to run slower " +
+    "than this default assumes.");
 }
 
 console.log(problems.length

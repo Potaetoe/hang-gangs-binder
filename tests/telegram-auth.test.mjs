@@ -514,9 +514,23 @@ async function signIn(options) {
 }
 
 {
+  // Both payloads are pinned to ONE captured second (0.9-M3-S35, #460,
+  // found by the gate's new pool: two separate `nowSeconds()` calls, one
+  // inside `payloadFor()`'s own default and one in this block's second
+  // override, can straddle a real second boundary if the `await` between
+  // them runs long enough - under a contended pool that is no longer
+  // astronomically rare. When they do, "auth_date - 1" for the second
+  // payload lands on the SAME second the first payload's own auth_date
+  // used, making the two payloads byte-identical and turning "two
+  // different payloads" into a same-payload replay the guard correctly
+  // refuses - a false red about the guard, not evidence against it. A
+  // single `anchor` read once, before either payload exists, removes the
+  // race instead of shrinking its window.
   const db = makeDb();
-  await signIn({ payload: payloadFor(), db: db });
-  await signIn({ payload: payloadFor({ auth_date: String(nowSeconds() - 1) }),
+  const anchor = nowSeconds();
+  await signIn({ payload: payloadFor({ auth_date: String(anchor) }),
+    db: db });
+  await signIn({ payload: payloadFor({ auth_date: String(anchor - 1) }),
     db: db });
   check("two DIFFERENT payloads from the same account both mint a " +
     "session - the guard is per payload, not per account",

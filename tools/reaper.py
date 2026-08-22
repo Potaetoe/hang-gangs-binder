@@ -527,14 +527,81 @@ def mainlines(repo, names):
     return found
 
 
+def resolved_mainlines(repo):
+    """(DEBRIS_MAINLINES resolved, SLICE_MAINLINES resolved) - ONCE.
+
+    0.9-M3-S35 (#460): every proof that names a mainline used to call
+    `mainlines()` fresh - one or two more `git rev-parse` per candidate,
+    for a question ("where do accounts/main point") whose answer cannot
+    change while this one plan() or main() call is enumerating, because
+    this program never moves accounts or main itself (see the module
+    docstring, "WHAT THIS DELIBERATELY DOES NOT DO"). Measured on the
+    reaper suite's fixture machine, that repeated per-candidate
+    resolution was the largest single cost the suite's own fixture
+    hygiene could not touch, because it lives here, not in the suite.
+
+    SLICE_MAINLINES is read out of the SAME resolution rather than asked
+    for separately, because SLICE_MAINLINES == ("accounts",) is exactly
+    the "accounts" entry of DEBRIS_MAINLINES == ("accounts", "main") -
+    resolving the wider tuple and filtering is the same two questions
+    ("does origin/accounts exist, does accounts exist") `mainlines(repo,
+    SLICE_MAINLINES)` would ask on its own, asked once instead of twice.
+
+    THE CACHE'S LIFETIME IS THE WHOLE POINT, so there is no cache here at
+    all in the sense of surviving past the call that made it: this
+    function is called ONCE per `plan()` call and once per `main()` call
+    (main() enumerates candidates itself rather than calling plan(), so
+    it earns its own call the same way) and the result is threaded down
+    as a plain argument, never stored on the module or read back by a
+    LATER call. A second plan() or main() call - after a landing moved
+    `accounts`, the exact case this whole file exists to act on
+    correctly - resolves fresh and sees the new tip, because it calls
+    this function again rather than reading anything left behind by the
+    first. `act()`'s own re-verification of a "parked worktree" (BLOCKER
+    3: the decisive facts are asked again, against whatever the machine
+    now says) is deliberately NOT threaded from here - it keeps calling
+    `ancestry()` with no `resolved` argument, which resolves fresh, on
+    purpose, every time.
+
+    THE FILTER MATCHES BY NAME, NOT BY LABEL (caught by
+    tests/fleet-status.test.mjs, whose fixture carries a real `origin`
+    remote - tests/reaper.test.mjs's own fabricated machine never adds
+    one, so a label-equality filter passed there by accident). `mainlines()`
+    labels a remote-resolved mainline `"origin/accounts"`, not
+    `"accounts"` - `pair[0] in SLICE_MAINLINES` is false for that label
+    even though it is exactly the `"accounts"` DEBRIS_MAINLINES and
+    SLICE_MAINLINES share, so a plain label-equality filter silently
+    returned zero mainlines the moment `origin/accounts` existed and
+    resolved first - every "not an ancestor of any mainline this
+    repository has" that followed was this filter, not a real absence.
+    `rsplit("/", 1)[-1]` reads the bare name back out of either label
+    shape.
+    """
+    debris = mainlines(repo, DEBRIS_MAINLINES)
+    slice_names = set(SLICE_MAINLINES)
+    slice_only = [pair for pair in debris
+                 if pair[0].rsplit("/", 1)[-1] in slice_names]
+    return debris, slice_only
+
+
 def is_ancestor(repo, sha, ref):
     code, _ = git(repo, "merge-base", "--is-ancestor", sha, ref)
     return code == 0
 
 
-def ancestry(repo, sha, names):
-    """(the mainline label this tip is an ancestor of, or None)."""
-    for label, _ in mainlines(repo, names):
+def ancestry(repo, sha, names, resolved=None):
+    """(the mainline label this tip is an ancestor of, or None).
+
+    `resolved` is `[(label, sha)]`, already computed by `mainlines(repo,
+    names)` - pass it when the caller already resolved this call's
+    mainlines once for the whole plan()/main() pass it belongs to
+    (`resolved_mainlines()`, above). Left as None, this resolves fresh
+    here exactly as it always did - every caller that wants a live
+    answer (act()'s own re-verification chief among them) keeps that by
+    simply not passing one.
+    """
+    found = resolved if resolved is not None else mainlines(repo, names)
+    for label, _ in found:
         if is_ancestor(repo, sha, label):
             return label
     return None
@@ -590,13 +657,17 @@ def contained(path, roots):
                    "does own it" % ", ".join(roots))
 
 
-def branch_proof(repo, park, table, names):
+def branch_proof(repo, park, table, names, resolved=None):
     """The certificate's branch clause, as one Proof.
 
     Four answers, and only the last one licenses deleting a branch:
     the certificate names none, the ref has already gone, the ref has
     moved off the tip the certificate recorded, or the ref is where the
     certificate says and its tip is an ancestor of a mainline.
+
+    `resolved` is threaded straight through to `ancestry()` - see its
+    own docstring and `resolved_mainlines()` for what it is and why a
+    None here still resolves fresh.
     """
     branch = park.get("branch")
     tip = park.get("tip")
@@ -620,13 +691,13 @@ def branch_proof(repo, park, table, names):
                      "%s points at %s and the certificate records %s, so "
                      "something moved it after this worktree parked"
                      % (branch, ref[:12], (tip or "nothing")[:12]))
-    proved = ancestry(repo, tip, names)
+    proved = ancestry(repo, tip, names, resolved)
     if proved is None:
+        found = resolved if resolved is not None else mainlines(repo, names)
         return Proof("branch", False,
                      "%s is not an ancestor of %s, so %s still carries "
                      "work that has not landed"
-                     % (tip[:12], " or ".join(
-                         label for label, _ in mainlines(repo, names))
+                     % (tip[:12], " or ".join(label for label, _ in found)
                         or "any mainline this repository has", branch))
     return Proof("branch", True,
                  "%s is an ancestor of %s, so %s holds nothing that is not "
@@ -634,7 +705,7 @@ def branch_proof(repo, park, table, names):
 
 
 def parked_proofs(repo, state, roots, table, primary, source, record, park,
-                  path):
+                  path, resolved=None):
     """Every licensing proof for a parked worktree, against the live machine.
 
     Built for the plan AND re-established in act(), from this one
@@ -648,6 +719,11 @@ def parked_proofs(repo, state, roots, table, primary, source, record, park,
     whatever the machine now says. Two definitions of "licensed to reap"
     could disagree, so there is one, the same argument agent-park makes
     for computing its dry run and its act from a single function.
+
+    `resolved` (SLICE_MAINLINES already resolved, or None) is threaded
+    straight to `branch_proof()`. `plan()` passes its own one-per-call
+    resolution down through here; `act()` passes nothing, so BLOCKER 3's
+    own re-verification keeps resolving fresh, every time it runs.
     """
     by_path = {entry["path"]: entry for entry in table}
     proofs = []
@@ -717,17 +793,21 @@ def parked_proofs(repo, state, roots, table, primary, source, record, park,
              "parked: %s - deleting the directory would delete that "
              "work" % (len(dirty), ", ".join(sorted(dirty)[:4]))))
 
-    proofs.append(branch_proof(repo, park, table, SLICE_MAINLINES))
+    proofs.append(branch_proof(repo, park, table, SLICE_MAINLINES, resolved))
     return proofs
 
 
-def parked_items(repo, state, roots, table, primary):
+def parked_items(repo, state, roots, table, primary, resolved=None):
     """Candidates out of the death certificates, and the inert leftovers.
 
     Every field of the certificate is re-established against the live
     machine. The certificate is a CLAIM by the agent that wrote it, and
     the only thing it is trusted for is telling this program where to
     look.
+
+    `resolved` (SLICE_MAINLINES already resolved, or None) is threaded
+    to `parked_proofs()` for every record this enumerates - see
+    `resolved_mainlines()`.
     """
     items = []
     inert = []
@@ -752,7 +832,7 @@ def parked_items(repo, state, roots, table, primary):
             continue
         park = record.get("park") or {}
         proofs = parked_proofs(repo, state, roots, table, primary,
-                               source, record, park, path)
+                               source, record, park, path, resolved)
 
         verdict = "reap" if all(proof.ok for proof in proofs) else "report"
         steps = []
@@ -910,13 +990,21 @@ def protect_harness_branch(state, table, dirname):
     return None
 
 
-def branch_items(repo, state, table, spoken_for):
+def branch_items(repo, state, table, spoken_for, resolved=None):
     """The three branch classes, over every local branch nothing holds.
 
     A branch a parked-worktree candidate names is skipped here whatever
     that candidate's verdict was: the worktree owns its own branch, and
     a branch deleted out from under a worktree this program declined to
     delete is the worst of both answers.
+
+    `resolved` is `(DEBRIS_MAINLINES resolved, SLICE_MAINLINES resolved)`
+    - `resolved_mainlines()`'s own return shape - reused for both the
+    `reserved` set below (which used to call `mainlines()` itself) and
+    every branch's own ancestry proof, instead of asking fresh for each.
+    Left None, this resolves its own once here, so a caller that has not
+    already done it for a wider plan()/main() pass still gets one clean
+    resolution rather than the old per-branch cost.
     """
     code, out = git(repo, "for-each-ref",
                                "--format=%(refname:short) %(objectname)",
@@ -929,8 +1017,10 @@ def branch_items(repo, state, table, spoken_for):
     for _, record in records(state):
         if record.get("state") == "live" and record.get("branch"):
             live.add(record["branch"])
-    reserved = {label for label, _ in
-                mainlines(repo, DEBRIS_MAINLINES)} | set(DEBRIS_MAINLINES)
+    debris_resolved, slice_resolved = (
+        resolved if resolved is not None else resolved_mainlines(repo))
+    reserved = ({label for label, _ in debris_resolved}
+               | set(DEBRIS_MAINLINES))
 
     items = []
     for line in out.splitlines():
@@ -955,14 +1045,15 @@ def branch_items(repo, state, table, spoken_for):
                     "park": {}, "sha": sha})
                 continue
         names = DEBRIS_MAINLINES if debris else SLICE_MAINLINES
-        proved = ancestry(repo, sha, names)
+        names_resolved = debris_resolved if debris else slice_resolved
+        proved = ancestry(repo, sha, names, names_resolved)
         proof = Proof(
             "ancestry", proved is not None,
             "%s is an ancestor of %s" % (sha[:12], proved)
             if proved is not None
             else "%s is not an ancestor of %s, so this branch carries work "
                  "that has not landed" % (sha[:12], " or ".join(
-                     label for label, _ in mainlines(repo, names))
+                     label for label, _ in names_resolved)
                      or "any mainline this repository has"))
         verdict = "reap" if proof.ok else "report"
         items.append({
@@ -1020,17 +1111,28 @@ def survey(repo, state=None, roots=None):
 
 
 def plan(repo, state=None, roots=None):
-    """Every candidate on this machine, proved, with nothing performed."""
+    """Every candidate on this machine, proved, with nothing performed.
+
+    Mainlines are resolved ONCE here (`resolved_mainlines()`) and handed
+    to both `parked_items()` and `branch_items()`, rather than each
+    candidate's own proof resolving `accounts`/`main` again - see that
+    function's docstring for why this call's answer is never carried
+    past it. `main()` below does the same, for the same reason, over its
+    own inlined equivalent of this function's body.
+    """
     found, problem = survey(repo, state, roots)
     if problem:
         raise ValueError(problem)
     primary, table, roots = found
-    parked, _inert = parked_items(primary, state, roots, table, primary)
+    resolved = resolved_mainlines(primary)
+    parked, _inert = parked_items(primary, state, roots, table, primary,
+                                  resolved[1])
     spoken_for = {item["park"].get("branch") for item in parked
                   if item["park"].get("branch")}
     return hold_back(parked
                      + vanished_items(primary, state, table, primary)
-                     + branch_items(primary, state, table, spoken_for))
+                     + branch_items(primary, state, table, spoken_for,
+                                    resolved))
 
 
 def delete_branch(repo, name, expected, proof):
@@ -1279,7 +1381,8 @@ ORDER = ("parked worktree", "vanished worktree",
          "merged branch")
 
 
-def render(items, inert, primary, state, roots, acting, repo):
+def render(items, inert, primary, state, roots, acting, repo,
+          debris_resolved=None):
     print("=== the mechanical reaper: %s ===\n"
           % ("ACTING" if acting else "report"))
     print("repository   %s" % primary)
@@ -1291,7 +1394,11 @@ def render(items, inert, primary, state, roots, acting, repo):
         else "%s - %d record(s), %d parked"
              % (directory, len(records(state)), len(parked))))
     print("roots        %s" % ", ".join(roots))
-    found = mainlines(repo, DEBRIS_MAINLINES)
+    # Reuses main()'s own one-per-call resolution when it has one to
+    # give, rather than a THIRD `git rev-parse` round for a line that is
+    # only ever display text - see resolved_mainlines().
+    found = (debris_resolved if debris_resolved is not None
+            else mainlines(repo, DEBRIS_MAINLINES))
     print("mainlines    %s" % (", ".join(
         "%s @ %s" % (label, sha[:12]) for label, sha in found)
         or "none of %s resolves here" % ", ".join(DEBRIS_MAINLINES)))
@@ -1370,15 +1477,21 @@ def main(argv=None):
         return 1
     primary, table, roots = found
 
-    parked, inert = parked_items(primary, args.state, roots, table, primary)
+    # Resolved ONCE for this whole main() call - main() enumerates its
+    # own candidates rather than calling plan(), so it earns its own
+    # resolution the same way plan() does; see resolved_mainlines().
+    resolved = resolved_mainlines(primary)
+    parked, inert = parked_items(primary, args.state, roots, table, primary,
+                                 resolved[1])
     spoken_for = {item["park"].get("branch") for item in parked
                   if item["park"].get("branch")}
     items = hold_back(parked
                       + vanished_items(primary, args.state, table, primary)
                       + branch_items(primary, args.state, table,
-                                     spoken_for))
+                                     spoken_for, resolved))
 
-    render(items, inert, primary, args.state, roots, args.act, primary)
+    render(items, inert, primary, args.state, roots, args.act, primary,
+          resolved[0])
     # A run in which any git command went unanswered is a failed run in
     # both modes, and the exit status says so - session-open hygiene
     # calls this, and a hygiene step that exits 0 on a machine that
