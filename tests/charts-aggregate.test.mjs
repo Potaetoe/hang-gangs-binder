@@ -72,6 +72,15 @@
  *      raised floor LOCKS the answer to one system, so no group is ever
  *      sliced two ways while suppression is doing work. No data-derived
  *      edge anywhere; no-store.
+ *
+ * COMBINED FILTERS (section 10, 0.9-M3-S24, #438) are the chips the
+ * owner ruled at #384, and they add no seventh mandate. They are armed
+ * as the same six over fewer people: the population is an intersection,
+ * mandate 5's echo becomes a list of the caller's own predicates and
+ * still enumerates nothing, and mandate 4's one-shape rule does the work
+ * it was written for - above a floor of 0, a combination matching ONE
+ * member and a combination matching nobody come back as the same
+ * document, so the response cannot say which value made the view narrow.
  */
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
@@ -557,8 +566,7 @@ check("floor 0: the empty answer carries no count anywhere - the floor " +
   everyNumber(emptyView)[0] === SHIPPED_FLOOR);
 check("floor 0: an empty corpus answers the same document",
   JSON.stringify(atShippedFloor([], "measure=weight")) ===
-    JSON.stringify(Object.assign({}, emptyView,
-      { filter: { field: null, value: null } })));
+    JSON.stringify(Object.assign({}, emptyView, { filters: [] })));
 
 /* A measure nobody in the view answered is the other honest nothing: a
    BMI needs a height, so a corpus of weights alone draws no BMI. */
@@ -1339,15 +1347,18 @@ check("floor 5: a sub-floor answer carries no count anywhere in it - " +
   everyNumber(belowFloor)[0] === RAISED);
 
 /* Mandate 4: a filter nobody holds and a filter too few hold are one
-   shape. The echoed value is the caller's own and is the one field
-   allowed to differ, so it is blanked for the comparison. */
+   shape. The echoed predicates are the caller's own and are the one
+   field allowed to differ, so they are blanked for the comparison.
+   Section 10d runs this same instrument over combined filters, where
+   the two cases are an intersection of one and an intersection of
+   nobody. */
 const holders = evenGroup(RAISED - 1);
 const nobody = atRaisedFloor(holders,
   "measure=weight&filter=country&value=JP");
 const tooFew = atRaisedFloor(holders,
   "measure=weight&filter=country&value=US");
 const blanked = (answer) =>
-  JSON.stringify(Object.assign({}, answer, { filter: null }));
+  JSON.stringify(Object.assign({}, answer, { filters: null }));
 check("floor 5: a filter value nobody holds and a filter value too few " +
   "hold answer the same document (mandate 4)",
   blanked(nobody) === blanked(tooFew) && nobody.enough === false);
@@ -1685,7 +1696,13 @@ const STORE_SECRET = "charts arm store secret / not a real one / v1";
 const EXPORT_TOKEN = "charts-arm-export-token-belonging-to-nobody";
 const SEEDED = 7;
 
-function makeDb() {
+/* `content` is the `site_content` rows this database holds, and it
+   defaults to none - which is the state every arm written before
+   0.9-M3-S24 was written against, so passing nothing leaves them at the
+   shipped floor of 0 exactly as before. Section 10e passes a real
+   `chart.floor` row so the settings seam is driven the way a deployment
+   drives it rather than by handing aggregate() an object. */
+function makeDb(content) {
   const sessions = [];
   const submissions = [];
   const supersededBy = (r) =>
@@ -1729,15 +1746,34 @@ function makeDb() {
           })),
       };
     }
-    /* The charts settings, read from `site_content` since 0.9-M3-S8
-       (#414): the floor and the locked unit are two rows an admin sets
-       rather than a frozen constant in server/worker.js. This arm holds
-       no rows, so every check below runs at the shipped floor of 0 -
-       which is the state it was written against, and the reason the
-       route checks here did not have to move. The store's own arms are
-       tests/admin-identity.test.mjs, which drives the same route with
-       rows really set. */
-    if (/FROM site_content/i.test(sql)) return { results: [] };
+    /*
+     * `site_content`, and TWO different statements read it - which is
+     * the whole reason this branch discriminates rather than answering
+     * both (0.9-M3-S24 hit it: a stub handing every site_content read
+     * the same rows fed `chart.floor` to the field-spec reader, which
+     * correctly threw on a name outside its namespace and turned every
+     * arm below into a 500).
+     *
+     *   name LIKE ?     the effective spec's field overlay
+     *                   (FIELD_ROWS_SQL), whose reader REFUSES a row
+     *                   outside the `FIELD.` namespace.
+     *   name IN (?, ?)  the charts settings since 0.9-M3-S8 (#414) -
+     *                   the floor and the locked unit, two rows an
+     *                   admin sets rather than a frozen constant.
+     *
+     * Modelled by the namespace rather than by which statement asked,
+     * so the split here is D1's own answer and not a guess about call
+     * order. A database built with no rows runs at the shipped floor of
+     * 0 with the shipped spec, which is the state section 9 was written
+     * against; section 10e builds one holding a real `chart.floor` row.
+     */
+    if (/FROM site_content/i.test(sql)) {
+      const held = (content || []).map((one) => Object.assign({}, one));
+      const fieldRow = (one) => one.name.toLowerCase().startsWith("field.");
+      return { results: /LIKE/i.test(sql)
+        ? held.filter(fieldRow)
+        : held.filter((one) => !fieldRow(one)) };
+    }
     throw new Error("unmodelled all(): " + sql);
   }
   function run(sql, args) {
@@ -1905,8 +1941,9 @@ const echoed = await call("GET",
   { token: TOKENS[0] });
 check("route: the filter echoes back exactly the caller's own value " +
   "(mandate 5)",
-  echoed.status === 200 && echoed.body.filter.field === "country" &&
-  echoed.body.filter.value === "JP");
+  echoed.status === 200 && echoed.body.filters.length === 1 &&
+  echoed.body.filters[0].field === "country" &&
+  echoed.body.filters[0].value === "JP");
 check("route: a filter value nobody holds answers the honest empty " +
   "document (ruling 7)",
   echoed.body.enough === false && echoed.body.distribution === null &&
@@ -1916,11 +1953,14 @@ check("route: that empty answer names no value the group actually " +
 /* The echo's SHAPE is the enumeration guard, because the leak this
    mandate names would arrive as a helpful third field - the values on
    offer, the values in the group - rather than as a wrong value in the
-   two that belong. Exactly two keys, so anything added is a red. */
+   two that belong. Exactly two keys per predicate, so anything added is
+   a red, and the guard is asked of EVERY entry rather than of the first
+   (#438: the list is where a per-entry extra would now hide). */
 check("route: the filter echo carries the caller's own field and value " +
   "and nothing beside them (mandate 5)",
-  JSON.stringify(Object.keys(echoed.body.filter)) ===
-    JSON.stringify(["field", "value"]));
+  echoed.body.filters.every((one) =>
+    JSON.stringify(Object.keys(one)) ===
+      JSON.stringify(["field", "value"])));
 
 const badValue = await call("GET",
   "/charts-data?measure=weight&filter=country&value=not-a-country",
@@ -2081,8 +2121,492 @@ check("tombstones: a month every member has since corrected draws no " +
 check("tombstones: the correction's own month is the one that draws",
   history.body.enough === true && pointsOf(history.body).length === 1);
 
+/* ================================================================== */
+/* 10. COMBINED FILTERS: one value per categorical field, ANDed.       */
+/*                                                                     */
+/* 0.9-M3-S24 (#438), building the chips the owner ruled at #384. The  */
+/* page half is 0.9-M3-S14; what is armed here is the whole Worker     */
+/* half, because combining cannot happen on the page - a page only     */
+/* ever receives already-floored counts, so an AND across two chips    */
+/* has to be computed inside the same intersection the floor is        */
+/* applied to.                                                         */
+/*                                                                     */
+/* THE RULING THIS SECTION ARMS, in the owner's own words (#384 ruling  */
+/* 2): "the same rule - exact at floor 0". A combined view is not a    */
+/* second privacy regime, it is the same one over fewer people. So     */
+/* every claim below runs in BOTH worlds, the split section 7 draws:   */
+/* at the shipped floor of 0 an intersection of one draws its true     */
+/* number, and above 0 it is suppressed by the machinery that already  */
+/* suppresses a whole population that small.                           */
+
+/* -------------------------------------------------------------- */
+/* 10a. The ask: pairing, the refusals, and the cap.               */
+
+const TWO_CHIPS = "measure=weight&filter=gender&value=male" +
+  "&filter=roles&value=feeder";
+
+check("combined: two fields ANDed is a question this view answers, and " +
+  "the ask carries both predicates in the caller's own order",
+  askFor(TWO_CHIPS).ok === true &&
+  ask(TWO_CHIPS).filters.length === 2 &&
+  ask(TWO_CHIPS).filters[0].field === "gender" &&
+  ask(TWO_CHIPS).filters[0].value === "male" &&
+  ask(TWO_CHIPS).filters[1].field === "roles" &&
+  ask(TWO_CHIPS).filters[1].value === "feeder");
+
+/* Everyone is an EMPTY SET of predicates rather than a null one, which
+   is why the AND below has no special case to get wrong: matching
+   nothing against a record is vacuously true, so "no chips" reaches the
+   same loop every other count reaches. */
+check("combined: no filter at all is Everyone - an empty list of " +
+  "predicates, not a null one",
+  Array.isArray(ask("measure=weight").filters) &&
+  ask("measure=weight").filters.length === 0);
+
+check("combined: one filter is still one filter",
+  ask("measure=weight&filter=gender&value=male").filters.length === 1);
+
+check("combined: three fields ANDed",
+  ask("measure=weight&filter=gender&value=male&filter=roles&value=feeder" +
+    "&filter=country&value=US").filters.length === 3);
+
+/*
+ * A FIELD STILL MAY NOT REPEAT, and the refusal keeps the sentence the
+ * single-filter world used - now raised against the FIELD rather than
+ * against the query parameter, because the parameter is allowed to
+ * repeat and the dimension is not. #384 ruled one value per dimension,
+ * so a second value for one field would be an OR inside an AND.
+ */
+const dupeField = askFor("measure=weight&filter=gender&value=male" +
+  "&filter=gender&value=female");
+check("combined: two values for ONE field are refused, in the words the " +
+  "single-filter world used, naming the field",
+  dupeField.ok === false &&
+  dupeField.error === '"gender" is given more than once.');
+
+/* The other three parameters each decide one thing about the WHOLE
+   answer, so a second copy is a caller contradicting themselves and
+   honoring either would be this route guessing which they meant. Their
+   given-twice refusal is unchanged, and that is what makes the two
+   above a deliberate exemption rather than a loosened rule. */
+check("combined: `measure` still refuses a second copy",
+  askFor("measure=weight&measure=height").ok === false);
+check("combined: `self` still refuses a second copy",
+  askFor("measure=weight&self=1&self=1").ok === false);
+check("combined: `units` still refuses a second copy",
+  askFor("measure=weight&units=metric&units=imperial").ok === false);
+
+/* The pairing is POSITIONAL, so an unpaired name on either side is the
+   same two faults the single-filter world named, in the same words. */
+check("combined: a filter with no value of its own is refused in the " +
+  "sentence the single-filter world used",
+  askFor("measure=weight&filter=gender&value=male&filter=roles").error ===
+    "That filter needs a value.");
+check("combined: a value with no filter of its own is refused in the " +
+  "sentence the single-filter world used",
+  askFor("measure=weight&filter=gender&value=male&value=feeder").error ===
+    "A value needs a filter to belong to.");
+
+/* One bad predicate refuses the WHOLE ask. Answering the good half
+   would describe a population the caller never asked about, and they
+   would have no way to tell that from the one they did. */
+check("combined: one field the form does not offer, among good ones, " +
+  "refuses the whole ask",
+  askFor("measure=weight&filter=gender&value=male&filter=nope&value=x")
+    .error === "That is not a filter this form offers.");
+check("combined: one value outside the allowlist, among good ones, " +
+  "refuses the whole ask",
+  askFor("measure=weight&filter=gender&value=male&filter=country&value=zz")
+    .error === "That is not a value of that filter.");
+check("combined: a measured field is not a filter dimension, however " +
+  "many chips are set",
+  askFor("measure=height&filter=gender&value=male&filter=weight&value=100")
+    .error === "That is not a filter this form offers.");
+
+/*
+ * A RETIRED VALUE IS NOT A VALUE OF THAT FILTER (#385 rule 7).
+ *
+ * The composition that drops one is server/worker.js's offeredValues(),
+ * and the whole-field version of it is armed end to end in
+ * tests/fields-overlay.test.mjs. What is armed HERE is this file's own
+ * half: an effective spec whose choice list no longer carries a value
+ * refuses a filter on it - in the SAME sentence a value that never
+ * existed gets. Same sentence is the disclosure claim, not a tidiness
+ * one: a caller must not be able to tell a value an admin retired from
+ * one nobody ever offered, or the refusal would report the group's own
+ * history.
+ */
+const retiredSpec = JSON.parse(JSON.stringify(invented));
+retiredSpec.fields.filter((one) => one.name === "mood")[0].choices =
+  [{ value: "great", label: "Great" }];
+check("combined: a value the effective spec no longer offers is refused, " +
+  "in the same words a value that never existed gets",
+  askFor("measure=weight&filter=mood&value=grim", retiredSpec).ok === false &&
+  askFor("measure=weight&filter=mood&value=grim", retiredSpec).error ===
+    askFor("measure=weight&filter=mood&value=never-was", retiredSpec).error);
+check("combined: the value that spec still offers is still a filter, so " +
+  "the refusal above is about the retirement and not about the field",
+  askFor("measure=weight&filter=mood&value=great", retiredSpec).ok === true);
+check("combined: a retired value beside a live predicate refuses the " +
+  "whole ask - a chip set cannot be half-honored",
+  askFor("measure=weight&filter=gender&value=male&filter=mood&value=grim",
+    retiredSpec).ok === false);
+
+/*
+ * THE CAP. A bound on the REQUEST, and the arm reads the shipped number
+ * rather than carrying a copy of it.
+ */
+const capFields = JSON.parse(JSON.stringify(SITE));
+for (const name of ["mood", "shift", "hue"]) {
+  capFields.fields.push({
+    name: name, kind: "choice", label: name, term: name, chart: true,
+    choices: [{ value: "a", label: "A" }, { value: "b", label: "B" }],
+  });
+}
+const CAP_PAIRS = [["gender", "male"], ["roles", "feeder"],
+  ["country", "US"], ["mood", "a"], ["shift", "a"], ["hue", "a"]];
+const capQuery = (n) => "measure=weight" + CAP_PAIRS.slice(0, n)
+  .map((pair) => "&filter=" + pair[0] + "&value=" + pair[1]).join("");
+
+check("combined: the cap is a shipped constant this arm reads rather " +
+  "than a number copied into it",
+  typeof agg.MAX_FILTERS === "number" && Number.isInteger(agg.MAX_FILTERS) &&
+  agg.MAX_FILTERS > 0);
+check("combined: the cap covers every categorical field the shipped " +
+  "form has, so nothing the shipped chips can build is out of reach",
+  agg.MAX_FILTERS >= SITE.fields
+    .filter((one) => one.kind === "choice" && one.chart === true).length);
+check("combined: a request carrying exactly the cap's number of filters " +
+  "is answered",
+  askFor(capQuery(agg.MAX_FILTERS), capFields).ok === true);
+const overCap = askFor(capQuery(agg.MAX_FILTERS + 1), capFields);
+check("combined: one filter past the cap is refused, with a reason that " +
+  "names the number - the bound is on the request, so a form an admin " +
+  "grows does not grow it",
+  overCap.ok === false &&
+  overCap.error.indexOf(String(agg.MAX_FILTERS)) !== -1);
+/* The count is checked BEFORE any field name is resolved, so an
+   over-cap request costs one comparison whatever it names - and a
+   caller cannot use the ordering to learn which of their invented
+   fields the form happens to have. */
+check("combined: past the cap is refused on the count alone, before any " +
+  "field is looked up - the same refusal under the shipped spec, which " +
+  "has three of those six fields and not the other three",
+  askFor(capQuery(agg.MAX_FILTERS + 1)).error === overCap.error);
+
+/* -------------------------------------------------------------- */
+/* 10b. The AND itself, and the echo.                              */
+
+/*
+ * Five members chosen so the AND and the OR are different numbers.
+ * Three are male, three are feeders, and TWO are both - so an
+ * intersection of two is a positive proof of AND, where a union would
+ * draw four and either predicate alone draws three.
+ */
+const COMBO_AT = "2026-08-01T00:00:00.000Z";
+const CROWD = [
+  row(acct(60), COMBO_AT, record(100, 170, "male", ["feeder"], "US")),
+  row(acct(61), COMBO_AT, record(102, 171, "male", ["feeder"], "JP")),
+  row(acct(62), COMBO_AT, record(104, 172, "male", ["feedee"], "US")),
+  row(acct(63), COMBO_AT, record(106, 173, "female", ["feeder"], "US")),
+  row(acct(64), COMBO_AT, record(108, 174, "female", ["feedee"], "JP")),
+];
+const drawnCount = (answer) =>
+  drawnOf(answer).bins.reduce((n, band) => n + band.count, 0);
+
+const both = atShippedFloor(CROWD, TWO_CHIPS);
+check("combined: the population is the INTERSECTION and not the union - " +
+  "three members are male, three are feeders, and the two who are both " +
+  "are what draws",
+  both.enough === true && drawnCount(both) === 2);
+check("combined: and each predicate ALONE still draws its own three, so " +
+  "the two above are an AND rather than a narrower reading of either " +
+  "one - a union would have drawn four",
+  drawnCount(atShippedFloor(CROWD,
+    "measure=weight&filter=gender&value=male")) === 3 &&
+  drawnCount(atShippedFloor(CROWD,
+    "measure=weight&filter=roles&value=feeder")) === 3 &&
+  drawnCount(atShippedFloor(CROWD, "measure=weight")) === 5);
+check("combined: a third predicate narrows again - one member is male, " +
+  "a feeder, and in the US",
+  drawnCount(atShippedFloor(CROWD, TWO_CHIPS +
+    "&filter=country&value=US")) === 1);
+
+/* The echo is the caller's own question handed back, so the order is
+   theirs; the ANSWER must not depend on it, because AND is commutative
+   and a chip row a member reordered would otherwise redraw. */
+const withoutEcho = (answer) => {
+  const copy = Object.assign({}, answer);
+  delete copy.filters;
+  return JSON.stringify(copy);
+};
+const flipped = atShippedFloor(CROWD,
+  "measure=weight&filter=roles&value=feeder&filter=gender&value=male");
+check("combined: the order the chips arrive in changes the echo and " +
+  "nothing else",
+  withoutEcho(both) === withoutEcho(flipped) &&
+  flipped.filters[0].field === "roles" &&
+  flipped.filters[1].field === "gender");
+
+check("combined: the echo is the caller's own predicates, in their own " +
+  "order, each carrying its field and its value and nothing beside them " +
+  "(mandate 5)",
+  JSON.stringify(both.filters) === JSON.stringify([
+    { field: "gender", value: "male" },
+    { field: "roles", value: "feeder" }]));
+check("combined: Everyone echoes an empty list rather than a null pair - " +
+  "ONE shape at every count, so a page never reads a key that exists " +
+  "only when exactly one chip is set",
+  JSON.stringify(atShippedFloor(CROWD, "measure=weight").filters) === "[]" &&
+  Object.prototype.hasOwnProperty.call(both, "filters") &&
+  !Object.prototype.hasOwnProperty.call(both, "filter"));
+
+check("combined: the group makeup describes the INTERSECTION - the two " +
+  "members drawn above are both male feeders, so every cell neither of " +
+  "them holds reads zero, and the countries are their own two",
+  countIn(groupBlock(both, "gender"), "male") === 2 &&
+  countIn(groupBlock(both, "gender"), "female") === 0 &&
+  countIn(groupBlock(both, "roles"), "feeder") === 2 &&
+  countIn(groupBlock(both, "roles"), "feedee") === 0 &&
+  countIn(groupBlock(both, "country"), "US") === 1 &&
+  countIn(groupBlock(both, "country"), "JP") === 1);
+
+const emptyCross = atShippedFloor(CROWD,
+  "measure=weight&filter=gender&value=female&filter=country&value=DE");
+check("combined: an intersection nobody is in answers the honest empty " +
+  "document - the same one a filter value nobody holds already got",
+  emptyCross.enough === false && emptyCross.distribution === null &&
+  emptyCross.groups === null && emptyCross.trend === null);
+check("combined: and that empty answer names no value the group really " +
+  "holds - only the two the caller sent (mandate 5)",
+  !everyString(emptyCross).includes("US") &&
+  !everyString(emptyCross).includes("JP") &&
+  !everyString(emptyCross).includes("feeder"));
+
+/* -------------------------------------------------------------- */
+/* 10c. The floor applies to the intersection exactly as to the    */
+/*      whole (#438 scope 2, #384 ruling 2).                       */
+
+check("combined: at the shipped floor of 0 the intersection draws its " +
+  "TRUE count - the same rule as the whole population, exact",
+  both.floor === SHIPPED_FLOOR && drawnCount(both) === 2 &&
+  countIn(groupBlock(both, "gender"), "male") === 2);
+
+const raisedBoth = atRaisedFloor(CROWD, TWO_CHIPS);
+check("combined: at a raised floor the same intersection of two is " +
+  "below it and gets the honest empty document - never a smaller " +
+  "number, never a different rule",
+  raisedBoth.enough === false && raisedBoth.floor === RAISED &&
+  raisedBoth.distribution === null && raisedBoth.groups === null &&
+  raisedBoth.trend === null && raisedBoth.units === null);
+check("combined: and the WHOLE population of five draws at that same " +
+  "floor - what was suppressed above is the intersection's SIZE and not " +
+  "the act of filtering",
+  atRaisedFloor(CROWD, "measure=weight").enough === true);
+
+/* -------------------------------------------------------------- */
+/* 10d. Nothing about an individual leaks through a narrow filter  */
+/*      (#438 scope 3 - the surface the batch's consult reads      */
+/*      first).                                                    */
+/*                                                                 */
+/* Two members who differ on EVERY categorical field, so each pair */
+/* of predicates drawn across two fields from one member isolates  */
+/* exactly that member, and each pair that crosses the two matches */
+/* nobody. The claim is that those two cases come back as the same */
+/* bytes apart from the caller's own echo: a reader cannot tell    */
+/* "one person is in here" from "nobody is", and so cannot learn   */
+/* which value made the view narrow.                               */
+
+const LONE_A = { gender: "male", roles: "feeder", country: "US" };
+const LONE_B = { gender: "female", roles: "feedee", country: "JP" };
+const TWO_MEMBERS = [
+  row(acct(70), COMBO_AT,
+    record(100, 170, LONE_A.gender, [LONE_A.roles], LONE_A.country)),
+  row(acct(71), COMBO_AT,
+    record(120, 180, LONE_B.gender, [LONE_B.roles], LONE_B.country)),
+];
+const CATEGORIES = ["gender", "roles", "country"];
+const chipPair = (a, b, one, two) => "measure=weight" +
+  "&filter=" + a + "&value=" + one[a] +
+  "&filter=" + b + "&value=" + two[b];
+
+const isolating = [];
+const crossing = [];
+for (let i = 0; i < CATEGORIES.length; i += 1) {
+  for (let j = i + 1; j < CATEGORIES.length; j += 1) {
+    const a = CATEGORIES[i];
+    const b = CATEGORIES[j];
+    isolating.push(chipPair(a, b, LONE_A, LONE_A));
+    isolating.push(chipPair(a, b, LONE_B, LONE_B));
+    crossing.push(chipPair(a, b, LONE_A, LONE_B));
+    crossing.push(chipPair(a, b, LONE_B, LONE_A));
+  }
+}
+
+/* The fixture's own premise, forced before anything is asserted about
+   suppressing it: at the shipped floor of 0 every one of these pairs
+   really does draw exactly ONE member. Without this the arm below would
+   pass just as well on a fixture where nothing matched at all. */
+check("combined: every pair of chips across two fields isolates exactly " +
+  "one member at the shipped floor of 0 - the accepted disclosure #384 " +
+  "ruling 2 re-took, armed as a positive claim (" + isolating.length +
+  " pairs)",
+  isolating.length === 6 && isolating.every((query) => {
+    const drew = atShippedFloor(TWO_MEMBERS, query);
+    return drew.enough === true && drawnCount(drew) === 1;
+  }));
+check("combined: and every pair that crosses the two members matches " +
+  "nobody, so the two cases below are genuinely different questions (" +
+  crossing.length + " pairs)",
+  crossing.length === 6 && crossing.every((query) =>
+    atShippedFloor(TWO_MEMBERS, query).enough === false));
+
+check("combined: at a raised floor EVERY one of those one-member " +
+  "combinations is suppressed - no view of a single member survives " +
+  "above floor 0, whichever pair of chips built it (#438 scope 3)",
+  isolating.every((query) => {
+    const answer = atRaisedFloor(TWO_MEMBERS, query);
+    return answer.enough === false && answer.distribution === null &&
+      answer.groups === null && answer.trend === null &&
+      answer.units === null;
+  }));
+check("combined: and each of those documents carries no number but the " +
+  "floor - no count, no '0 of 1', no band residue",
+  isolating.every((query) => {
+    const numbers = everyNumber(atRaisedFloor(TWO_MEMBERS, query));
+    return numbers.length === 1 && numbers[0] === RAISED;
+  }));
+
+const narrowShapes = new Set(isolating.concat(crossing)
+  .map((query) => withoutEcho(atRaisedFloor(TWO_MEMBERS, query))));
+check("combined: a one-member combination and a combination nobody is " +
+  "in come back as the SAME document apart from the caller's own echo - " +
+  "the response never says which value made the view narrow (#438 " +
+  "scope 3)", narrowShapes.size === 1);
+
+/*
+ * The other half of scope 3, on a filtered view that DOES clear the
+ * floor: no per-field count below the floor is ever named. Three
+ * members, two of whom are male feeders and differ on country, at a
+ * floor of two - so the intersection draws and the two country cells of
+ * one person each do not.
+ */
+const NARROW = [
+  row(acct(74), COMBO_AT, record(100, 170, "male", ["feeder"], "US")),
+  row(acct(75), COMBO_AT, record(110, 175, "male", ["feeder"], "JP")),
+  row(acct(76), COMBO_AT, record(130, 185, "female", ["feedee"], "US")),
+];
+const twoDeep = Object.freeze({ floor: 2 });
+const narrowed = agg.aggregate(NARROW, ask(TWO_CHIPS), undefined, twoDeep);
+check("combined: a filtered view that CLEARS the floor still names no " +
+  "per-field count below it - the two members it draws differ on " +
+  "country, and neither country cell is named (#438 scope 3)",
+  narrowed.enough === true && narrowed.floor === 2 &&
+  narrowed.groups.length > 0 &&
+  narrowed.groups.every((block) => block.values.every((cell) =>
+    cell.count === 0 || cell.count >= 2)) &&
+  groupBlock(narrowed, "country").length === 0);
+check("combined: and the cells that DO clear it are named at their true " +
+  "value, so the arm above is suppression rather than an empty answer",
+  countIn(groupBlock(narrowed, "gender"), "male") === 2 &&
+  countIn(groupBlock(narrowed, "roles"), "feeder") === 2);
+
+/* -------------------------------------------------------------- */
+/* 10e. The route, end to end - the chips reach the aggregation.   */
+
+const comboDb = makeDb();
+const comboEnv = Object.assign({}, env, { DB: comboDb });
+const COMBO_TOKENS = [];
+for (let i = 0; i < CROWD.length; i += 1) {
+  const token = "charts-arm-combo-" + i;
+  COMBO_TOKENS.push(token);
+  comboDb._sessions.push({
+    token_hash: sha256hex(token), account_id: acct(60 + i),
+    is_admin: 0, is_dev: 0,
+    created_at: new Date().toISOString(), expires_at: future,
+  });
+  await callOn(comboEnv, "POST", "/submit", {
+    token: token,
+    body: { record: JSON.stringify(CROWD[i].record) },
+  });
+}
+
+const routeBoth = await callOn(comboEnv, "GET",
+  "/charts-data?" + TWO_CHIPS, { token: COMBO_TOKENS[0] });
+check("route: two chips reach the aggregation as two predicates ANDed - " +
+  "five members sealed, three male, three feeders, two of them both",
+  routeBoth.status === 200 && routeBoth.body.enough === true &&
+  routeBoth.body.distribution.bins
+    .reduce((n, band) => n + band.count, 0) === 2);
+check("route: and the echo hands back both predicates in the caller's " +
+  "own order",
+  JSON.stringify(routeBoth.body.filters) === JSON.stringify([
+    { field: "gender", value: "male" },
+    { field: "roles", value: "feeder" }]));
+check("route: the makeup block that comes back with a filtered picture " +
+  "describes the FILTERED population (#438 scope 2)",
+  countIn(bodyBlock(routeBoth.body, "gender"), "male") === 2 &&
+  countIn(bodyBlock(routeBoth.body, "gender"), "female") === 0);
+
+const routeDupe = await callOn(comboEnv, "GET",
+  "/charts-data?measure=weight&filter=gender&value=male" +
+  "&filter=gender&value=female", { token: COMBO_TOKENS[0] });
+check("route: two values for one field are a 400 at the door",
+  routeDupe.status === 400);
+const routeCap = await callOn(comboEnv, "GET",
+  "/charts-data?" + capQuery(agg.MAX_FILTERS + 1),
+  { token: COMBO_TOKENS[0] });
+check("route: one filter past the cap is a 400 at the door",
+  routeCap.status === 400);
+
+/*
+ * THE FLOOR REACHES A COMBINED VIEW THROUGH THE REAL SEAM. The pure
+ * arms above hand aggregate() a settings object directly; this one sets
+ * `chart.floor` in `site_content` and drives the route, so the whole
+ * chain - chartSettings(env), the ask, the intersection, the floor -
+ * is exercised the way a deployment runs it (0.9-M3-S8, #414).
+ */
+const flooredDb = makeDb([{ name: "chart.floor", value: String(RAISED) }]);
+const flooredEnv = Object.assign({}, env, { DB: flooredDb });
+const FLOOR_TOKENS = [];
+for (let i = 0; i < CROWD.length; i += 1) {
+  const token = "charts-arm-floored-" + i;
+  FLOOR_TOKENS.push(token);
+  flooredDb._sessions.push({
+    token_hash: sha256hex(token), account_id: acct(60 + i),
+    is_admin: 0, is_dev: 0,
+    created_at: new Date().toISOString(), expires_at: future,
+  });
+  await callOn(flooredEnv, "POST", "/submit", {
+    token: token,
+    body: { record: JSON.stringify(CROWD[i].record) },
+  });
+}
+const flooredAll = await callOn(flooredEnv, "GET",
+  "/charts-data?measure=weight", { token: FLOOR_TOKENS[0] });
+check("route: the admin's floor really is the one applied - five " +
+  "members clear a floor of " + RAISED + " set in site_content",
+  flooredAll.status === 200 && flooredAll.body.floor === RAISED &&
+  flooredAll.body.enough === true);
+const flooredBoth = await callOn(flooredEnv, "GET",
+  "/charts-data?" + TWO_CHIPS, { token: FLOOR_TOKENS[0] });
+check("route: and the same request that drew two members at floor 0 is " +
+  "suppressed at that floor - one rule, applied to the intersection " +
+  "exactly as it is applied to the whole",
+  flooredBoth.status === 200 && flooredBoth.body.enough === false &&
+  flooredBoth.body.distribution === null &&
+  flooredBoth.body.groups === null &&
+  flooredBoth.body.note === "Not enough people for this view.");
+check("route: that suppressed answer still echoes the caller's own two " +
+  "chips and carries no number but the floor",
+  JSON.stringify(flooredBoth.body.filters) === JSON.stringify([
+    { field: "gender", value: "male" },
+    { field: "roles", value: "feeder" }]) &&
+  everyNumber(Object.assign({}, flooredBoth.body, { filters: [] }))
+    .join(",") === String(RAISED));
+
 /* ------------------------------------------------------------------ */
-const EXPECTED = 189;
+const EXPECTED = 237;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
