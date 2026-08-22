@@ -209,6 +209,15 @@ function makeDb(seed) {
       return { meta: { changes: row ? 1 : 0 } };
     }
     if (sql.startsWith("SELECT account_id FROM membership")) {
+      /* One read made to fail, named by the role it asks for
+         (0.9-M3-S15 fix wave 2, review finding F1). Failing the whole
+         stub would 500 the request before the branch on trial ran; what
+         is on trial is a sign-in decided while THIS read did not
+         answer. */
+      if (seed && seed.failRole && args[0] === seed.failRole) {
+        throw new Error("D1_ERROR: the membership read for role '" +
+          args[0] + "' did not answer");
+      }
       return {
         results: membership
           .filter((row) => row.role === args[0])
@@ -234,6 +243,34 @@ function makeDb(seed) {
         if (m) existing[m[1]] = incoming[m[2]];
       }
       return { meta: { changes: 1 } };
+    }
+    /* The three reads GET /admin-departed issues (0.9-M3-S15, #420).
+       They are here because the departed list is the only reader of the
+       numeric id a sign-in seals, so the write half is witnessed by
+       driving that route against the row THIS sign-in wrote - nothing
+       seeded by hand. The stale pre-filter and the label lookup are
+       served from the same two collections the sign-in path already
+       fills, so an arm cannot accidentally check a row the Worker did
+       not write. */
+    if (sql.startsWith("SELECT account_id, last_seen_at FROM directory")) {
+      const results = [...directory.values()]
+        .filter((row) => row.last_seen_at < args[0])
+        .sort((a, b) => (a.last_seen_at < b.last_seen_at ? -1 : 1))
+        .map((row) => ({
+          account_id: row.account_id, last_seen_at: row.last_seen_at,
+        }));
+      return { results: results };
+    }
+    if (sql.startsWith("SELECT ciphertext FROM directory")) {
+      const row = directory.get(args[0]);
+      return row ? { ciphertext: row.ciphertext } : null;
+    }
+    if (sql.startsWith("SELECT account_id, label FROM membership")) {
+      return {
+        results: membership.map((row) => ({
+          account_id: row.account_id, label: row.label || null,
+        })),
+      };
     }
     throw new Error("the D1 stub was handed a statement it does not " +
       "recognize, which means the auth path changed shape without this " +
@@ -835,6 +872,108 @@ check("and it is that constant the group check is bounded by",
     JSON.stringify(left.body) === JSON.stringify(unknown.body));
 }
 
+/*
+ * A SIGN-IN NEVER SAYS "NOT ALLOWED" OVER AN UNREADABLE ALLOW LIST
+ * (0.9-M3-S15 fix wave 2, review finding F1).
+ *
+ * ALWAYS_ALLOW is checked before the bot, so the answer to "may this
+ * person in regardless of the group" is decided by a read of the
+ * `membership` table. That read used to answer a thrown query with the
+ * empty set, which reads as "not on the list" - so one D1 error could
+ * refuse somebody an operator had explicitly allowed, and tell them
+ * they are not a member of the group. That is a claim the Worker was
+ * not entitled to make.
+ *
+ * TWO PROPERTIES, AND THEY PULL IN OPPOSITE DIRECTIONS, which is why
+ * both are pinned here. A failed list read must not lock out members
+ * the GROUP still confirms - refusing every sign-in during a partial
+ * D1 problem would be a worse outage than the one that caused it. And
+ * a failed list read must not be spent as a refusal, because the
+ * unread list may have been holding this person open. So: the bot's
+ * "member" still signs in, and anything else answers as this Worker
+ * answers any error rather than as a verdict about membership.
+ *
+ * AND NOTHING IS REVOKED on that answer. Ending sessions is the other
+ * irreversible act this path can take, and a departure the operator's
+ * list may have overridden is not grounds for it.
+ */
+{
+  const { status, body, bot } = await signIn({
+    seed: { failRole: "always_allow" }, bot: memberAnswer });
+  check("with the always_allow read failing, a member the GROUP still " +
+    "confirms signs in normally - an unreadable list is not an outage " +
+    "for everybody", status === 200 && body && body.ok === true &&
+    bot.calls.length === 1);
+}
+
+{
+  const { status, body } = await signIn({
+    seed: { failRole: "always_allow" }, bot: leftAnswer });
+  check("with that read failing, a sign-in the bot would refuse is NOT " +
+    "told it is not a member - the list that might have allowed it is " +
+    "exactly what could not be read", status !== 403 &&
+    !/members of the group only/.test(String((body || {}).error)));
+  check("it answers as this Worker answers any error instead, so the " +
+    "page shows a failure rather than a verdict",
+    status === 500 && body && body.error === "Something went wrong.");
+}
+
+{
+  const token = "canary-allow-list-token-belonging-to-nobody";
+  const soon = new Date(Date.now() + 3600 * 1000).toISOString();
+  const db = makeDb({ failRole: "always_allow", sessions: [{
+    token_hash: sha256hex(token), account_id: ACCOUNT_ID, is_admin: 0,
+    is_dev: 0, created_at: new Date().toISOString(), expires_at: soon,
+  }] });
+  await signIn({ db: db, bot: leftAnswer });
+  check("and it revokes NOTHING - a departure the unread list may have " +
+    "overridden is not grounds for ending sessions", db.sessions.size === 1);
+}
+
+/*
+ * AN always_allow ROW IN THE WRONG LETTER CASE STILL GRANTS NOTHING
+ * (0.9-M3-S15 fix wave 3, review finding F1).
+ *
+ * THIS IS THE HALF THAT MUST NOT MOVE. Fix wave 3 made the departed
+ * check read the operator's list without regard to letter case,
+ * because the erase's own DELETE matches that way and a guard that
+ * could not see the row let the erase destroy it. That is PROTECTION.
+ * Sign-in asks a different question - may this person in - and the
+ * answer there is unchanged: a row spelled in a case nothing in this
+ * Worker writes is a row nobody can prove was meant, and admitting
+ * somebody on the strength of it would widen an authentication
+ * boundary that no ruling widened.
+ *
+ * Grants nothing, protects everything - and the protecting half is
+ * armed in tests/departed-cleanup.test.mjs. Both directions here: the
+ * same row spelled the way this Worker writes it DOES bypass, so the
+ * refusal below is the case check working and not the bypass being
+ * broken outright.
+ */
+{
+  const rowFor = (accountId) => [{ account_id: accountId,
+    role: "always_allow", label: "written-by-hand",
+    added_at: "2020-01-01T00:00:00.000Z", added_by: accountId }];
+
+  const near = await signIn({
+    seed: { membership: rowFor(ACCOUNT_ID.toUpperCase()) },
+    bot: leftAnswer });
+  check("an always_allow row in UPPER-CASE hex does not let a leaver " +
+    "sign in - the near-miss row grants nobody anything",
+    near.status === 403 || near.status === 401);
+  check("and the bot WAS asked about them, so that row was never read " +
+    "as a bypass", near.bot.calls.length === 1);
+
+  const exact = await signIn({
+    seed: { membership: rowFor(ACCOUNT_ID) }, bot: leftAnswer });
+  check("the same row spelled the way this Worker writes it DOES " +
+    "bypass, so the refusal above is the letter case and not a broken " +
+    "list", exact.status === 200 &&
+    Boolean(exact.body && exact.body.ok === true));
+  check("...and that one asked the bot nothing at all",
+    exact.bot.calls.length === 0);
+}
+
 /* ------------------------------------------------------------------ */
 /* 7. The 401/403 contract OPERATIONS.md's check table pins.           */
 
@@ -993,6 +1132,48 @@ check("and it is that constant the group check is bounded by",
         String(value).includes(HANDLE)));
 }
 
+/* THE WRITE HALF OF THE SEALED NUMERIC ID (0.9-M3-S15, #420; the owner
+   ruling of 2026-08-21). server/worker.js seals the numeric id into the
+   directory record at exactly one place - this sign-in - and
+   departedVerdict() is its only reader. Every arm in
+   tests/departed-cleanup.test.mjs builds its directory rows by hand, so
+   the read half is proven there and the write half is proven by nothing
+   at all: deleting `telegramId: String(user.id)` left the entire gate
+   green. These two checks are what witnesses it, and they are HERE
+   because this is the only file that drives a real verified sign-in.
+   The first opens the record the Worker actually sealed; the second
+   hands that same record to the route that consumes it. */
+{
+  const { db, env, body, status } = await signIn({
+    bot: { ok: true, result: { status: "creator" } } });
+  const row = db.directory.get(ACCOUNT_ID);
+  const dstore = await store.openStore({ STORE_SECRET });
+  const opened = row ? await dstore.openDirectory(
+    new Uint8Array(Buffer.from(row.ciphertext, "base64")),
+    { accountId: ACCOUNT_ID, recordId: DIRECTORY_SLOT }) : "";
+  let parsed = {};
+  try { parsed = JSON.parse(opened); } catch (error) { parsed = {}; }
+  check("the sealed record carries the NUMERIC TELEGRAM ID the sign-in " +
+    "had in hand, beside the handle and the role - the write half the " +
+    "departed check is the only reader of",
+    status === 200 && parsed.telegramId === NUMERIC_ID);
+
+  /* Staleness is a fact about time, so time is the only thing moved
+     here: the ciphertext - the bytes under test - stays exactly what
+     the Worker sealed a moment ago, and the pre-filter that picks
+     candidates is what the older date reaches. */
+  if (row) row.last_seen_at = "2020-01-01T00:00:00.000Z";
+  const { value } = await withSeams(botAnswering(leftAnswer), () =>
+    send(worker, env, "GET", "/admin-departed",
+      { Origin: ORIGIN, Authorization: "Bearer " + body.session }));
+  const departed = (value.body && value.body.departed) || [];
+  check("and departedVerdict() reads THAT record: the row this sign-in " +
+    "wrote is asked about by numeric id and judged departed, so the " +
+    "write and its only reader are proven against each other end to end",
+    value.status === 200 && departed.length === 1 &&
+    departed[0].accountId === ACCOUNT_ID && departed[0].status === "left");
+}
+
 /* ------------------------------------------------------------------ */
 /* 9. Nothing secret reaches a log line (mandate 7).                   */
 
@@ -1123,11 +1304,15 @@ async function mutant(label, from, to) {
 }
 
 {
+  /* The branch is wrapped in answer() since 0.9-M3-S15 fix wave 2 -
+     every verdict reached past the always_allow read carries whether
+     that read answered - so the fixture edits the word inside the
+     wrapper rather than the whole one-line return it used to be. */
   const mutated = await mutant("the unconfigured-chat-id verdict flipped",
-    'if (!env.TELEGRAM_GROUP_CHAT_ID) return { standing: "unknown", ' +
-      "status: null };",
-    'if (!env.TELEGRAM_GROUP_CHAT_ID) return { standing: "member", ' +
-      "status: null };");
+    "  if (!env.TELEGRAM_GROUP_CHAT_ID) {\n" +
+      '    return answer({ standing: "unknown", status: null });\n  }',
+    "  if (!env.TELEGRAM_GROUP_CHAT_ID) {\n" +
+      '    return answer({ standing: "member", status: null });\n  }');
   const { status } = await signIn({ worker: mutated,
     env: { TELEGRAM_GROUP_CHAT_ID: undefined } });
   check("mutation: a Worker that defaults open on a missing chat id " +
@@ -1241,7 +1426,7 @@ async function mutant(label, from, to) {
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 106;
+const EXPECTED = 116;
 console.log(failures
   ? `\ntelegram-auth FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
