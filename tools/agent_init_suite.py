@@ -1214,7 +1214,7 @@ try:
           "first six already set",
           agent_init.PORT_BLOCKS[6:] == [(8190, 8195), (8200, 8205),
                                          (8210, 8215), (8220, 8225)])
-    every_block = agent_init.PORT_BLOCKS + [agent_init.PRIMARY_BLOCK]
+    every_block = [*agent_init.PORT_BLOCKS, agent_init.PRIMARY_BLOCK]
     overlaps = [(a, b) for i, a in enumerate(every_block)
                for b in every_block[i + 1:]
                if a[0] <= b[1] and b[0] <= a[1]]
@@ -1228,16 +1228,16 @@ try:
     # section F above - is the SAME os.open(O_CREAT | O_EXCL) pattern
     # S23 hardened in tools/prime_lock.py, and it only ever caught
     # FileExistsError. The same Windows quirk documented there (NTFS can
-    # present a file mid-delete as PermissionError/ERROR_ACCESS_DENIED
-    # instead of FileExistsError/ERROR_FILE_EXISTS for a narrow window)
+    # present a file mid-delete as "access denied" (PermissionError)
+    # instead of "file exists" (FileExistsError) for a narrow window)
     # crashes this call uncaught here instead of being retried as
     # ordinary contention. Injected deterministically rather than chased
     # through a live race, for the same reason S23's own suite did: this
     # is a real Windows filesystem fact, not a fixture ordering bug.
     # Patches the bare `os.open` this file already imports at module
-    # scope - agent_init.py reaches the SAME os module object through
-    # its own `import os`, so patching the name here reaches its call
-    # too, restored in `finally` before anything else in the suite can
+    # scope. agent_init.py imports that same os module through its own
+    # `import os`, so patching the name here reaches its call too,
+    # restored in `finally` before anything else in the suite can
     # observe it.
     print("\n--- F5 (#441, carried from S23's review on #436): a "
           "transient PermissionError racing take_lease's exclusive "

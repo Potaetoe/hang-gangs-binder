@@ -990,15 +990,16 @@ def take_lease(repo, branch, state=None, requested=None, reclaim=False):
             # Lost the race between the read above and here - or, on
             # Windows, a moment from not existing. The same NTFS
             # delete-pending window tools/prime_lock.py's own exclusive
-            # creates already catch (S23, #436) can present a concurrent
-            # release's os.remove(path) as ERROR_ACCESS_DENIED
-            # (PermissionError) rather than ERROR_FILE_EXISTS for a few
-            # microseconds - the same fact ("someone else has this path
-            # right now"), two different Windows codes depending on
-            # timing. Either way the other agent holds it, or just did;
-            # try the next block rather than letting the transient
-            # exception crash the whole allocation (carried into this
-            # slice's scope by #441's own review of #436's finding).
+            # creates already catch (S23, #436): a concurrent release
+            # deleting this same lease file can leave a fresh exclusive
+            # create seeing "access denied" (PermissionError) instead of
+            # "file exists" (FileExistsError) for a few microseconds -
+            # the same fact ("someone else has this path right now"),
+            # two different Windows codes depending on timing. Either
+            # way the other agent holds it, or just did; try the next
+            # block rather than letting the transient exception crash
+            # the whole allocation (carried into this slice's scope by
+            # #441's own review of #436's finding).
             held.append((block, read_lease(path) or {}))
             continue
         write_new_lease(handle, mine, branch, block)
