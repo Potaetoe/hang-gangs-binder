@@ -2605,8 +2605,29 @@ check("route: that suppressed answer still echoes the caller's own two " +
   everyNumber(Object.assign({}, flooredBoth.body, { filters: [] }))
     .join(",") === String(RAISED));
 
+/* -------------------------------------------------------------- */
+/* 10f. The trend's population is the INTERSECTION too - the same */
+/*      claim 10b makes for the group makeup (S24's independent    */
+/*      review, #438 comment 5377047859, finding F2).               */
+/*                                                                 */
+/* The group-makeup block above is already proved to describe the  */
+/* filtered set (10b, 10c). Nothing proved the same for the trend, */
+/* so a trend recomputed over the WHOLE binder inside a filtered    */
+/* document passed every check in this file. `both` is the same    */
+/* two-member intersection 10b drew from CROWD's five members, all  */
+/* five of whom submitted in the same month - so the trend's one    */
+/* point counts everyone unless the population it averages really   */
+/* is the same two the distribution drew, and not the whole five.   */
+
+check("combined: the trend's population is the INTERSECTION, not the " +
+  "whole binder - the trend's one point counts the same two members " +
+  "the distribution drew, not CROWD's other three (S24 review F2)",
+  pointsOf(both).length === 1 &&
+  pointsOf(both)[0].people === drawnCount(both) &&
+  pointsOf(both)[0].people === 2);
+
 /* ------------------------------------------------------------------ */
-const EXPECTED = 237;
+const EXPECTED = 238;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

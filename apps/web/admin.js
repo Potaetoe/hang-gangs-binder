@@ -1,5 +1,6 @@
 /*
- * The admin page. Settings, Roles and the Change log - nothing else.
+ * The admin page. Settings, Roles, Fields and the Change log - nothing
+ * else.
  *
  * 0.9-M3-S10 (#416) rebuilds this page for the keyless world: the
  * keyfile-decrypt tool, the entry exports (CSV/xlsx/JSON) and the
@@ -10,14 +11,18 @@
  * rather than reconnecting them to a plaintext /export: the M3 design
  * record (#385 §4) rules that no admin surface exposes a current
  * member's data, and a page handing an admin every member's entries is
- * exactly that. Nothing here fetches or renders a submission.
+ * exactly that. Nothing here fetches or renders a submission - Fields
+ * (0.9-M3-S13, #433) is no exception: it draws the SPEC (GET /spec),
+ * never a count of who picked what.
  *
- * What is left is three cards, each reading and writing through the
+ * What is left is four cards, each reading and writing through the
  * admin session alone: Settings (GET/POST /content), Roles (GET/POST/
- * DELETE /membership, plus /me's adminVia), and the Change log (GET
- * /admin-log). Split like every other page here - the pure half is
- * exported as BinderAdmin and tested in tests/admin-page.test.mjs; the
- * wiring below returns early when there is no document.
+ * DELETE /membership, plus /me's adminVia), Fields (GET /spec, PUT/
+ * DELETE /admin-fields/<id> - the categorical form builder, #433
+ * against 0.9-M3-S11's landed contract on #419), and the Change log
+ * (GET /admin-log). Split like every other page here - the pure half
+ * is exported as BinderAdmin and tested in tests/admin-page.test.mjs;
+ * the wiring below returns early when there is no document.
  *
  * THE CONTRACT SOURCE, superseding the ticket's own §5 in three places
  * (S8's completion on #414, comment 5370945709, read before this build
@@ -358,6 +363,187 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* Fields (#433; the ruled design #385 §6-§8, against 0.9-M3-S11's     */
+  /* landed Worker contract on #419).                                    */
+
+  /*
+   * The id charset and the two bounds, mirrored from server/worker.js's
+   * own SPEC_ID, MAX_FIELD_LABEL and MAX_FIELD_VALUES (0.9-M3-S11,
+   * #419) - the same courtesy every other validator on this page
+   * already takes: refusing before a round trip, never inventing a
+   * rule the Worker does not also hold.
+   */
+  const FIELD_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,47}$/;
+  const MAX_FIELD_ID = 48;
+  const MAX_FIELD_LABEL = 64;
+  const MAX_FIELD_VALUES = 100;
+
+  function validateFieldId(raw) {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (!FIELD_ID_PATTERN.test(text)) {
+      return { ok: false, message: "A field id is lowercase letters, " +
+        "digits, hyphens and underscores, up to " + MAX_FIELD_ID +
+        " characters, starting with a letter or digit." };
+    }
+    return { ok: true, value: text };
+  }
+
+  function validateFieldLabel(raw) {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (!text) {
+      return { ok: false, message: "A field needs a label - the words " +
+        "a member reads beside the box." };
+    }
+    if (text.length > MAX_FIELD_LABEL) {
+      return { ok: false, message: "A field's label is " +
+        MAX_FIELD_LABEL + " characters or fewer." };
+    }
+    return { ok: true, value: text };
+  }
+
+  function validateValueLabel(raw) {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (!text) {
+      return { ok: false, message: "A value needs a label." };
+    }
+    if (text.length > MAX_FIELD_LABEL) {
+      return { ok: false, message: "A value's label is " +
+        MAX_FIELD_LABEL + " characters or fewer." };
+    }
+    return { ok: true, value: text };
+  }
+
+  /* One label per line, trimmed, empty lines dropped - the "starting
+   * values" box on the add-a-field form. MAX_FIELD_VALUES is read
+   * where the list is actually sent, not here, so a paste past it is
+   * refused with the Worker's own sentence rather than a second,
+   * possibly-different one. */
+  function parseValueLines(raw) {
+    const text = typeof raw === "string" ? raw : "";
+    return text.split("\n").map((line) => line.trim())
+      .filter((line) => line !== "");
+  }
+
+  /*
+   * Which of the effective spec's fields this card can build (#385
+   * §6): choice fields only. Everything else - weight, height, bmi,
+   * over18, and any future numeric or consent kind - is shown, never
+   * edited, for the one sentence server/worker.js's NOT_A_CHOICE_FIELD
+   * already gives a refused write.
+   */
+  function categoricalFields(spec) {
+    const fields = spec && Array.isArray(spec.fields) ? spec.fields : [];
+    return {
+      choice: fields.filter((f) => f && f.kind === "choice"),
+      other: fields.filter((f) => f && f.kind !== "choice"),
+    };
+  }
+
+  const FIELD_READ_ONLY_REASON = "Its units and chart bands are part " +
+    "of a release somebody read, not something to edit here.";
+
+  // F5 (#433 fix wave): says nothing about a label editor, because
+  // fieldBlock draws none for any field. server/worker.js's own
+  // refusal for a choicesFrom write says its VALUES are not edited but
+  // its label is - true of the route; carrying that same shape onto
+  // this page made it a promise about the CARD, which is false, since
+  // no field's label is editable here. Not built, because renaming a
+  // field's label was never in this ticket's scope (#385 §6-§8 name
+  // values, not the field label itself).
+  const VALUES_OUTSIDE_REASON = "This field's choices live outside " +
+    "the form spec, so they are not edited here.";
+
+  /* A rename's two plain-words choices and the one-sentence
+   * consequence of each (#385 §8) - the words THIS CARD shows before
+   * it sends, mirroring server/worker.js's own RENAME_NEEDS_MODE
+   * sentence rather than inventing a second account of the same rule. */
+  const RENAME_CHOICES = Object.freeze([
+    { mode: "relabel", label: "Same thing, new word",
+      consequence: "Entries already saved follow the new word " +
+        "instantly." },
+    { mode: "replace", label: "A different thing",
+      consequence: "The old value retires under the word it had; " +
+        "entries keep it until someone re-picks." },
+  ]);
+
+  /*
+   * WHY UN-RETIRE IS SESSION-SCOPED (the judgment call in the
+   * completion on #433). GET /spec answers the EFFECTIVE spec - what a
+   * member reads - and server/worker.js's own applyOverlay() splices a
+   * retired field out of it; offeredValues() filters a retired value
+   * out of `choices` the same way. #419's own completion proves an
+   * admin session reads the SAME bytes as a member - there is no
+   * admin view of the spec, only the one view. So no route ever hands
+   * this page a retired item's id once it has left that response: the
+   * Worker's own internal bookkeeping (server/worker.js's
+   * currentValues()) keeps it, but nothing serves it out.
+   *
+   * What follows is the most this card can honestly do about that: a
+   * roster of every choice field and value THIS PAGE has itself seen
+   * offered THIS SESSION, kept even after a later read stops offering
+   * it. mergeFieldsRoster ADDS and UPDATES; it never DROPS an id that
+   * disappears, because the disappearance is exactly the fact
+   * "retired, as far as this page knows" needs to survive. A field or
+   * value retired before this page was ever opened - by this admin
+   * last week, or by another admin just now in a different tab - never
+   * enters the roster and is not offered back; typing the same words
+   * again makes a NEW value under a NEW id (server/worker.js's mintId
+   * steps around every id a field has ever had, retired ones
+   * included), which is a real limit of the contract, not a bug here.
+   */
+  function mergeFieldsRoster(known, spec) {
+    const next = new Map(known);
+    for (const field of categoricalFields(spec).choice) {
+      const existing = next.get(field.name);
+      const values = new Map(existing ? existing.values : []);
+      for (const v of field.choices || []) {
+        if (v && typeof v.value === "string") values.set(v.value, v.label);
+      }
+      next.set(field.name, { label: field.label, values: values });
+    }
+    return next;
+  }
+
+  /*
+   * The roster plus the live spec, turned into what the card draws:
+   * one entry per field this page has ever offered this session, each
+   * carrying every value it has ever offered - offered ones first, in
+   * the order the Worker sent them, retired-as-known ones after.
+   * Active fields render in the spec's own order; fields this session
+   * has retired (not present in `spec` any more, but still in `known`)
+   * render after them, in the order this roster first met them.
+   */
+  function fieldsRosterView(known, spec) {
+    const active = categoricalFields(spec).choice;
+    const activeIds = new Set(active.map((f) => f.name));
+    const out = [];
+
+    for (const field of active) {
+      const entry = known.get(field.name);
+      const knownValues = entry ? entry.values : new Map();
+      const offeredIds = new Set(
+        (field.choices || []).map((v) => v.value));
+      const values = (field.choices || []).map((v) =>
+        ({ id: v.value, label: v.label, retired: false }));
+      for (const [id, label] of knownValues) {
+        if (!offeredIds.has(id)) values.push({ id, label, retired: true });
+      }
+      out.push({ id: field.name, label: field.label, active: true,
+        outside: Boolean(field.choicesFrom), values: values });
+    }
+
+    for (const [id, entry] of known) {
+      if (activeIds.has(id)) continue;
+      const values = [...entry.values].map(([vid, label]) =>
+        ({ id: vid, label: label, retired: true }));
+      out.push({ id: id, label: entry.label, active: false,
+        outside: false, values: values });
+    }
+
+    return out;
+  }
+
+  /* ---------------------------------------------------------------- */
   /* The Change log (#416 item 4; #385 §5).                            */
 
   /*
@@ -487,6 +673,17 @@
     refusalFor: refusalFor,
     addedNotice: addedNotice,
     removalStep: removalStep,
+    FIELD_ID_PATTERN: FIELD_ID_PATTERN,
+    validateFieldId: validateFieldId,
+    validateFieldLabel: validateFieldLabel,
+    validateValueLabel: validateValueLabel,
+    parseValueLines: parseValueLines,
+    categoricalFields: categoricalFields,
+    FIELD_READ_ONLY_REASON: FIELD_READ_ONLY_REASON,
+    VALUES_OUTSIDE_REASON: VALUES_OUTSIDE_REASON,
+    RENAME_CHOICES: RENAME_CHOICES,
+    mergeFieldsRoster: mergeFieldsRoster,
+    fieldsRosterView: fieldsRosterView,
     logLine: logLine,
     IDLE_WINDOW: IDLE_WINDOW,
     idleVerdict: idleVerdict,
@@ -913,6 +1110,529 @@
     }
 
     /* ------------------------------------------------------------ */
+    /* Fields (#433).                                                */
+
+    // The live effective spec and this session's own roster of what it
+    // has ever offered - see the block comment above
+    // mergeFieldsRoster/fieldsRosterView in the pure half for why the
+    // roster exists at all. Both reset on idle sign-out
+    // (clearAdminData, below), the same as every other cache this page
+    // keeps.
+    let currentSpec = null;
+    let fieldsKnown = new Map();
+
+    function sayFields(message, tone) {
+      UI.setStatus($("fields-status"), message, tone);
+    }
+
+    function handleFieldsRefusal(status, payload) {
+      const refusal = refusalFor(status, payload);
+      if (refusal.action === "signed-out") {
+        sessionEnded(sayFields);
+        return true;
+      }
+      sayFields(refusal.message, "bad");
+      return false;
+    }
+
+    // The field's CURRENT offered list, read fresh from the live spec
+    // rather than from the roster - a write sends the whole desired
+    // state (server/worker.js's own mergeValues), so what a value edit
+    // builds on has to be what is actually stored now, never a memory
+    // that may have drifted.
+    function liveChoices(fieldId) {
+      const fields = (currentSpec && currentSpec.fields) || [];
+      const field = fields.filter((f) => f && f.name === fieldId)[0];
+      return field && Array.isArray(field.choices)
+        ? field.choices.map((v) => ({ id: v.value, label: v.label }))
+        : [];
+    }
+
+    function putField(id, body) {
+      return fetch(
+        config.endpoint + "/admin-fields/" + encodeURIComponent(id), {
+          method: "PUT",
+          headers: Object.assign(
+            { "Content-Type": "application/json" },
+            root.BinderSession.authorization()),
+          body: JSON.stringify(body),
+        });
+    }
+
+    function deleteField(id) {
+      return fetch(
+        config.endpoint + "/admin-fields/" + encodeURIComponent(id), {
+          method: "DELETE",
+          headers: root.BinderSession.authorization(),
+        });
+    }
+
+    // The write went through but the read that was meant to confirm it
+    // failed - F4, #433 fix wave. The card still shows whatever the
+    // LAST successful read drew, which is now stale, and the point of
+    // this sentence is to say so rather than let the write's own
+    // successMessage ("Added.", "Retired." …) print over the silence.
+    const STALE_AFTER_WRITE = "Saved, but the list could not be read " +
+      "back afterward - what is shown below may be out of date.";
+
+    // Every field/value write on this card is: send, re-read /spec so
+    // what is shown is what is stored (ticket item 4), say what
+    // happened. One function so no call site invents its own order of
+    // those three steps. Returns whether the WRITE itself was accepted
+    // (true/false) - never the re-read's own outcome - so a caller
+    // like addValue's click handler (F2/F3, #433 fix wave) knows
+    // whether to clear what the admin typed: only a write the Worker
+    // actually accepted earns that, a refusal keeps it exactly as the
+    // Roles card's own "Add" already does.
+    async function sendFieldWrite(request, successMessage) {
+      sayFields("Saving…", null);
+      let response;
+      try {
+        response = await request();
+      } catch (error) {
+        detail(why(error));
+        sayFields("That could not be sent.", "bad");
+        return false;
+      }
+      if (sessionRefused(response, sayFields)) return false;
+      if (!response.ok) {
+        handleFieldsRefusal(response.status, await refusalBody(response));
+        return false;
+      }
+      const reread = await loadFields();
+      if (reread === "ok") {
+        sayFields(successMessage, null);
+        loadLog();
+      } else if (reread === "failed") {
+        sayFields(STALE_AFTER_WRITE, "bad");
+      }
+      // reread === "signed-out": loadFields already said so and is
+      // navigating away - nothing here should say anything more.
+      return true;
+    }
+
+    function retireField(id) {
+      return sendFieldWrite(() => deleteField(id), "Retired.");
+    }
+
+    // Un-retiring a FIELD sends no `values` - handleWriteField then
+    // keeps currentValues(shipped, held), which is exactly what the
+    // field held at the moment it was retired (server/worker.js,
+    // handleRetireField). Reachable only for a field this roster still
+    // knows the id of.
+    function unretireField(id) {
+      return sendFieldWrite(() => putField(id, { retired: false }),
+        "Restored.");
+    }
+
+    function retireValue(fieldId, valueId) {
+      const remaining = liveChoices(fieldId)
+        .filter((v) => v.id !== valueId);
+      return sendFieldWrite(() => putField(fieldId, { values: remaining }),
+        "Retired.");
+    }
+
+    // The value's id and label come from THIS SESSION'S roster (the
+    // one place either survives once the Worker stops offering it) -
+    // never invented, never re-minted, so the entries members already
+    // saved under that id are the ones this brings back.
+    function unretireValue(fieldId, valueId, label) {
+      const values = liveChoices(fieldId)
+        .concat([{ id: valueId, label: label, retired: false }]);
+      return sendFieldWrite(() => putField(fieldId, { values: values }),
+        "Restored.");
+    }
+
+    function addValue(fieldId, label) {
+      const values = liveChoices(fieldId).concat([{ label: label }]);
+      return sendFieldWrite(() => putField(fieldId, { values: values }),
+        "Added.");
+    }
+
+    function moveValue(fieldId, valueId, delta) {
+      const values = liveChoices(fieldId);
+      const at = values.findIndex((v) => v.id === valueId);
+      const to = at + delta;
+      if (at === -1 || to < 0 || to >= values.length) return;
+      const reordered = values.slice();
+      const moved = reordered.splice(at, 1)[0];
+      reordered.splice(to, 0, moved);
+      return sendFieldWrite(() => putField(fieldId, { values: reordered }),
+        "Reordered.");
+    }
+
+    function renameValue(fieldId, valueId, newLabel, mode) {
+      const values = liveChoices(fieldId).map((v) =>
+        v.id === valueId ? { id: v.id, label: newLabel } : v);
+      return sendFieldWrite(
+        () => putField(fieldId, { values: values, mode: mode }),
+        "Renamed.");
+    }
+
+    function addField(id, label, valueLines) {
+      const body = { label: label };
+      if (valueLines.length) {
+        body.values = valueLines.map((l) => ({ label: l }));
+      }
+      return sendFieldWrite(() => putField(id, body), "Added.");
+    }
+
+    /* -- Drawing. -- */
+
+    // F1 (#433 fix wave): `wrap-row-value` belongs on the id, not the
+    // label. theme.css's own comment on ".row.wrap-row > .wrap-row-value"
+    // says what that class is for - "a value nobody bounded to a single
+    // word" - and that is the id, not the label: FIELD_ID_PATTERN never
+    // allows a space (lowercase letters, digits, hyphens, underscores
+    // only), so a field id near its 48-character maximum is one
+    // unbroken run with no natural break point, exactly like the
+    // 64-hex account id the comment names. A label is admin-typed
+    // prose that almost always wraps on its own spaces. Putting the id
+    // in the flex:1 slot (rather than in plain `.hint`, which does not
+    // grow to claim the row's slack) is what let the id spill: `.hint`
+    // took its own untouched max-content width, and the flex:1 label
+    // beside it - basis 0% - was left with nothing, rendering 0px wide.
+    function fieldHeaderRow(view) {
+      const row = document.createElement("div");
+      row.className = "row wrap-row";
+      const name = document.createElement("span");
+      name.className = "hint";
+      name.textContent = view.label + (view.active ? "" : " (retired)");
+      row.appendChild(name);
+      const id = document.createElement("span");
+      id.className = "wrap-row-value";
+      id.textContent = view.id;
+      row.appendChild(id);
+      return row;
+    }
+
+    // One value's own row plus its buttons plus its (hidden until
+    // asked for) rename mini-form. `position` is this value's index
+    // and the count of OFFERED values, among offered ones only - "Move
+    // up"/"Move down" reorder what is actually sent, so a retired
+    // value (already excluded from that list) never takes a slot in
+    // it.
+    function valueBlock(view, value, position) {
+      const block = document.createElement("div");
+      block.className = "stack-tight";
+
+      // Same swap as fieldHeaderRow, same reason (F1, #433 fix wave):
+      // the id is the one string here with no natural break point.
+      const labelRow = document.createElement("div");
+      labelRow.className = "row wrap-row";
+      const name = document.createElement("span");
+      name.className = "hint";
+      name.textContent = value.label + (value.retired ? " (retired)" : "");
+      labelRow.appendChild(name);
+      const idSpan = document.createElement("span");
+      idSpan.className = "wrap-row-value";
+      idSpan.textContent = value.id;
+      labelRow.appendChild(idSpan);
+      block.appendChild(labelRow);
+
+      const buttons = document.createElement("div");
+      buttons.className = "row buttons";
+
+      if (value.retired) {
+        const restore = document.createElement("button");
+        restore.type = "button";
+        restore.className = "secondary";
+        restore.textContent = "Bring back";
+        restore.addEventListener("click", function () {
+          unretireValue(view.id, value.id, value.label);
+        });
+        buttons.appendChild(restore);
+        block.appendChild(buttons);
+        return block;
+      }
+
+      const up = document.createElement("button");
+      up.type = "button";
+      up.className = "secondary";
+      up.textContent = "Move up";
+      up.disabled = position.index === 0;
+      up.addEventListener("click", function () {
+        moveValue(view.id, value.id, -1);
+      });
+      buttons.appendChild(up);
+
+      const down = document.createElement("button");
+      down.type = "button";
+      down.className = "secondary";
+      down.textContent = "Move down";
+      down.disabled = position.index === position.count - 1;
+      down.addEventListener("click", function () {
+        moveValue(view.id, value.id, 1);
+      });
+      buttons.appendChild(down);
+
+      const rename = document.createElement("button");
+      rename.type = "button";
+      rename.className = "secondary";
+      rename.textContent = "Rename";
+      buttons.appendChild(rename);
+
+      const retire = document.createElement("button");
+      retire.type = "button";
+      retire.className = "secondary";
+      retire.textContent = "Retire";
+      retire.addEventListener("click", function () {
+        retireValue(view.id, value.id);
+      });
+      buttons.appendChild(retire);
+
+      block.appendChild(buttons);
+
+      // #385 §8: the rename form asks what the new word means BEFORE
+      // it sends anything - the two buttons below ARE the send, since
+      // picking a mode is picking an action, not a third step after it.
+      const form = document.createElement("div");
+      form.className = "stack-tight";
+      form.hidden = true;
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = value.label;
+      form.appendChild(input);
+
+      for (const choice of RENAME_CHOICES) {
+        const consequence = document.createElement("p");
+        consequence.className = "hint";
+        consequence.textContent = choice.consequence;
+        form.appendChild(consequence);
+
+        const modeButton = document.createElement("button");
+        modeButton.type = "button";
+        modeButton.className = "secondary";
+        modeButton.textContent = choice.label;
+        modeButton.addEventListener("click", function () {
+          const verdict = validateValueLabel(input.value);
+          if (!verdict.ok) {
+            sayFields(verdict.message, "bad");
+            return;
+          }
+          renameValue(view.id, value.id, verdict.value, choice.mode);
+        });
+        form.appendChild(modeButton);
+      }
+
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "secondary";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", function () {
+        show(form, false);
+      });
+      form.appendChild(cancel);
+      block.appendChild(form);
+
+      rename.addEventListener("click", function () {
+        show(form, form.hidden);
+      });
+
+      return block;
+    }
+
+    function fieldValuesSection(view) {
+      const container = document.createElement("div");
+      const activeValues = view.values.filter((v) => !v.retired);
+      let index = 0;
+      for (const value of view.values) {
+        const position = value.retired ? null
+          : { index: index, count: activeValues.length };
+        if (!value.retired) index += 1;
+        container.appendChild(valueBlock(view, value, position));
+      }
+      return container;
+    }
+
+    function fieldBlock(view) {
+      const block = document.createElement("div");
+      block.className = "stack-tight";
+      block.appendChild(fieldHeaderRow(view));
+
+      const buttons = document.createElement("div");
+      buttons.className = "row buttons";
+
+      if (!view.active) {
+        const restore = document.createElement("button");
+        restore.type = "button";
+        restore.className = "secondary";
+        restore.textContent = "Bring back";
+        restore.addEventListener("click", function () {
+          unretireField(view.id);
+        });
+        buttons.appendChild(restore);
+        block.appendChild(buttons);
+        return block;
+      }
+
+      if (view.outside) {
+        const reason = document.createElement("p");
+        reason.className = "hint";
+        reason.textContent = VALUES_OUTSIDE_REASON;
+        block.appendChild(reason);
+      } else {
+        block.appendChild(fieldValuesSection(view));
+
+        const addRow = document.createElement("div");
+        addRow.className = "row";
+        const input = document.createElement("input");
+        input.type = "text";
+        input.setAttribute("aria-label", "New value for " + view.label);
+        addRow.appendChild(input);
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "secondary";
+        add.textContent = "Add value";
+        // F2/F3 (#433 fix wave): clear ONLY on a write the Worker
+        // actually accepted - the Roles card's own "Add" precedent
+        // (member-telegram-id). The input surviving a refusal reopens a
+        // double-click race a synchronous clear would otherwise have
+        // closed by accident, so the button stays disabled for the
+        // write's whole duration: a second click before the first
+        // write lands would mint the same value twice under two ids.
+        add.addEventListener("click", async function () {
+          const verdict = validateValueLabel(input.value);
+          if (!verdict.ok) {
+            sayFields(verdict.message, "bad");
+            return;
+          }
+          if (liveChoices(view.id).length >= MAX_FIELD_VALUES) {
+            sayFields("A field carries up to " + MAX_FIELD_VALUES +
+              " values, retired ones counted.", "bad");
+            return;
+          }
+          add.disabled = true;
+          const written = await addValue(view.id, verdict.value);
+          add.disabled = false;
+          if (written) input.value = "";
+        });
+        addRow.appendChild(add);
+        block.appendChild(addRow);
+      }
+
+      let armed = false;
+      const retire = document.createElement("button");
+      retire.type = "button";
+      retire.className = "secondary";
+      retire.textContent = "Retire field";
+      retire.addEventListener("click", function () {
+        if (!armed) {
+          armed = true;
+          retire.textContent = "Confirm retiring this field";
+          return;
+        }
+        retireField(view.id);
+      });
+      buttons.appendChild(retire);
+      block.appendChild(buttons);
+      return block;
+    }
+
+    // The read-only half (#385 §6): weight, height, bmi, over18, and
+    // any future non-choice kind. No buttons at all - the reason IS
+    // the whole of what this row offers.
+    function readOnlyFieldBlock(field) {
+      const block = document.createElement("div");
+      block.className = "stack-tight";
+      const row = document.createElement("div");
+      row.className = "row wrap-row";
+      const name = document.createElement("span");
+      name.className = "wrap-row-value";
+      name.textContent = field.label;
+      row.appendChild(name);
+      const kind = document.createElement("span");
+      kind.className = "hint";
+      kind.textContent = field.kind;
+      row.appendChild(kind);
+      block.appendChild(row);
+      const reason = document.createElement("p");
+      reason.className = "hint";
+      reason.textContent = FIELD_READ_ONLY_REASON;
+      block.appendChild(reason);
+      return block;
+    }
+
+    function renderFields() {
+      const list = $("fields-list");
+      list.textContent = "";
+      if (!currentSpec) return;
+      const split = categoricalFields(currentSpec);
+      for (const field of split.other) {
+        list.appendChild(readOnlyFieldBlock(field));
+      }
+      for (const view of fieldsRosterView(fieldsKnown, currentSpec)) {
+        list.appendChild(fieldBlock(view));
+      }
+    }
+
+    // Returns "ok", "failed" or "signed-out" rather than nothing (F4,
+    // #433 fix wave) - sendFieldWrite calls this to re-read after a
+    // write, and needs to tell a real refresh apart from a read that
+    // failed, so it never prints the write's own success message over
+    // a status line this function already set to something truer.
+    async function loadFields() {
+      sayFields("Loading…", null);
+      let payload;
+      try {
+        const response = await fetch(config.endpoint + "/spec", {
+          headers: root.BinderSession.authorization(),
+        });
+        if (sessionRefused(response, sayFields)) return "signed-out";
+        if (!response.ok) {
+          handleFieldsRefusal(response.status, await refusalBody(response));
+          return "failed";
+        }
+        payload = await response.json();
+      } catch (error) {
+        detail(why(error));
+        sayFields("The form's fields could not be read.", "bad");
+        return "failed";
+      }
+      const spec = payload && payload.spec && typeof payload.spec === "object"
+        ? payload.spec
+        : { fields: [] };
+      fieldsKnown = mergeFieldsRoster(fieldsKnown, spec);
+      currentSpec = spec;
+      renderFields();
+      sayFields("", null);
+      return "ok";
+    }
+
+    // F2/F3 (#433 fix wave): same clear-on-success-only shape as the
+    // "Add value" handler above, same reason - a refused add-field used
+    // to throw away an id, a label and a whole pasted value list at
+    // once, the worst case of the two.
+    $("fields-new-add").addEventListener("click", async function () {
+      const idVerdict = validateFieldId($("fields-new-id").value);
+      if (!idVerdict.ok) {
+        sayFields(idVerdict.message, "bad");
+        return;
+      }
+      const labelVerdict = validateFieldLabel($("fields-new-label").value);
+      if (!labelVerdict.ok) {
+        sayFields(labelVerdict.message, "bad");
+        return;
+      }
+      const lines = parseValueLines($("fields-new-values").value);
+      if (lines.length > MAX_FIELD_VALUES) {
+        sayFields("A field carries up to " + MAX_FIELD_VALUES +
+          " values, retired ones counted.", "bad");
+        return;
+      }
+      $("fields-new-add").disabled = true;
+      const written = await addField(
+        idVerdict.value, labelVerdict.value, lines);
+      $("fields-new-add").disabled = false;
+      if (written) {
+        $("fields-new-id").value = "";
+        $("fields-new-label").value = "";
+        $("fields-new-values").value = "";
+      }
+    });
+
+    /* ------------------------------------------------------------ */
     /* Change log.                                                   */
 
     function sayLog(message, tone) {
@@ -988,6 +1708,9 @@
       $("roles-other-body").textContent = "";
       show($("roles-malformed"), false);
       show($("roles-other"), false);
+      $("fields-list").textContent = "";
+      currentSpec = null;
+      fieldsKnown = new Map();
     }
 
     function wireIdle() {
@@ -1043,6 +1766,7 @@
     loadSettings();
     readMembership();
     loadAdminVia();
+    loadFields();
     loadLog();
   }
 })(globalThis);
