@@ -235,6 +235,34 @@ function makeDb(seed) {
       }
       return { meta: { changes: 1 } };
     }
+    /* The three reads GET /admin-departed issues (0.9-M3-S15, #420).
+       They are here because the departed list is the only reader of the
+       numeric id a sign-in seals, so the write half is witnessed by
+       driving that route against the row THIS sign-in wrote - nothing
+       seeded by hand. The stale pre-filter and the label lookup are
+       served from the same two collections the sign-in path already
+       fills, so an arm cannot accidentally check a row the Worker did
+       not write. */
+    if (sql.startsWith("SELECT account_id, last_seen_at FROM directory")) {
+      const results = [...directory.values()]
+        .filter((row) => row.last_seen_at < args[0])
+        .sort((a, b) => (a.last_seen_at < b.last_seen_at ? -1 : 1))
+        .map((row) => ({
+          account_id: row.account_id, last_seen_at: row.last_seen_at,
+        }));
+      return { results: results };
+    }
+    if (sql.startsWith("SELECT ciphertext FROM directory")) {
+      const row = directory.get(args[0]);
+      return row ? { ciphertext: row.ciphertext } : null;
+    }
+    if (sql.startsWith("SELECT account_id, label FROM membership")) {
+      return {
+        results: membership.map((row) => ({
+          account_id: row.account_id, label: row.label || null,
+        })),
+      };
+    }
     throw new Error("the D1 stub was handed a statement it does not " +
       "recognize, which means the auth path changed shape without this " +
       "arm being told: " + sql);
@@ -979,6 +1007,48 @@ check("and it is that constant the group check is bounded by",
         String(value).includes(HANDLE)));
 }
 
+/* THE WRITE HALF OF THE SEALED NUMERIC ID (0.9-M3-S15, #420; the owner
+   ruling of 2026-08-21). server/worker.js seals the numeric id into the
+   directory record at exactly one place - this sign-in - and
+   departedVerdict() is its only reader. Every arm in
+   tests/departed-cleanup.test.mjs builds its directory rows by hand, so
+   the read half is proven there and the write half is proven by nothing
+   at all: deleting `telegramId: String(user.id)` left the entire gate
+   green. These two checks are what witnesses it, and they are HERE
+   because this is the only file that drives a real verified sign-in.
+   The first opens the record the Worker actually sealed; the second
+   hands that same record to the route that consumes it. */
+{
+  const { db, env, body, status } = await signIn({
+    bot: { ok: true, result: { status: "creator" } } });
+  const row = db.directory.get(ACCOUNT_ID);
+  const dstore = await store.openStore({ STORE_SECRET });
+  const opened = row ? await dstore.openDirectory(
+    new Uint8Array(Buffer.from(row.ciphertext, "base64")),
+    { accountId: ACCOUNT_ID, recordId: DIRECTORY_SLOT }) : "";
+  let parsed = {};
+  try { parsed = JSON.parse(opened); } catch (error) { parsed = {}; }
+  check("the sealed record carries the NUMERIC TELEGRAM ID the sign-in " +
+    "had in hand, beside the handle and the role - the write half the " +
+    "departed check is the only reader of",
+    status === 200 && parsed.telegramId === NUMERIC_ID);
+
+  /* Staleness is a fact about time, so time is the only thing moved
+     here: the ciphertext - the bytes under test - stays exactly what
+     the Worker sealed a moment ago, and the pre-filter that picks
+     candidates is what the older date reaches. */
+  if (row) row.last_seen_at = "2020-01-01T00:00:00.000Z";
+  const { value } = await withSeams(botAnswering(leftAnswer), () =>
+    send(worker, env, "GET", "/admin-departed",
+      { Origin: ORIGIN, Authorization: "Bearer " + body.session }));
+  const departed = (value.body && value.body.departed) || [];
+  check("and departedVerdict() reads THAT record: the row this sign-in " +
+    "wrote is asked about by numeric id and judged departed, so the " +
+    "write and its only reader are proven against each other end to end",
+    value.status === 200 && departed.length === 1 &&
+    departed[0].accountId === ACCOUNT_ID && departed[0].status === "left");
+}
+
 /* ------------------------------------------------------------------ */
 /* 9. Nothing secret reaches a log line (mandate 7).                   */
 
@@ -1227,7 +1297,7 @@ async function mutant(label, from, to) {
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 106;
+const EXPECTED = 108;
 console.log(failures
   ? `\ntelegram-auth FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
