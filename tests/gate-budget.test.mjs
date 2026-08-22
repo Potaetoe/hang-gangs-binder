@@ -38,18 +38,22 @@ const STUB_PREFLIGHT =
 
 /* A fixture arm that sleeps `ms` - a real, measurable delay, not a
    value this file merely asserts about - then prints its own verdict
-   and exits 0. `label` is embedded in the printed line so a scenario
-   can confirm PRINTED ORDER by searching for each label's position in
-   the combined output, the same evidence a human reading the real
-   gate's log would have. */
-const sleepArm = (label, ms) =>
+   and exits with `code` (0 unless a third element says otherwise).
+   `label` is embedded in the printed line so a scenario can confirm
+   PRINTED ORDER by searching for each label's position in the combined
+   output, the same evidence a human reading the real gate's log would
+   have. A failing arm still prints its own line before exiting nonzero
+   - `spill()` in the real runner reads that line back out of the
+   captured output, and scenario 6 below checks it is still there. */
+const sleepArm = (label, ms, code) =>
   "await new Promise((r) => setTimeout(r, " + ms + "));\n" +
-  "console.log(\"" + label + " OK\");\nprocess.exit(0);\n";
+  "console.log(\"" + label + (code ? " NOT OK" : " OK") + "\");\n" +
+  "process.exit(" + (code || 0) + ");\n";
 
 /* Builds <tmp>/tests/ holding the real run.mjs and gate-pool.mjs, the
    stub preflight, a ROSTER naming every given arm as required, and one
-   sleeping fixture arm per [label, ms] pair. Returns the scratch root
-   so the caller can clean it up. */
+   sleeping fixture arm per [label, ms] or [label, ms, exitCode] triple.
+   Returns the scratch root so the caller can clean it up. */
 async function buildFixture(arms) {
   const root = await mkdtemp(join(tmpdir(), "hgb-gate-budget-"));
   const testsDir = join(root, "tests");
@@ -60,8 +64,9 @@ async function buildFixture(arms) {
   const rosterText = arms
     .map(([label]) => "tests/" + label + ".test.mjs\n").join("");
   await writeFile(join(testsDir, "ROSTER"), rosterText);
-  for (const [label, ms] of arms) {
-    await writeFile(join(testsDir, label + ".test.mjs"), sleepArm(label, ms));
+  for (const [label, ms, code] of arms) {
+    await writeFile(join(testsDir, label + ".test.mjs"),
+      sleepArm(label, ms, code));
   }
   return root;
 }
@@ -216,10 +221,47 @@ let pool1Wall;
         /3 arm\(s\), all green\./.test(result.output));
 }
 
+/* ================================================================== */
+/* 6. A failing arm mixed with passing ones under a real pool: roster   */
+/*    order, per-arm evidence and the summary all still have to be      */
+/*    right when one of the concurrently-running arms is the one that   */
+/*    reds - "each arm's output captured and printed whole in roster    */
+/*    order" is the ticket's own wording, and every other scenario here */
+/*    only ever exercises the all-green path.                           */
+
+{
+  const MIXED_ARMS = [["alpha", 200], ["beta", 120, 1], ["gamma", 60]];
+  const result = await scenario(MIXED_ARMS, { BINDER_GATE_POOL: "3" });
+  check("a roster with one failing arm exits nonzero", result.code !== 0);
+  const order = ["alpha", "beta", "gamma"]
+    .map((label) => result.output.indexOf("tests/" + label + ".test.mjs"));
+  check("all three still appear, in roster order, beta's failure "
+        + "included - the pool does not reorder or drop a neighbor of "
+        + "the one that failed",
+        order.every((index) => index >= 0)
+          && order[0] < order[1] && order[1] < order[2]);
+  check("beta's own FAILED report names its exit code",
+        /tests\/beta\.test\.mjs\s+FAILED\s+exit 1/.test(result.output));
+  check("beta's own printed line survives into the spilled output - "
+        + "captured whole, not dropped for the arm that failed",
+        result.output.includes("beta NOT OK"));
+  check("alpha and gamma still report ok, despite running alongside a "
+        + "failing neighbor in the same pool",
+        /tests\/alpha\.test\.mjs\s+ok/.test(result.output)
+          && /tests\/gamma\.test\.mjs\s+ok/.test(result.output));
+  check("the summary counts exactly one problem, naming beta",
+        /3 arm\(s\), 1 problem\(s\): tests\/beta\.test\.mjs/
+          .test(result.output));
+  check("the wall time and slowest lines still print despite the "
+        + "failure - the budget stage runs whether or not an arm failed",
+        /wall time\s+[\d.]+s/.test(result.output)
+          && /slowest\s+/.test(result.output));
+}
+
 /* ------------------------------------------------------------------ */
 for (const root of roots) await rm(root, { recursive: true, force: true });
 
-const EXPECTED = 17;
+const EXPECTED = 24;
 console.log(failures
   ? `\ngate-budget FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
