@@ -698,8 +698,9 @@
 
   /*
    * `list`'s own entries, with every value in `pinned` moved to the
-   * FRONT, in `pinned`'s own order - WITHOUT duplication (#454 item 18:
-   * "pinned US/GB/CA order kept"). apps/web/fields.js's own
+   * FRONT, in `pinned`'s own order - WITHOUT duplication (#454 item 18
+   * keeps the pinned order at the front of the country list).
+   * apps/web/fields.js's own
    * orderedChoices() duplicates a pinned entry (kept at the front AND
    * in its alphabetical place, a free scanning aid in a <select> where
    * only one line shows) - carried into a chip row that became TWO
@@ -725,11 +726,11 @@
   }
 
   /* Every visual row a flex-wrap chip row actually used, read from each
-     chip's own measured top offset (#454 item 17: "measured on the
-     device... not a count"). Rounded to the nearest pixel before
-     counting distinct values - two chips in the SAME row can differ by
-     a sub-pixel fraction depending on how the browser rounds their
-     individual widths, and that must never read as two rows. */
+     chip's own measured top offset (#454 item 17 rules this measured
+     on the device, never a value count). Rounded to the nearest pixel
+     before counting distinct values - two chips in the SAME row can
+     differ by a sub-pixel fraction depending on how the browser rounds
+     their individual widths, and that must never read as two rows. */
   function rowsUsed(tops) {
     if (!tops || !tops.length) return 0;
     const rounded = tops.map(function (t) { return Math.round(t); });
@@ -838,9 +839,10 @@
      candidate order (never click order, which a re-render would lose
      anyway) - a field at Everyone (every candidate selected) sends no
      pair at all, the identity 0.9-M3-S31 built the Worker side to
-     hold and this page must respect from its side (#455: "a member who
-     stated nothing for a field... is in Everyone and in no set - the
-     page therefore sends no pair at all when every chip is lit"). */
+     hold. #455's own ruling is what this page must respect from its
+     side: a member who stated nothing for a field is in Everyone and
+     in no set, so no pair is sent for a field whose every chip is
+     lit. */
   function activeFilterPairs(fieldStates) {
     const pairs = [];
     (fieldStates || []).forEach(function (state) {
@@ -865,11 +867,12 @@
    * A PLAIN CHOICE'S LABEL READS LOWERCASE IN THIS SENTENCE ONLY
    * ("male", "feeder" - the owner's own #454 item 19 example); A
    * COUNTRY NAME NEVER DOES. The superseded build force-lowercased
-   * every label alike, which read as "united states of america" (its
-   * own review, #434 comment 5378073973, finding F3, "wrong for a
-   * proper noun"). `choicesFrom` is exactly the flag that already tells
-   * a plain word from a proper noun everywhere else in this file, so it
-   * is what this reuses rather than inventing a second test.
+   * every label alike, which read as "united states of america" - its
+   * own review (#434 comment 5378073973, finding F3) is where that
+   * mistake for a proper noun is on record. `choicesFrom` is exactly
+   * the flag that already tells a plain word from a proper noun
+   * everywhere else in this file, so it is what this reuses rather
+   * than inventing a second test.
    */
   function filterValueLabel(pair, measureFor, countries) {
     const measure = measureFor(pair.field);
@@ -1362,8 +1365,8 @@
     }
   }
 
-  /* The drop-list fallback - a native <select> (owner ruling, #454 item
-     2: "native first"). ONE value under the gate (a plain <select> with
+  /* The drop-list fallback - a native <select>, native-first per owner
+     ruling #454 item 2. ONE value under the gate (a plain <select> with
      its own "Everyone" option, which a browser already refuses to hold
      two of at once - there is no within-field notice to wire here,
      because the control cannot produce the shape that notice is about).
@@ -2203,9 +2206,11 @@
   /* controls may offer (#454 item 18), then one request per Show-me     */
   /* press - nothing here fetches on a keystroke (design mandate 2).     */
 
-  /* The effective spec (GET /spec, 0.9-M3-S11, #419) - fetched once,
-     held for the page's life, and read everywhere this file used to
-     read root.BINDER_SITE. Null until setUp()'s own fetch resolves. */
+  /* The effective spec (GET /spec, 0.9-M3-S11, #419) - fetched once and
+     held for the page's life; every Fields.*() call below reads this
+     rather than the static root.BINDER_SITE, so an admin's own edits
+     reach the filter rows and the measure list alike. Null until
+     setUp()'s own fetch resolves. */
   let effectiveSite = null;
   let fieldStates = [];
 
@@ -2388,8 +2393,8 @@
     // above already stops its own click from reaching here.
     document.addEventListener("click", dismissTooltipElsewhere);
 
-    // Re-measure on resize (#454 item 17: "measured on the device at
-    // load and on resize"), debounced - a drag-resize fires many times
+    // Re-measure on resize too, not only at load (#454 item 17),
+    // debounced - a drag-resize fires many times
     // a second and every intermediate width is not worth a rebuild.
     let resizeTimer = null;
     root.addEventListener("resize", function () {

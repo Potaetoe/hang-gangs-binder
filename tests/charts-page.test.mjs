@@ -1769,9 +1769,28 @@ function buildDom(opts) {
   // a test still read its .download/.href after that removal).
   const createdAnchors = [];
   const rawCreateElement = doc.createElement;
+  // `options.simulateChipWrap`, a chips-per-row count: this stub has no
+  // real layout engine (AGENTS.md: "the Node DOM stub proves wiring,
+  // never pixels"), so decideMode() falls back to chips for every field
+  // by design (this file's header, section 2a-bis) UNLESS something
+  // gives its chip <button>s a getBoundingClientRect() to read. Every
+  // dynamically created button gets one here, in GLOBAL creation order -
+  // buildChipButtons() is the only caller that ever makes a "button"
+  // (the picture tabs and Show-me are static markup, node("button") in
+  // buildDom() above, never document.createElement) - so a field with
+  // few candidates still lands in one simulated row while a field with
+  // many wraps into several, proving the DOM's own switch to a native
+  // drop list, not merely the pure decideMode() function in isolation.
+  let chipCreateCount = 0;
   doc.createElement = (tag) => {
     const el = rawCreateElement(tag);
     if (tag === "a") createdAnchors.push(el);
+    if (tag === "button" && options.simulateChipWrap) {
+      const index = chipCreateCount;
+      chipCreateCount += 1;
+      const row = Math.floor(index / options.simulateChipWrap);
+      el.getBoundingClientRect = () => ({ top: row * 40 });
+    }
     return el;
   };
 
@@ -2937,6 +2956,100 @@ function lastChartsDataCall(calls) {
     !genderChips.some((c) => c.value === "nonbinary"));
 }
 
+/*
+ * The two-row measurement falling to a native drop list, driven -
+ * `simulateChipWrap` (buildDom()'s own comment, above) gives every
+ * dynamically created chip <button> a real getBoundingClientRect() this
+ * suite's DOM stub could not otherwise produce, proving the actual
+ * SWITCH (decideMode() -> buildFilterSelect()), not only the pure
+ * decision in isolation. Twelve country candidates at four simulated
+ * per row is three rows - past the two-row budget - while gender's two
+ * candidates stay one row.
+ */
+const manyCountryBaseline = {
+  ok: true, enough: true, filters: [],
+  groups: [
+    { field: "gender", label: "Gender", term: "gender", multiple: false,
+      values: [
+        { value: "male", label: "Male", count: 10, bucket: null },
+        { value: "female", label: "Female", count: 8, bucket: null },
+      ] },
+    { field: "country", label: "Country", term: "country", multiple: false,
+      values: [
+        { value: "DE", label: "DE", count: 9, bucket: null },
+        { value: "AL", label: "AL", count: 8, bucket: null },
+        { value: "FR", label: "FR", count: 7, bucket: null },
+        { value: "US", label: "US", count: 6, bucket: null },
+        { value: "IT", label: "IT", count: 5, bucket: null },
+        { value: "ES", label: "ES", count: 4, bucket: null },
+        { value: "GB", label: "GB", count: 3, bucket: null },
+        { value: "JP", label: "JP", count: 2, bucket: null },
+        { value: "MX", label: "MX", count: 2, bucket: null },
+        { value: "BR", label: "BR", count: 1, bucket: null },
+        { value: "IN", label: "IN", count: 1, bucket: null },
+        { value: "CA", label: "CA", count: 1, bucket: null },
+      ] },
+  ],
+};
+
+{
+  const { byId, calls } = await driven(() => response(200, ENOUGH_FIXTURE),
+    { skipPress: true, baseline: manyCountryBaseline, simulateChipWrap: 4 });
+
+  const genderRow = filterRowFor(byId, "gender");
+  check("0.9-M3-S14: a field with few candidates (gender, two) still " +
+    "renders chips under this simulated geometry - not every field " +
+    "falls to a list just because ONE did",
+    filterChipsOf(genderRow) !== null && filterSelectOf(genderRow) === null);
+
+  const countryRow = filterRowFor(byId, "country");
+  const countrySelect = filterSelectOf(countryRow);
+  check("0.9-M3-S14: a field with many candidates (country, twelve) " +
+    "measures past two simulated rows and falls to a native drop list",
+    countrySelect !== null && filterChipsOf(countryRow) === null);
+
+  const optionValues = countrySelect.children.filter((o) => o.value !== "")
+    .map((o) => o.value);
+  check("the drop list holds every present value, none invented and " +
+    "none missing",
+    optionValues.length === 12);
+  check("0.9-M3-S14: the drop list's own pinned block is US, GB, CA, in " +
+    "that order, at the front - not the response's own count-desc order " +
+    "(DE, AL, FR, US, ...)",
+    optionValues[0] === "US" && optionValues[1] === "GB" &&
+    optionValues[2] === "CA");
+  check("0.9-M3-S14: under the gate, the drop list's own first option " +
+    "is Everyone, the resting state",
+    countrySelect.children[0].value === "" &&
+    countrySelect.children[0].textContent === "Everyone" &&
+    countrySelect.value === "");
+
+  countrySelect.value = "US";
+  await countrySelect.dispatch("change");
+  await pressShowMe(byId);
+  const call = lastChartsDataCall(calls);
+  check("0.9-M3-S14: picking one value in the drop list sends exactly " +
+    "one pair - the drop-list form allows one value under the gate",
+    call.searchParams.getAll("filter").join(",") === "country" &&
+    call.searchParams.getAll("value").join(",") === "US");
+}
+
+{
+  const { byId } = await driven(() => response(200, ENOUGH_FIXTURE),
+    { skipPress: true, baseline: manyCountryBaseline, simulateChipWrap: 4 });
+  await chipButtonFor(filterRowFor(byId, "gender"), "male")
+    .dispatch("click");
+  const countrySelect = filterSelectOf(filterRowFor(byId, "country"));
+  check("0.9-M3-S14: the drop-list control disables too, while another " +
+    "field is restricted - the cross-field gate applies to both control " +
+    "shapes alike",
+    countrySelect.disabled === true);
+  const notice = filterNoticeOf(filterRowFor(byId, "country"));
+  check("and carries the same cross-field notice the chip form does",
+    notice !== null && notice.hidden === false &&
+    notice.textContent === Charts.CROSS_FIELD_GATE_NOTICE);
+}
+
 /* The status line and the makeup block both follow the active filter -
    one tap, one press, one served answer whose own echo names it. */
 {
@@ -4058,7 +4171,7 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
  * source text contains.
  */
 
-const EXPECTED = 307;
+const EXPECTED = 315;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
