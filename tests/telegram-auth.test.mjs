@@ -1246,11 +1246,15 @@ async function mutant(label, from, to) {
 }
 
 {
+  /* The branch is wrapped in answer() since 0.9-M3-S15 fix wave 2 -
+     every verdict reached past the always_allow read carries whether
+     that read answered - so the fixture edits the word inside the
+     wrapper rather than the whole one-line return it used to be. */
   const mutated = await mutant("the unconfigured-chat-id verdict flipped",
-    'if (!env.TELEGRAM_GROUP_CHAT_ID) return { standing: "unknown", ' +
-      "status: null };",
-    'if (!env.TELEGRAM_GROUP_CHAT_ID) return { standing: "member", ' +
-      "status: null };");
+    "  if (!env.TELEGRAM_GROUP_CHAT_ID) {\n" +
+      '    return answer({ standing: "unknown", status: null });\n  }',
+    "  if (!env.TELEGRAM_GROUP_CHAT_ID) {\n" +
+      '    return answer({ standing: "member", status: null });\n  }');
   const { status } = await signIn({ worker: mutated,
     env: { TELEGRAM_GROUP_CHAT_ID: undefined } });
   check("mutation: a Worker that defaults open on a missing chat id " +

@@ -199,6 +199,12 @@ function makeDb(seed) {
    * a transient D1 error or a malformed `results` really has.
    */
   const failRole = seed && seed.failRole;
+  /* The same hook for the OTHER read on the way to a verdict - the
+     directory row the sealed numeric id comes out of. Scoped to one
+     account for the same reason: the branch on trial is a verdict
+     formed while this row did not answer, and a whole-table failure
+     would 500 the route before it ran. */
+  const failDirectoryRead = seed && seed.failDirectoryRead;
 
   for (const row of (seed && seed.sessions) || []) {
     sessions.set(row.token_hash, row);
@@ -366,6 +372,10 @@ function makeDb(seed) {
       return { meta: { changes: had ? 1 : 0 } };
     }
     if (sql.startsWith("SELECT ciphertext FROM directory WHERE account_id")) {
+      if (failDirectoryRead && args[0] === failDirectoryRead) {
+        throw new Error("D1_ERROR: the directory read for that account " +
+          "did not answer");
+      }
       const found = directory.get(args[0]);
       return found ? { ciphertext: found.ciphertext } : null;
     }
@@ -541,9 +551,10 @@ function sessionRow(token, accountId, fields) {
  */
 async function fixture(options) {
   return makeDb({
-    /* Nothing fails unless an arm asks for it by role, so every
-       scenario above this one is untouched by the hook's existence. */
+    /* Nothing fails unless an arm asks for it by name, so every
+       scenario above this one is untouched by the hooks' existence. */
     failRole: (options && options.failRole) || null,
+    failDirectoryRead: (options && options.failDirectoryRead) || null,
     submissions: [
       { id: 11, account_id: GONE, ciphertext: "gone-one",
         received_at: "2025-01-01T00:00:00.000Z", supersedes: null },
@@ -1141,10 +1152,34 @@ for (const [who, headers] of [
  * no ALWAYS_ALLOW_TELEGRAM_IDS set, so the failing read is the only
  * thing standing between it and the erase - and the bot says "left"
  * for everybody, so nothing but the operator's list can keep it off
- * the departed list. A leaver rides in the same answer, so the checks
- * below are a discrimination and not a list that is empty for
- * everybody.
+ * the departed list.
+ *
+ * THE DISCRIMINATION IS THE SAME FIXTURE READ TWICE, once with that
+ * statement answering and once with it failing, because within the
+ * failing answer there is nothing to contrast against: the rule is
+ * that NO verdict reached over that read is acted on, so the real
+ * leaver in the same answer goes unknown too. Its blast radius is the
+ * point rather than an awkwardness - a rule with an exception for the
+ * accounts that "obviously" left is a rule the next branch here can be
+ * forgotten from - and the working read proves the fixture really does
+ * produce a departed row and an allowed one, so the failing read's
+ * answer is a changed answer and not an empty list.
  */
+{
+  const db = await fixture({ failRole: null });
+  db.membership().push({ account_id: BYPASSED, role: "always_allow",
+    label: "on-the-bypass", added_at: OLD, added_by: ADMIN });
+  db.directory.set(BYPASSED, await directoryRow(BYPASSED, BYPASSED_ID, OLD));
+  const { value: working } = await withBot(botSaying("left"), () =>
+    call(envFor(db), "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+  const before_ = working.body || {};
+  check("with that read ANSWERING, the same fixture reports the leaver " +
+    "departed and the held-open account allowed - so the answer below " +
+    "is a changed answer and not an empty list",
+    ((before_.departed) || []).some((row) => row.accountId === GONE) &&
+    ((before_.allowed) || []).some((row) => row.accountId === BYPASSED));
+}
+
 {
   const db = await fixture({ failRole: "always_allow" });
   db.membership().push({ account_id: BYPASSED, role: "always_allow",
@@ -1161,9 +1196,11 @@ for (const [who, headers] of [
     "open is NOT reported departed - one failed read may not decide an " +
     "erase", !((body.departed) || [])
       .some((row) => row.accountId === BYPASSED));
-  check("...in an answer that DOES carry the leaver, so the check " +
-    "above is the failure being handled and not an empty list",
-    ((body.departed) || []).some((row) => row.accountId === GONE));
+  check("and neither is the real leaver the same fixture reported " +
+    "departed a moment ago: the rule is about the READ, so no verdict " +
+    "formed over it is acted on and the departed list is empty",
+    ((body.departed) || []).length === 0 &&
+    ((body.unknown) || []).some((row) => row.accountId === GONE));
   check("it is not dropped either, and not filed as allowed - the " +
     "list cannot be read, so whether it allows this account is exactly " +
     "what is unknown",
@@ -1196,6 +1233,83 @@ for (const [who, headers] of [
   check("nothing of that account moved on the refusal - the whole " +
     "point of the fail-closed direction",
     belongingTo(db, BYPASSED) === before);
+}
+
+/*
+ * THE OTHER TWO READS ON THE WAY TO A VERDICT, ARMED (fix wave 2, the
+ * audit finding F1 asked for).
+ *
+ * F1 was found by asking one question of every read this path makes:
+ * when it does not answer, does the verdict come out unknown or does it
+ * come out confident? Four of the five ways to be unknown were already
+ * correct and only two of them were pinned - the record with no sealed
+ * id, and the bot. These are the remaining two, and they are here
+ * because "correct today and unarmed" is exactly the state the allow
+ * list was in when it stopped being correct.
+ *
+ * A THROWN DIRECTORY READ, and a record that will not open - the second
+ * is the key-rotation case departedVerdict()'s own comment names as a
+ * real possibility. Neither may be departed, neither may be dropped,
+ * and both are fixed by that member signing in, which is why they share
+ * the sign-in wording rather than the bot's.
+ */
+{
+  const db = await fixture({ failDirectoryRead: GONE });
+  const env = envFor(db);
+  const before = belongingTo(db, GONE);
+
+  const { value: list } = await withBot(botSaying("left"), () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+  const body = list.body || {};
+  check("a directory read that THREW is never departed, with a bot " +
+    "that says left about that very account",
+    !((body.departed) || []).some((row) => row.accountId === GONE));
+  check("it is reported unknown with the sign-in reason, since a next " +
+    "sign-in rewrites the row this read could not fetch",
+    ((body.unknown) || []).some((row) => row.accountId === GONE &&
+      row.reason === "unknown until next sign-in"));
+
+  const { value: erase } = await withBot(botSaying("left"), () =>
+    call(env, "DELETE", "/admin-departed/" + GONE,
+      { headers: ADMIN_BEARER }));
+  check("and the erase refuses it rather than destroying rows over a " +
+    "read that did not answer", erase.status === 409);
+  check("nothing of that account moved on that refusal",
+    belongingTo(db, GONE) === before);
+}
+
+{
+  const db = await fixture();
+  /* The row exists and is the right shape; the bytes simply do not
+     open under this Worker's key - a key rotation, or a row written by
+     a different deployment. Read as a real ciphertext right up to the
+     point where it is unsealed, which is where the branch under test
+     lives. */
+  db.directory.set(GONE, Object.assign({}, db.directory.get(GONE),
+    { ciphertext: Buffer.from("not-a-sealed-record-at-all")
+      .toString("base64") }));
+  const env = envFor(db);
+  const before = belongingTo(db, GONE);
+
+  const { value: list } = await withBot(botSaying("left"), () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+  const body = list.body || {};
+  check("a directory record that will not OPEN is never departed either",
+    !((body.departed) || []).some((row) => row.accountId === GONE));
+  check("it is reported unknown rather than dropped, so an admin sees " +
+    "the row sit the list out instead of watching it vanish",
+    ((body.unknown) || []).some((row) => row.accountId === GONE &&
+      row.reason === "unknown until next sign-in"));
+  check("and one unopenable record does not take the whole page down " +
+    "with it - the answer is still 200 and still carries the other " +
+    "stale rows", list.status === 200 &&
+    ((body.unknown) || []).some((row) => row.accountId === STALE_NO_ID));
+
+  const { value: erase } = await withBot(botSaying("left"), () =>
+    call(env, "DELETE", "/admin-departed/" + GONE,
+      { headers: ADMIN_BEARER }));
+  check("erasing it is refused, and nothing of it moved",
+    erase.status === 409 && belongingTo(db, GONE) === before);
 }
 
 /*
@@ -1490,7 +1604,7 @@ for (const [who, headers] of [
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 115;
+const EXPECTED = 124;
 if (failures) {
   console.log("\nfailing checks:");
   for (const label of failed) console.log("  - " + label);

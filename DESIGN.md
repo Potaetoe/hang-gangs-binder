@@ -221,6 +221,23 @@ it, so the cleanup surface reports the list — and says which entry to
 remove — rather than putting words in Telegram's mouth. Never attribute
 to the bot what the bot did not say.
 
+**And a read that does not answer is unknown too.** The erasing path
+fails closed on every read it makes, not only on the bot: if the
+directory row, the sealed record or the operator's own list cannot be
+read, the verdict is unknown, the surface names which read failed, and
+the erase refuses. The list is the case worth writing down, because it
+is the one where an empty answer looks exactly like a real one — "not
+on the list" and "the list did not answer" are the same empty set — and
+spending the second as the first erased the rows of an account an
+operator was holding open. So "cannot check" is never "not a member",
+and it is never "not on the list" either. Sign-in carries the same
+fact the other way round: a member the group still confirms signs in
+regardless, because refusing everybody over one unreadable table is a
+worse outage than the one that caused it, while a sign-in that would
+otherwise be refused answers as the Worker answers any error rather
+than telling somebody they are not allowed on the word of a list
+nobody could read.
+
 A row has two identities and they are not equally good: the id is set
 server-side from a verified sign-in and cannot be forged by the page;
 anything the client typed is a claim. Treat the id as identity.
