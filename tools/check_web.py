@@ -4894,7 +4894,7 @@ MOCKUP_SCALE = {
     # own height, matching theme.css's :root token block.
     "--tap-target": "2.75rem",
     "--motion-duration": "150ms",
-    "--tab-bar-height": "4.75rem",
+    "--tab-bar-height": "4.25rem",
 }
 
 # The four palettes, from the mockup's `.site` block (Midnight, its

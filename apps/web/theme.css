@@ -454,7 +454,7 @@
      sitting on top of the page's last content" - and a page height that
      happens to equal a spacing step today would be a coincidence to
      lean on. */
-  --tab-bar-height: 4.75rem;
+  --tab-bar-height: 4.25rem;
 
   /*
    * Written desktop-first: the rules below are the desktop layout, and
@@ -1292,6 +1292,15 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   gap: var(--space-2);
   font-size: var(--text-sm);
   cursor: pointer;
+  /* --tap-target (owner ruling, #454 item 3; 0.9-M3-S33, #457, measured
+     in a real browser at 375px: this label sized to its own 14px text
+     line-height alone, 22px, half the floor) - the visual dot below
+     stays 1.1rem on purpose (a checkbox drawn at 44px would dominate
+     the row it sits in), and the label's own clickable area is what
+     grows to reach the floor: clicking anywhere in this padding toggles
+     the input, the same as clicking the dot or the word, because this
+     IS the <label> the input is nested inside. */
+  min-height: var(--tap-target);
 }
 
 .choice input {
@@ -2291,6 +2300,19 @@ body.instrument main.stack { gap: var(--space-8); }
   }
 
   .wordmark-name { font-size: 1.25rem; }
+
+  /* --tap-target (owner ruling, #454 item 3; 0.9-M3-S33, #457, measured
+     in a real browser at 375px: two lines at this width's smaller
+     --wordmark-name size sized the link to 43px, one pixel under the
+     floor). Desktop is untouched - there the larger name size already
+     clears it, measured, so this stays inside the block that shrinks
+     the name in the first place rather than reaching every width. */
+  .wordmark {
+    min-height: var(--tap-target);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
 
   /* The session stops being the foot of a column and becomes the end of
      a row. */

@@ -269,7 +269,7 @@
 
   
 
-  --tab-bar-height: 4.75rem;
+  --tab-bar-height: 4.25rem;
 
   
 
@@ -818,6 +818,9 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   gap: var(--space-2);
   font-size: var(--text-sm);
   cursor: pointer;
+  
+
+  min-height: var(--tap-target);
 }
 
 .choice input {
@@ -1447,6 +1450,15 @@ body.instrument main.stack { gap: var(--space-8); }
   }
 
   .wordmark-name { font-size: 1.25rem; }
+
+  
+
+  .wordmark {
+    min-height: var(--tap-target);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
 
   
 
