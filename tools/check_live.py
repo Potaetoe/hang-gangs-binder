@@ -2033,7 +2033,8 @@ def changed_since(sha, paths):
         done = subprocess.run(
             ["git", "log", "--format=", "--name-only", "%s..HEAD" % sha,
              "--", *paths],
-            cwd=REPO, capture_output=True, text=True, timeout=30)
+            cwd=REPO, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
     if done.returncode != 0:
@@ -2115,7 +2116,8 @@ def commits_since(sha):
     try:
         done = subprocess.run(
             ["git", "rev-list", "--count", "%s..HEAD" % sha],
-            cwd=REPO, capture_output=True, text=True, timeout=30)
+            cwd=REPO, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
     if done.returncode != 0:

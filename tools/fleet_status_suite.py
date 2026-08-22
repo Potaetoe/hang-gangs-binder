@@ -88,7 +88,9 @@ def git(repo, *args):
     done = subprocess.run(
         ["git", "-C", repo, "-c", "user.email=suite@example.invalid",
          "-c", "user.name=suite", *args],
-        capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+        stdin=subprocess.DEVNULL,
         timeout=FIXTURE_TIMEOUT,
     )
     return done.returncode, done.stdout + done.stderr

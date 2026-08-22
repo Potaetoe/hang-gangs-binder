@@ -447,7 +447,8 @@ def _run_captured(argv, cwd, label):
     three misreports this ticket exists to end already were."""
     try:
         done = subprocess.run(argv, cwd=cwd, capture_output=True,
-                              text=True, timeout=GATE_TIMEOUT,
+                              text=True, encoding="utf-8", errors="replace",
+                              timeout=GATE_TIMEOUT,
                               stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return False, ["%s did not answer within %ss and was killed."
@@ -1178,7 +1179,8 @@ def _js_or_css_identical(node, family, text_a, text_b):
             done = subprocess.run(
                 [node, "--input-type=module", "-e", _PROSE_JS_BRIDGE, "--",
                  family, path_a, path_b, build_web_url],
-                capture_output=True, text=True, timeout=GATE_TIMEOUT,
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=GATE_TIMEOUT,
                 stdin=subprocess.DEVNULL)
         except subprocess.TimeoutExpired:
             return False, None, None, ("the JS/CSS tokenizer did not "
@@ -1214,6 +1216,44 @@ def _git_show(repo, ref, path):
     if code != 0:
         return None, "%s does not exist at %s" % (path, ref)
     return out, None
+
+
+# Built via chr() rather than a literal character in this source file -
+# not a hard ASCII rule (`tools/check_live.py` and `tools/check_web.py`
+# both already carry a real non-ASCII character), just a plain-to-grep
+# spelling for the one character `errors="replace"` ever produces, which
+# `_prose_file_eligible()`'s byte-faithful guard below checks for.
+_REPLACEMENT_CHAR = chr(0xFFFD)
+
+
+def _git_show_bytes(repo, ref, path):
+    """The RAW, undecoded bytes for `path` at `ref`, or None on any
+    problem - the byte-faithful fallback `_prose_file_eligible()` reaches
+    for whenever `_git_show()`'s decoded text carries a replacement
+    character (0.9-M3-S29, #449, scope item 3).
+
+    `claim_vs_diff.git()` now decodes with `errors="replace"` (this
+    ticket's own first fix, so a non-UTF-8 byte in a declared file can
+    never crash the gate) - but replacement is lossy BY DESIGN: every
+    invalid byte, whatever its value, becomes the same U+FFFD. Two
+    files that differ ONLY in which invalid byte they carry therefore
+    decode to IDENTICAL text, and the comment-stripped comparison in
+    `_prose_file_eligible()` would read them as the same file even
+    though their real bytes are not. This function is run standalone
+    (not through `claim_vs_diff.git()`) precisely so it never performs
+    that decode at all - the comparison it backs is byte equality,
+    which no replacement character can fool.
+    """
+    try:
+        done = subprocess.run(
+            ["git", "-C", repo, "show", "%s:%s" % (ref, path)],
+            capture_output=True, timeout=GATE_TIMEOUT,
+            stdin=subprocess.DEVNULL, env=claim_vs_diff.git_environment())
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if done.returncode != 0:
+        return None
+    return done.stdout
 
 
 def _git_blob(repo, ref, path):
@@ -1285,6 +1325,27 @@ def _prose_file_eligible(repo, base, path, node):
             lines = ["  prose  %s  base=%s head=%s  %s"
                     % (path, hash_a, hash_b,
                        "identical" if identical else "differs")]
+
+        # Byte-faithful guard (0.9-M3-S29, #449, scope item 3): a
+        # replacement character (U+FFFD) in EITHER decoded text means
+        # some byte in that file was not valid UTF-8, and
+        # `claim_vs_diff.git()`'s `errors="replace"` maps every such
+        # byte to the SAME U+FFFD regardless of its real value - so two
+        # files differing only in WHICH invalid byte they carry can
+        # decode (and then strip-and-compare) as identical text above
+        # even though they are not the same bytes. Only fires on the
+        # decode-error path; an ordinary identical/differs verdict from
+        # clean UTF-8 text never pays this extra pair of git calls.
+        if identical and (_REPLACEMENT_CHAR in base_text
+                          or _REPLACEMENT_CHAR in head_text):
+            raw_base = _git_show_bytes(repo, base, path)
+            raw_head = _git_show_bytes(repo, "HEAD", path)
+            if raw_base is None or raw_head is None or raw_base != raw_head:
+                identical = False
+                lines.append(
+                    "  prose  %s  a replacement character (U+FFFD) shows "
+                    "up after decoding - raw bytes checked directly and "
+                    "they differ, not identical." % path)
 
     if not identical:
         return False, lines

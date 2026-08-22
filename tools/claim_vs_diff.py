@@ -117,11 +117,33 @@ def git_environment():
 
 
 def git(repo, *args):
-    """(returncode, stdout+stderr) for a git command that cannot hang."""
+    """(returncode, stdout+stderr) for a git command that cannot hang.
+
+    `encoding="utf-8", errors="replace"` (0.9-M3-S29, #449): without an
+    explicit encoding, `text=True` decodes under the machine's OWN
+    locale codec (cp1252 on this machine) - and cp1252 has no mapping
+    at all for several byte values (0x81, 0x8D, 0x8F, 0x90, 0x9D), so a
+    git command whose output holds one of them raises UnicodeDecodeError
+    from inside subprocess.run() itself, before this function's own
+    try/except ever sees it (that exception is not a subprocess error,
+    so `except OSError` below does not catch it either - it propagates
+    all the way out as a bare traceback). A curly right double quote
+    (U+201D) is exactly this shape: its UTF-8 encoding is the three
+    bytes E2 80 9D, and that last byte is one of cp1252's undefined
+    five. Latent for years because every prior caller piped only ASCII
+    (rev-parse, diff --numstat) - `errors="replace"` is what keeps a
+    file that genuinely is not valid UTF-8 from taking the gate down
+    the same way: an undecodable byte becomes U+FFFD instead of a
+    crash. (Byte-faithful identity checking despite that replacement is
+    `tools/ship_check.py`'s own `_git_show_bytes()` - see its docstring
+    for why raw bytes, not this decoded text, back the prose-only
+    comparison.)
+    """
     try:
         done = subprocess.run(
             ["git", "-C", repo, *args],
             capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
             stdin=subprocess.DEVNULL,
             timeout=GIT_TIMEOUT,
             env=git_environment(),

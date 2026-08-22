@@ -364,6 +364,7 @@ def git(repo, *args):
     done = subprocess.run(
         ["git", "-C", repo, *args],
         capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
     )
     return done.returncode, done.stdout, done.stderr
 
@@ -806,11 +807,13 @@ def python_gate_tools_present():
     """
     ruff_ok = subprocess.run(
         [sys.executable, "-m", "ruff", "--version"],
-        capture_output=True, text=True).returncode == 0
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace").returncode == 0
     fonttools_ok = subprocess.run(
         [sys.executable, "-c",
          "from fontTools.ttLib.woff2 import haveBrotli\nassert haveBrotli"],
-        capture_output=True, text=True).returncode == 0
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace").returncode == 0
     return ruff_ok, fonttools_ok
 
 
@@ -847,7 +850,8 @@ def bound_ports(block):
     command = (["netstat", "-ano"] if os.name == "nt"
                else ["netstat", "-ltn"])
     try:
-        done = subprocess.run(command, capture_output=True, text=True)
+        done = subprocess.run(command, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace")
     except (OSError, ValueError):
         return None
     if done.returncode != 0:
@@ -1207,7 +1211,8 @@ def probe_readiness(repo):
                        "against. Fetch and check out the current tip."
                        % PROBE[1][0])
     done = subprocess.run([node, *PROBE[1]], cwd=repo,
-                          capture_output=True, text=True)
+                          capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
     if done.returncode == 0:
         return True, PROBE[0]
     return False, (done.stdout + done.stderr).strip()
