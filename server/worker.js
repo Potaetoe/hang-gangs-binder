@@ -2615,9 +2615,9 @@ async function handleExport(request, env, origin, caller) {
   // correction replaces without opening either one - and since it opens
   // nothing, dropping tombstones from a series is work for whatever
   // reads this export and opens the ciphertext. Not that the Worker
-  // cannot open one: it opens rows through store-crypto.js's openRow to
-  // serve GET /my-entries and GET /charts-data to signed-in members,
-  // which is the trade DESIGN.md rules under "Trust model: the Worker
+  // cannot open one: it opens rows through store-crypto.js's openRow()
+  // to serve GET /my-entries and GET /charts-data to signed-in members,
+  // which is the trade ruled in DESIGN.md, "Trust model: the Worker
   // reads". It never opens one for /export. Without the column in this
   // response that resolution is not possible at all, and a correction
   // reads as a repeat measurement.
