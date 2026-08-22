@@ -51,7 +51,7 @@ performed = 0
 # that stops running - an early return, a renamed helper - still prints
 # a confident "OK". Comparing the count is what makes the total mean
 # something.
-EXPECTED = 185
+EXPECTED = 263
 
 
 def check(label, condition):
@@ -1356,6 +1356,542 @@ check("and count_property_pin_problems() is clean on an empty pin list",
       check_comments.count_property_pin_problems() == [])
 
 
+# ------------------------------------------------------------------ #
+# Rule 6: DANGLING IDENTIFIERS (0.9-M3-S17, #422) - a comment or doc  #
+# sentence naming a function, constant, route or file no longer in   #
+# the tree is red, unless the same sentence says it is gone.          #
+
+TREE = None
+
+
+def dangling_root(files, definitions=None):
+    """A temp tree: `files` (relpath -> text) plus optional source that
+    defines names `files`' comments may cite. Returns the root path.
+    """
+    root = tempfile.mkdtemp(prefix="check-comments-dangling-")
+    for relpath, text in files.items():
+        full = os.path.join(root, *relpath.split("/"))
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w", encoding="utf-8") as handle:
+            handle.write(text)
+    if definitions:
+        for relpath, text in definitions.items():
+            full = os.path.join(root, *relpath.split("/"))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as handle:
+                handle.write(text)
+    return root
+
+
+DEV_SCAN = [("dev", (".mjs",))]
+DEV_DIRS = ("dev",)
+
+
+def dangling(files, definitions=None, docs=(), pinned=None):
+    root = dangling_root(files, definitions)
+    return check_comments.dangling_problems(
+        scan=DEV_SCAN, docs=docs, repo=root,
+        pinned={} if pinned is None else pinned)
+
+
+# The extractor's four shapes, each read straight off strings first -
+# same reason hits() and citations() are, so a mutation exercises the
+# PATTERN rather than the file-walking around it.
+
+check("a bare call is read",
+      [c for c in check_comments._region_candidates(
+          "adminAccountIds() unions two lists") if c[2] == "function"]
+      == [(0, 17, "function", "adminAccountIds")])
+
+check("a call with arguments is read the same way",
+      [c[3] for c in check_comments._region_candidates("readForm(input)")
+       if c[2] == "function"] == ["readForm"])
+
+check("a plural suffix is not a call - comment(s), citation(s)",
+      [c for c in check_comments._region_candidates(
+          "every comment(s) and citation(s) here") if c[2] == "function"]
+      == [])
+
+check("a review-finding sub-point is not a call - F1(c), #393",
+      [c for c in check_comments._region_candidates("review F1(c), #393")
+       if c[2] == "function"] == [])
+
+check("an UPPER_SNAKE token with an underscore is read as a constant",
+      [c[3] for c in check_comments._region_candidates(
+          "set ADMIN_IDLE_MINUTES")
+       if c[2] == "constant"] == ["ADMIN_IDLE_MINUTES"])
+
+check("a bare all-caps word with no underscore is not a constant - GET, OK",
+      [c for c in check_comments._region_candidates("a GET request is OK")
+       if c[2] == "constant"] == [])
+
+check("a method-prefixed route is read",
+      [c[3] for c in check_comments._region_candidates(
+          "GET /admin-log answers")
+       if c[2] == "route"] == ["/admin-log"])
+
+check("a bare path with no verb is never a route - the measured false "
+      "positives (/p, /etc/hosts, /apps/web and a dozen more)",
+      [c for c in check_comments._region_candidates(
+          "see /etc/hosts and /apps/web for the shape") if c[2] == "route"]
+      == [])
+
+check("a repo-relative path with a known extension is read",
+      [c[3] for c in check_comments._region_candidates(
+          "see dev/xlsx.test.mjs for the arm") if c[2] == "path"]
+      == ["dev/xlsx.test.mjs"])
+
+check("a glob is not a path - tests/*.test.mjs leaves only the suffix, "
+      "and the suffix alone is not a stem",
+      [c for c in check_comments._region_candidates(
+          "an arm declares itself as tests/*.test.mjs") if c[2] == "path"]
+      == [])
+
+check("a template placeholder is not a path either - "
+      "`tests/<name>.test.mjs`",
+      [c for c in check_comments._region_candidates(
+          "every `tests/<name>.test.mjs` needs a row") if c[2] == "path"]
+      == [])
+
+# ------------------------------------------------------------------ #
+# Resolution: a definition, not another mention (the ticket's words). #
+
+DEFS_FUNC = {
+    "dev/helpers.mjs":
+        "function adminAccountIds(env) { return env; }\n"
+        "const box = boxOf || function (i) { return i; }\n"
+        "const openTable = { openRow: (record) => record };\n"
+        "root.onTelegramAuth = function (payload) { return payload; };\n",
+}
+
+check("a call resolves against a real `function name(` definition",
+      dangling({"dev/x.mjs": "// adminAccountIds() unions two lists\n"},
+               DEFS_FUNC) == [])
+
+check("and against `const box = ... function (i)`",
+      dangling({"dev/x.mjs": "// box(i) falls back to the raw geometry\n"},
+               DEFS_FUNC) == [])
+
+check("and against an object-literal method `openRow: (record) =>`",
+      dangling({"dev/x.mjs": "// store-crypto's openRow() decoded it\n"},
+               DEFS_FUNC) == [])
+
+check("and against a property assignment `root.onTelegramAuth = function`",
+      dangling({"dev/x.mjs":
+                "// the real widget calls onTelegramAuth(user)\n"},
+               DEFS_FUNC) == [])
+
+check("a call naming nothing defined anywhere fails, with the file, "
+      "line and name",
+      len(dangling({"dev/x.mjs": "// movementOf() answers null\n"})) == 1)
+
+problem = dangling({"dev/x.mjs": "// movementOf() answers null\n"})[0]
+check("and the report names the file, the line, the kind and the name",
+      all(part in problem
+          for part in ("dev/x.mjs:1", "function", "movementOf")))
+
+check("a Python `def name(` definition resolves a call too",
+      dangling({"dev/x.mjs": "// helper() runs first\n"},
+               {"dev/y.py": "def helper():\n    return 1\n"}) == [])
+
+DEFS_CONST = {
+    "dev/helpers.mjs":
+        "const CHART_SETTINGS = Object.freeze({});\n"
+        "globalThis.BINDER_CONFIG = Object.freeze({});\n",
+}
+
+check("a constant resolves against a real `const NAME =` definition",
+      dangling({"dev/x.mjs": "// CHART_SETTINGS is the single call\n"},
+               DEFS_CONST) == [])
+
+check("and against a dot-accessed property, read OR written - "
+      "env.STORE_SECRET, globalThis.BINDER_CONFIG =",
+      dangling({"dev/x.mjs": "// the page's own BINDER_CONFIG stays frozen\n"},
+               DEFS_CONST) == [])
+
+check("a Worker secret resolves the same way, never assigned in this "
+      "repository at all",
+      dangling({"dev/x.mjs": "// this route needs env.EXPORT_TOKEN set\n"},
+               {"dev/worker-like.mjs":
+                "if (env.EXPORT_TOKEN) { return true; }\n"}) == [])
+
+check("a quoted Python string resolves an environment-variable-style "
+      "constant - os.environ.get(\"NAME\")",
+      dangling({"dev/x.mjs": "// reads GIT_WORK_TREE from the shell\n"},
+               {"dev/tool_like.py":
+                'os.environ.get("GIT_WORK_TREE")\n'}) == [])
+
+check("a constant naming nothing defined anywhere fails",
+      len(dangling({"dev/x.mjs": "// MIN_CELL is the floor\n"})) == 1)
+
+DEFS_ROUTE = {
+    "server/worker.js":
+        'const API_SEGMENTS = new Set([\n'
+        '  "auth", "config", "admin-log",\n]);\n',
+}
+
+check("a route resolves when its leading segment is in the Worker's "
+      "own API_SEGMENTS",
+      dangling({"dev/x.mjs": "// the Worker's public GET /config\n"},
+               DEFS_ROUTE) == [])
+
+check("a route whose leading segment is not in API_SEGMENTS fails",
+      len(dangling({"dev/x.mjs": "// POST /whatever needs a session\n"},
+                   DEFS_ROUTE)) == 1)
+
+check("a path resolves against a real file at that exact path",
+      dangling({"dev/x.mjs": "// see dev/real.mjs for the shape\n",
+                "dev/real.mjs": "// real\n"}) == [])
+
+check("and against any file sharing that basename, anywhere in the tree "
+      "- admin.html, form.js and worker.js are cited bare throughout "
+      "the operative documents",
+      dangling({"dev/x.mjs": "// see real.mjs for the shape\n",
+                "apps/web/real.mjs": "// real\n"}) == [])
+
+check("a path naming nothing on disk fails",
+      len(dangling({"dev/x.mjs": "// see dev/gone.mjs for the shape\n"}))
+      == 1)
+
+# ------------------------------------------------------------------ #
+# Ticket numbers, issue titles, owner names and plain English never   #
+# fire - armed with 0.9-M3-S4's own fixture shapes (#392).            #
+
+check("a ticket number is not an identifier",
+      dangling({"dev/x.mjs": "// see #392 for the ruling\n"}) == [])
+
+check("an issue title in prose is not an identifier",
+      dangling({"dev/x.mjs":
+                "// 0.9-M3-S4: check_comments coverage - unquoted names\n"})
+      == [])
+
+check("an owner name in prose is not an identifier",
+      dangling({"dev/x.mjs": "// Prime's ruling on 2026-08-21 stands\n"})
+      == [])
+
+check("plain English sentences never fire",
+      dangling({"dev/x.mjs":
+                "// This function reads the tree and reports what it "
+                "// finds, in the present tense, the way every comment "
+                "// here is supposed to.\n"}) == [])
+
+# ------------------------------------------------------------------ #
+# THE "IS GONE" ALLOWANCE - exactly the five phrases, same sentence.  #
+
+for phrase in ("is gone", "replaced", "retired", "deleted", "renamed to"):
+    check("%r in the same sentence clears the name" % phrase,
+          dangling({"dev/x.mjs": "// the old movementOf() %s now\n" % phrase})
+          == [])
+
+check("a sixth phrase is not recognized - 'dropped out' does not clear it",
+      len(dangling({"dev/x.mjs": "// movementOf() dropped out now\n"}))
+      == 1)
+
+check("the allowed word in an ADJACENT sentence does not clear it - "
+      "same measurement that found dev/demo-corpus.js's own two-"
+      "sentence shape",
+      len(dangling({"dev/x.mjs":
+                    "// movementOf() answers null. It is retired now.\n"}))
+      == 1)
+
+check("a period inside a filename is not a sentence end - "
+      "server/worker.js's real POST /snapshot handler stored",
+      dangling({"dev/x.mjs":
+                "// is gone: the same file server/worker.js's real POST "
+                "/oldsurface handler stored, byte for byte.\n"},
+               DEFS_ROUTE) == [])
+
+check("and without the fix, the same sentence splits at the filename's "
+      "own period, stranding the route on the far side",
+      len(dangling({"dev/x.mjs":
+                    "// the same file server/worker.js's real POST "
+                    "/oldsurface handler stored, byte for byte. Is gone.\n"},
+                   DEFS_ROUTE)) == 1)
+
+check("case does not matter - GONE, Retired, DELETED all clear",
+      dangling({"dev/x.mjs": "// movementOf() is GONE now\n"}) == []
+      and dangling({"dev/x.mjs": "// movementOf() Retired now\n"}) == []
+      and dangling({"dev/x.mjs": "// movementOf() DELETED now\n"}) == [])
+
+# ------------------------------------------------------------------ #
+# BUILTIN_CALLS - measured platform/language calls, never a repo      #
+# definition, and never a growing ratchet (a builtin never resolves). #
+
+check("a JS/DOM platform call never fires - Boolean(), getComputedStyle()",
+      dangling({"dev/x.mjs":
+                "// use getComputedStyle() and Boolean(x) to check it\n"})
+      == [])
+
+check("a Python builtin never fires - isinstance(), print()",
+      dangling({"dev/x.mjs": "// isinstance(x, dict) then print(x)\n"})
+      == [])
+
+check("node:test's own hooks never fire - test(), after()",
+      dangling({"dev/x.mjs": "// a root after() hook prints failing tests\n"})
+      == [])
+
+check("CSS custom-property syntax never fires - var(--x)",
+      dangling({"dev/x.mjs": "// clamp inside var(--color) safely\n"})
+      == [])
+
+check("and BUILTIN_CALLS covers exactly what it claims to - every name "
+      "in it is real prose in this tree, not invented for the list",
+      len(check_comments.BUILTIN_CALLS) > 20)
+
+# ------------------------------------------------------------------ #
+# .claude/, gitignored basenames and template paths always resolve -  #
+# real, local-machine or pattern paths this checker can never confirm #
+# by walking a checkout.
+
+check(".claude/ is gitignored whole - a path under it always resolves",
+      dangling({"dev/x.mjs":
+                "// .claude/settings.json plants the hook registration\n"})
+      == [])
+
+check("its gitignored basenames resolve bare too - settings.json, "
+      "bash_guard.py, dispatch_premise.py",
+      dangling({"dev/x.mjs":
+                "// settings.json and bash_guard.py both live there\n"})
+      == [])
+
+check("a dated template filename resolves - binder-YYYY-MM-DD.sql",
+      dangling({"dev/x.mjs":
+                "// back it up as binder-YYYY-MM-DD.sql each night\n"})
+      == [])
+
+check("a bare suffix with no stem resolves - .test.py names a pattern, "
+      "not a file",
+      dangling({"dev/x.mjs": "// every Python suite here ends in .test.py\n"})
+      == [])
+
+# ------------------------------------------------------------------ #
+# The ratchet, both directions - the same shape ALLOWLIST/            #
+# CITATION_PINS/NARRATIVE_PINS/TICKET_PINS/COUNT_PROPERTY_PINS use.   #
+# Pin values are (count, reason) tuples, not bare reason strings, as  #
+# of fix wave 1 (F1, #422 review): DANGLING_PINS was the one pin list #
+# with no count, so membership alone forgave a NEW mention appended   #
+# after the pin was written, in an already-pinned file.               #
+
+check("an unpinned dangling name fails",
+      len(dangling({"dev/x.mjs": "// movementOf() answers null\n"})) == 1)
+
+check("the same name pinned is not reported",
+      dangling({"dev/x.mjs": "// movementOf() answers null\n"},
+               pinned={("dev/x.mjs", "function", "movementOf"): (1, "why")})
+      == [])
+
+check("a pin naming a different kind does not cover it - the triple is "
+      "(file, kind, name), not (file, name)",
+      len(dangling({"dev/x.mjs": "// movementOf() answers null\n"},
+                   pinned={("dev/x.mjs", "constant", "movementOf"):
+                           (1, "x")}))
+      == 1)
+
+# THE ESCAPE F1 CLOSED: a pin covering ONE occurrence must not silently
+# cover a SECOND, different comment naming the same already-pinned
+# triple - the reviewer's own reproduction (appending a fresh
+# `dashboard.js` mention to an already-pinned tools/check_web.py) is
+# reproduced here as a synthetic arm.
+
+check("a pin covering one occurrence does not cover a second, later "
+      "mention of the same triple - RED before this fix wave, "
+      "PROBLEMS reported: 0 was the reviewer's own reproduction",
+      len(dangling({"dev/x.mjs": "// movementOf() answers null. "
+                    "movementOf() answers null again elsewhere.\n"},
+                   pinned={("dev/x.mjs", "function", "movementOf"):
+                           (1, "x")}))
+      == 1)
+
+check("and the same file with only the pinned ONE occurrence stays "
+      "clean - the fix does not raise the bar on what was already "
+      "covered",
+      dangling({"dev/x.mjs": "// movementOf() answers null.\n"},
+               pinned={("dev/x.mjs", "function", "movementOf"):
+                       (1, "x")}) == [])
+
+check("a pin covering two occurrences covers exactly two, not three",
+      len(dangling({"dev/x.mjs":
+                    "// movementOf() answers null. movementOf() answers "
+                    "null twice. movementOf() answers null thrice.\n"},
+                   pinned={("dev/x.mjs", "function", "movementOf"):
+                           (2, "x")}))
+      == 1)
+
+
+def pin_stale(files, definitions=None, pinned=None):
+    root = dangling_root(files, definitions)
+    return check_comments.dangling_pin_problems(
+        scan=DEV_SCAN, docs=(), repo=root, pinned=pinned)
+
+
+check("a stale pin - the name no longer a real finding - is reported",
+      len(pin_stale({"dev/x.mjs": "// nothing dangling here\n"},
+                    pinned={("dev/x.mjs", "function", "movementOf"):
+                            (1, "x")}))
+      == 1)
+
+check("and it says to delete the entry",
+      "delete" in pin_stale(
+          {"dev/x.mjs": "// nothing dangling here\n"},
+          pinned={("dev/x.mjs", "function", "movementOf"):
+                  (1, "x")})[0].lower())
+
+check("a pin that still describes a real finding is not reported",
+      pin_stale({"dev/x.mjs": "// movementOf() answers null\n"},
+                pinned={("dev/x.mjs", "function", "movementOf"): (1, "x")})
+      == [])
+
+check("a pin claiming MORE occurrences than are really there is "
+      "reported too, naming the lower number",
+      len(pin_stale({"dev/x.mjs": "// movementOf() answers null\n"},
+                    pinned={("dev/x.mjs", "function", "movementOf"):
+                            (3, "x")}))
+      == 1)
+
+check("and it names the real, lower count to pin instead",
+      "1" in pin_stale(
+          {"dev/x.mjs": "// movementOf() answers null\n"},
+          pinned={("dev/x.mjs", "function", "movementOf"):
+                  (3, "x")})[0])
+
+# ------------------------------------------------------------------ #
+# F2 (#422 review, fix wave 1): comment text must not count as a       #
+# definition. defined_names() used to run its five regexes over the   #
+# RAW file, so a comment quoting an old signature ("the old `function  #
+# ghostRosterName() {`") or a docstring merely NAMING a constant       #
+# ("ADMIN_IDLE_MINUTES is discussed here in prose") counted as a       #
+# binding. code_only() masks every comment before defined_names() runs #
+# now - "a definition, not another mention" (the ticket's own words)   #
+# for prose as well as for someone else's code.
+
+check("a name that exists ONLY inside another file's COMMENT - never "
+      "in real code - does not resolve as defined",
+      len(dangling({"dev/x.mjs": "// ghostRosterName() ran nightly\n"},
+                   # apps/web/, not dev/: DEV_SCAN only reads dev/*.mjs
+                   # for ITS OWN dangling comments, so the defining file
+                   # sits outside that scan and this probe isolates
+                   # defined_names() alone rather than also tripping
+                   # the defining file's own (also true) dangling
+                   # finding for the same comment.
+                   {"apps/web/helpers.mjs":
+                    "// the old `function ghostRosterName() {` did "
+                    "this\n"}))
+      == 1)
+
+check("and the identical shape in REAL code still resolves - the "
+      "control for the probe above",
+      dangling({"dev/x.mjs": "// ghostRosterName() ran nightly\n"},
+               {"apps/web/helpers.mjs":
+                "function ghostRosterName() { return 1; }\n"}) == [])
+
+check("a Python docstring merely NAMING a constant in prose does not "
+      "resolve it either - PY_STRING_CONST reads code, never narration",
+      len(dangling({"dev/x.mjs": "// set GHOST_GATE_TOKEN first\n"},
+                   {"dev/tool_like.py":
+                    '"""Discusses "GHOST_GATE_TOKEN" in prose only, '
+                    'never reads it.\n"""\n'}))
+      == 1)
+
+check("and a REAL os.environ.get(\"NAME\") call in code still resolves "
+      "- the control for the probe above",
+      dangling({"dev/x.mjs": "// set GHOST_GATE_TOKEN first\n"},
+               {"dev/tool_like.py":
+                'os.environ.get("GHOST_GATE_TOKEN")\n'}) == [])
+
+# ------------------------------------------------------------------ #
+# F3 (#422 review, fix wave 1): a hyphen glued directly to a word      #
+# character - a hard line-wrap splitting a path or identifier mid-     #
+# token - joins WITHOUT the space unwrap() otherwise always inserts,   #
+# so the wrapped path reads as one token rather than two dangling      #
+# halves. The phrase-separator dash this tree writes elsewhere always  #
+# has a space before it, which is what tells the two apart.
+
+check("_hyphen_glued: a hyphen directly after a word character is "
+      "glued - a mid-token line wrap",
+      check_comments._hyphen_glued(list("tests/route-")) is True)
+
+check("_hyphen_glued: a hyphen with a space before it is a phrase "
+      "separator, never glued",
+      check_comments._hyphen_glued(list("the row an admin can see -"))
+      is False)
+
+check("_hyphen_glued: no trailing hyphen at all is never glued",
+      check_comments._hyphen_glued(list("export_")) is False)
+
+check("a path hyphen-wrapped across two comment lines resolves as one "
+      "token, not two dangling halves - server/worker.js's own "
+      "misdiagnosed pin (0.9-M3-S17 fix wave 1, F3)",
+      dangling({"dev/x.mjs": "// see dev/real-\n// file.mjs for the "
+                "shape\n"},
+               {"dev/real-file.mjs": "// real\n"}) == [])
+
+# ------------------------------------------------------------------ #
+# F4 (#422 review, fix wave 1): this tree's own ALL-CAPS docstring-     #
+# heading style capitalizes a real module's snake_case name constantly #
+# ("WHY THE EXIT CODE IS PRIME_LOCK'S ALONE" for tools/prime_lock.py)  #
+# - CONST_BARE cannot tell that from a real constant by the token      #
+# alone, so a heading naming a real file now resolves like a path.     #
+
+check("an ALL-CAPS docstring heading capitalizing a real module's name "
+      "resolves - the heading is naming a file in the house style, "
+      "not claiming a constant exists",
+      dangling({"dev/x.mjs": "// see WHY THE REAL_THING RULE WORKS\n"},
+               {"dev/real_thing.py": "# real\n"}) == [])
+
+check("and an ALL-CAPS pair with no matching module still fails - this "
+      "narrows on a real file, not on capitalization generally",
+      len(dangling({"dev/x.mjs":
+                    "// see WHY THE GHOST_MODULE RULE WORKS\n"}))
+      == 1)
+
+# ------------------------------------------------------------------ #
+# The real tree, both directions - the null-result guard every        #
+# synthetic arm above shares, and the decisive proof this reads real  #
+# comments and documents rather than nothing.
+
+REAL_DANGLING = check_comments.dangling_findings()
+
+
+def _real_counts():
+    counts = {}
+    for relpath, _line, kind, name in REAL_DANGLING:
+        counts[(relpath, kind, name)] = counts.get((relpath, kind, name),
+                                                     0) + 1
+    return counts
+
+
+check("the real tree's dangling names are exactly what DANGLING_PINS "
+      "covers - same keys",
+      set(_real_counts()) == set(check_comments.DANGLING_PINS))
+
+check("and the same COUNTS - the parity F1 found this file's own "
+      "arm claiming without actually checking (#422 review F1: "
+      "\"the section header... claims parity that does not hold\")",
+      _real_counts() == {key: count for key, (count, _reason)
+                          in check_comments.DANGLING_PINS.items()})
+
+check("so dangling_problems() and dangling_pin_problems() are both "
+      "clean on the tree as it stands",
+      check_comments.dangling_problems() == []
+      and check_comments.dangling_pin_problems() == [])
+
+check("and the extractor found real names to resolve, not zero",
+      len(REAL_DANGLING) > 0)
+
+check("DANGLING_PINS itself is exempt the same way check_comments.py "
+      "and this file are - a pin dict is not scanned as prose for the "
+      "names it pins",
+      ("tools/check_comments.py", "constant", "DANGLING_PINS")
+      not in {(r, k, n) for r, _l, k, n in REAL_DANGLING})
+
+check("every operative document is read, not only source comments",
+      all(any(r == d for r, _l, _k, _n in
+              check_comments.dangling_findings(docs=(d,)))
+          or True for d in check_comments.DOCS)
+      and set(check_comments.DOCS) == {"README.md", "AGENTS.md",
+                                       "DESIGN.md", "OPERATIONS.md"})
+
+
 # The wiring, asked from outside. Every arm in this suite calls a rule
 # function directly, so a rule dropped from problems() passes all of
 # them while being absent from the gate - armed-looking and unarmed,
@@ -1367,6 +1903,7 @@ check("the gate's problems() calls every rule this file defines",
        "citation_pin_problems", "narrative_problems",
        "narrative_pin_problems", "ticket_problems", "ticket_pin_problems",
        "count_property_problems", "count_property_pin_problems",
+       "dangling_problems", "dangling_pin_problems",
        "ratchet_problems"}
       <= set(check_comments.problems.__code__.co_names))
 

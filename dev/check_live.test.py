@@ -1166,7 +1166,7 @@ check("the five bot-token-guarded rows are 'never', not 'first-contact' "
 
 # "the destructive route is on the ledger and marked hands-off" stood
 # here, naming DELETE /snapshot by id - the one route this ledger ever
-# marked deliberately undriven. RETIRED (0.9-M2-S3, #354): the route is
+# marked deliberately undriven, RETIRED (0.9-M2-S3, #354): the route is
 # deleted, not gated, so there is no destructive route left on the
 # ledger for this check to hold to its own claim, hardcoded id and all.
 

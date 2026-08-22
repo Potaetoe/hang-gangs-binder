@@ -380,6 +380,12 @@ const MAX_AUTH_BODY = 4 * 1024;
  * here, and it is a cap on the stored value rather than on the request,
  * because this route runs behind an admin session and there is no
  * pre-credential body to bound the way POST /auth/telegram has.
+ *
+ * It is also the ceiling on a serialized field-spec row, which is the
+ * one value in this table that is a document rather than a sentence
+ * (0.9-M3-S11, #419). MAX_FIELD_VALUES bounds what goes in that
+ * document; this bounds the row it becomes, so the two cannot be
+ * satisfied separately and leave an unservable row behind.
  */
 const MAX_CONTENT_VALUE = 8 * 1024;
 
@@ -567,6 +573,165 @@ const PUBLIC_CONFIG = Object.freeze([
  */
 const PUBLIC_CONFIG_SQL = "SELECT name, value FROM site_content WHERE " +
   "name IN (" + PUBLIC_CONFIG.map(() => "?").join(", ") + ")";
+
+/*
+ * THE FIELD-SPEC OVERLAY: one `site_content` row per categorical field,
+ * named `field.` plus the field's own id (0.9-M3-S11, #419; the ruled
+ * design #385, rules 6, 7 and 8).
+ *
+ * WHY THIS TABLE. It already holds admin-owned, page-read values with
+ * an audit column and a change-log writer, which is the same re-use
+ * SETTINGS above makes. A second table would give the log two writers
+ * and the admin pane two shapes to render, and neither buys anything
+ * the namespace does not.
+ *
+ * WHAT COMPOSES AND WHAT STAYS CODE. DESIGN.md, "Where configuration
+ * lives", draws the line at whether a wrong value gets sealed into a
+ * row and read back much later, and a BOUND is the thing that does: a
+ * weight typed against a wrong ceiling is a plausible record nobody can
+ * tell from a real one. A choice field carries no bound. Its values are
+ * strings the spec listed, and a value the spec stops listing reads as
+ * unstated rather than as a wrong number - so the categorical half is
+ * data an admin edits and the measured half is a release somebody read,
+ * which is #385 rule 6 arriving at the same line from the other side.
+ *
+ * THE NAMESPACE IS FENCED AT EVERY DOOR ONTO THIS TABLE. GET /content
+ * answers a caller with no credential, so these rows are refused that
+ * route in the statement AND again in the reader - the same two walls
+ * PUBLIC_CONFIG stands behind, for the same reason: a filter makes a
+ * widened statement invisible. POST /content and DELETE /content/<name>
+ * refuse the namespace outright, so a field row can only be written by
+ * the route that validates one.
+ */
+const FIELD_PREFIX = "field.";
+
+/*
+ * The pattern both content reads bind, one including the namespace and
+ * the other excluding it. Built from FIELD_PREFIX rather than written
+ * out, so the two statements and the two walls cannot come apart.
+ *
+ * `_` is a single-character wildcard in LIKE and `%` is the rest; the
+ * prefix carries neither, so this pattern means what it reads as.
+ */
+const FIELD_LIKE = FIELD_PREFIX + "%";
+
+/*
+ * A field id, and a value id: one charset, LOWER CASE ONLY.
+ *
+ * Narrower than CONTENT_NAME's tail, which 0.9-M3-S8 widened for the
+ * camel-cased settings names, and the difference is what these ids are.
+ * A field id is a KEY INSIDE A SEALED RECORD and a value id is the
+ * string stored under it, so two ids differing only in case would be
+ * two different answers on one form with nothing able to say which row
+ * meant which - and unlike a settings name, no ruled spelling forces
+ * the widening: every id here is either a shipped field's own `name` or
+ * one this Worker mints, and both are lower case.
+ *
+ * Forty-eight characters, so FIELD_PREFIX plus an id still fits inside
+ * CONTENT_NAME's sixty-four and the row is addressable as content.
+ */
+const SPEC_ID = /^[a-z0-9][a-z0-9_-]{0,47}$/;
+
+/*
+ * A field's label, its term inside a sentence, its blank line and one
+ * value's label: each is a word somebody reads on a form rather than
+ * prose, and MAX_CONTENT_VALUE is the wrong ceiling for all four.
+ */
+const MAX_FIELD_LABEL = 64;
+
+/*
+ * How many values one field may carry, RETIRED ONES COUNTED.
+ *
+ * Retired values stay in the row forever - that is what makes
+ * un-retiring possible and what stops a minted id landing on one a
+ * member's stored answer already uses - so the bound has to be on the
+ * row's whole history rather than on what is offered today. A hundred
+ * is far past any list a person picks from and far short of a document
+ * that costs anything to serve on every page load.
+ */
+const MAX_FIELD_VALUES = 100;
+
+/*
+ * How many fields the effective spec may hold, shipped ones counted.
+ *
+ * Every categorical field is a block in the group-makeup answer and a
+ * dimension in the charts' filter chips (#384), so this is a bound on
+ * work per request rather than on storage. Forty is a form far longer
+ * than anybody fills in, which is the right side to be wrong on.
+ */
+const MAX_SPEC_FIELDS = 40;
+
+/*
+ * What an admin means by a rename (#385 rule 8), and the reason there
+ * are two words rather than a guess.
+ *
+ * `relabel` is the same thing re-worded: the value keeps its stable id,
+ * so every sealed answer already stored follows the new word instantly.
+ * `replace` is a genuinely new option: the old id retires under the
+ * word it had, and a new id is minted for the new one, so stored
+ * answers keep the retired value and stop being counted under either.
+ * The two are indistinguishable from the request alone, which is why
+ * this Worker refuses a rename that does not say which.
+ */
+const RENAME_MODES = ["relabel", "replace"];
+
+/*
+ * The overlay row's own format version.
+ *
+ * A stored format that changes takes a new number and a decoder for
+ * both, never a regenerated row (AGENTS.md, "Code standards"), and a
+ * row this Worker cannot read falls back to the shipped field rather
+ * than serving an empty one - which is the safe direction for a
+ * deployment rolled back under rows a newer one wrote.
+ */
+const FIELD_FORMAT = 1;
+
+/*
+ * The two reads of `site_content` that split it in half, written from
+ * one pattern so neither can drift out of agreement with the other.
+ *
+ * The excluding one is GET /content's, and the exclusion is in the
+ * STATEMENT rather than in the loop that serializes the answer: what
+ * stops a field row leaving the database at all is that the database
+ * was never asked for one.
+ */
+const CONTENT_ROWS_SQL = "SELECT name, value FROM site_content " +
+  "WHERE name NOT LIKE ? ORDER BY name";
+const FIELD_ROWS_SQL = "SELECT name, value FROM site_content " +
+  "WHERE name LIKE ? ORDER BY name";
+
+/*
+ * Whether a content name addresses the field namespace.
+ *
+ * FOLDED, because LIKE is folded: SQLite compares ASCII case-
+ * insensitively in a LIKE, so `Field.Gender` is a row the excluding
+ * statement above withholds and the including one hands over. A test
+ * written byte for byte here would disagree with both statements about
+ * exactly the row `wrangler d1 execute` is the way to write.
+ */
+function isFieldName(name) {
+  return String(name).toLowerCase().startsWith(FIELD_PREFIX);
+}
+
+/*
+ * One row of `site_content`, written or replaced.
+ *
+ * One home for the statement because two routes issue it - the copy
+ * route and the field-spec route - and an UPSERT spelled twice is a
+ * conflict clause that can be right in one place and wrong in the
+ * other. The audit column is `writerOf(caller)`, which is the account
+ * id or the break-glass literal, never an invented id.
+ */
+async function writeContentRow(env, name, value, caller) {
+  await env.DB.prepare(
+    "INSERT INTO site_content (name, value, updated_at, updated_by) " +
+    "VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET " +
+    "value = excluded.value, updated_at = excluded.updated_at, " +
+    "updated_by = excluded.updated_by"
+  )
+    .bind(name, value, new Date().toISOString(), writerOf(caller))
+    .run();
+}
 
 /*
  * How many change-log lines one read hands back.
@@ -1146,7 +1311,11 @@ async function adminVia(env, accountId, status) {
 function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "POST, GET, DELETE, OPTIONS",
+    // PUT is here for PUT /admin-fields/<id> (0.9-M3-S11, #419). A
+    // method the preflight does not name is a method the browser
+    // refuses before the request is made, so a route added without its
+    // verb here works from curl and never from the admin page.
+    "Access-Control-Allow-Methods": "POST, PUT, GET, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Max-Age": "86400",
     Vary: VARY,
@@ -2693,7 +2862,19 @@ async function chartSettings(env) {
 async function handleCharts(request, env, origin, caller) {
   const accountId = rowIdentity(caller.accountId);
 
-  const asked = askFor(new URL(request.url).searchParams);
+  /*
+   * THE EFFECTIVE SPEC, not the shipped one (0.9-M3-S11, #419). Every
+   * refusal, every measure and every group-makeup block below is
+   * decided against the form members are actually filling in - so a
+   * categorical field an admin added is a filter dimension and a makeup
+   * block with no code change here, and a value an admin retired stops
+   * being an ask this route accepts. Read ONCE for the request, for the
+   * reason the settings are: two reads could straddle an admin's write
+   * and answer half of it.
+   */
+  const site = await effectiveSpec(env);
+
+  const asked = askFor(new URL(request.url).searchParams, site);
   if (!asked.ok) return json({ error: asked.error }, 400, origin);
 
   const settings = await chartSettings(env);
@@ -2719,15 +2900,14 @@ async function handleCharts(request, env, origin, caller) {
     });
   }
 
-  const answer = aggregate(opened, asked.ask, undefined, settings);
+  const answer = aggregate(opened, asked.ask, site, settings);
   /* The same settings object both ways, and READ ONCE for the request:
      the overlay is drawn over the group trend on one pair of axes, so
      it has to be in whatever unit system the group's own answer came
      back in (0.9-M2-S17, #396 - a raised floor decides that, not the
      caller). Two reads of the table could straddle an admin's write and
      put a member's own line on a different grid from the group's. */
-  answer.self = selfSeries(opened, accountId, asked.ask, undefined,
-    settings);
+  answer.self = selfSeries(opened, accountId, asked.ask, site, settings);
 
   return new Response(JSON.stringify(answer), {
     status: 200,
@@ -2775,11 +2955,12 @@ function writerOf(caller) {
  * NOTHING A MEMBER WROTE PASSES THROUGH HERE, which is a property of
  * what the call sites pass rather than of this function, and is why the
  * list of them is worth knowing. Most write `site_content` or
- * `membership`, whose values are site copy, settings, roles and labels
- * an admin typed. The exception is handleEraseDeparted (0.9-M3-S15,
- * #420), which passes COUNTS of rows removed and Telegram's own verdict
- * - no row, no label, no handle - for an account the bot has said is
- * gone.
+ * `membership`, whose values are site copy, settings, roles, field
+ * definitions and labels an admin typed - the form's own words in every
+ * case, never a member's answer to one of them. The exception is
+ * handleEraseDeparted (0.9-M3-S15, #420), which passes COUNTS of rows
+ * removed and Telegram's own verdict - no row, no label, no handle -
+ * for an account the bot has said is gone.
  *
  * DELETE /submission/:id still appends nothing, in either direction,
  * and that is a decision rather than an omission: a member deleting
@@ -2851,12 +3032,15 @@ async function handleReadAdminLog(env, origin) {
  * weaken it: what makes /content safe is that every value in it stands
  * in for bytes anybody can already fetch from the published site, and
  * this route is a strictly SMALLER window on the same table - three
- * names, fixed in code. The form definition is still refused this
+ * names, fixed in code. The form's BOUNDS are still refused this
  * table, still a repository file the gate reads before it ships, and
  * DESIGN.md, "Where configuration lives", still holds the rule; what
- * moved is only that the group's name, the door's welcome text and the
- * default palette are runtime state the Worker serves, which that same
- * section already ruled they are.
+ * moved is the group's name, the door's welcome text and the default
+ * palette, which that same section already ruled are runtime state,
+ * and the categorical fields, which the 2026-08-20 sitting made admin
+ * data (#385 rule 6). Neither door here serves a field row: the
+ * allow-list below names three settings and nothing else, and every
+ * `field.` row is behind the session on GET /spec.
  *
  * SO WHY NOT LET THE DOOR READ /content? Because /content answers with
  * whatever is in the table, and the table is where the floor and every
@@ -2930,17 +3114,27 @@ async function handleReadConfig(env, origin) {
  * filter on a shared route is one `if` away from serving the list to a
  * member session, and that mistake would look like nothing at all.
  *
- * THE FORM DEFINITION IS REFUSED THIS TABLE, and that is the rule this
- * paragraph is really about: a wrong bound gets sealed into a record
- * and is discovered on export day, so the field spec stays a repository
- * file the gate reads before it ships. DESIGN.md, "Where configuration
- * lives", holds it.
+ * THE FORM'S BOUNDS ARE REFUSED THIS TABLE, and that is the rule this
+ * paragraph is really about: "a wrong value gets written into a row",
+ * which is what a bound does - it gets sealed into a record and is
+ * discovered on export day. So the units, the limits and the chart
+ * bands stay a repository file the gate reads before it ships.
+ * DESIGN.md, "Where configuration lives", holds it.
+ *
+ * The CATEGORICAL half of the spec does live here, in the `field.`
+ * namespace, and it is not an exception to that rule (0.9-M3-S11,
+ * #419; the ruled design #385 rule 6). A choice field carries no
+ * bound: its values are strings the spec listed, and one the spec
+ * stops listing reads as unstated rather than as a wrong number. Those
+ * rows are refused THIS ROUTE, in the statement above and in the
+ * reader below, because this route answers without a credential and
+ * the spec is a member read - GET /spec serves it behind a session.
  *
  * There IS a route named /config, and the rule above is unchanged by
  * it (0.9-M3-S8, #414). A route named for configuration in general
- * would be an invitation to move the spec into this table; this one is
- * not that route. The owner ruled it at the 2026-08-20 sitting (#385
- * rule 9), and what it serves is three names
+ * would be an invitation to move the whole spec into this table; this
+ * one is not that route. The owner ruled it at the 2026-08-20 sitting
+ * (#385 rule 9), and what it serves is three names
  * fixed in code - the group's name, the door's welcome text, the
  * default palette - which DESIGN.md's same section already calls
  * runtime state. handleReadConfig carries the argument for why the
@@ -2951,16 +3145,28 @@ async function handleReadConfig(env, origin) {
  * would make every page treat first-run as a failure.
  */
 async function handleReadContent(env, origin) {
-  const rows = await env.DB.prepare(
-    "SELECT name, value FROM site_content ORDER BY name"
-  ).all();
+  const rows = await env.DB.prepare(CONTENT_ROWS_SQL).bind(FIELD_LIKE).all();
 
   // Names and values only. `updated_by` is an account id, and a
   // document anybody may fetch is the wrong place to publish which
   // account did anything; the audit stays in the table for a surface
   // that reads it behind the admin gate.
   const content = {};
-  for (const row of rows.results) content[row.name] = row.value;
+  for (const row of rows.results) {
+    /*
+     * REFUSED, NOT DROPPED, exactly as handleReadConfig refuses a name
+     * outside its allow-list. The statement above already excludes the
+     * field namespace, so a row reaching here means somebody widened
+     * it - and a filter would make that widening invisible, which is
+     * the whole failure this second wall exists for. The throw reaches
+     * fetch()'s handler and answers 500 with no detail.
+     */
+    if (isFieldName(row.name)) {
+      throw new Error("the credential-free content read returned a " +
+        "field-spec row");
+    }
+    content[row.name] = row.value;
+  }
 
   return json({ ok: true, content: content }, 200, origin);
 }
@@ -2988,6 +3194,22 @@ async function handleWriteContent(request, env, origin, caller) {
       error: "A content name starts with a lowercase letter or a digit, " +
         "then letters, digits, dot, dash or underscore, up to 64 " +
         "characters.",
+    }, 400, origin);
+  }
+
+  /*
+   * THE FIELD NAMESPACE HAS ONE DOOR, and it is not this one
+   * (0.9-M3-S11, #419). A field row is a JSON document whose value ids,
+   * labels and retirements are checked against what members have
+   * already saved; a copy route that stored the same name as free text
+   * would be that validation with a second entrance and none of it.
+   * Folded, so a spelling this route admits in the tail cannot take the
+   * slot the real name needs - the same hole SETTINGS_BY_FOLD closes
+   * one paragraph down.
+   */
+  if (isFieldName(name)) {
+    return json({
+      error: "A field of the form is edited at /admin-fields, not here.",
     }, 400, origin);
   }
 
@@ -3050,14 +3272,7 @@ async function handleWriteContent(request, env, origin, caller) {
     }, 409, origin);
   }
 
-  await env.DB.prepare(
-    "INSERT INTO site_content (name, value, updated_at, updated_by) " +
-    "VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET " +
-    "value = excluded.value, updated_at = excluded.updated_at, " +
-    "updated_by = excluded.updated_by"
-  )
-    .bind(name, value, new Date().toISOString(), writerOf(caller))
-    .run();
+  await writeContentRow(env, name, value, caller);
 
   await noteAdminWrite(env, caller, "content.set", name, value);
   return json({ ok: true }, 200, origin);
@@ -3072,7 +3287,11 @@ async function handleWriteContent(request, env, origin, caller) {
  * Deleting nothing succeeds, for the reason unpublishing twice does.
  */
 async function handleDeleteContent(env, origin, name, caller) {
-  if (!CONTENT_NAME.test(name)) {
+  // A field row is retired at DELETE /admin-fields/<id>, which keeps
+  // what members saved (#385 rule 7); deleting the row here would be
+  // the same URL shape doing a different thing, and 404 is what every
+  // other name this route cannot address already answers.
+  if (!CONTENT_NAME.test(name) || isFieldName(name)) {
     return json({ error: "Not found." }, 404, origin);
   }
   // CASE IS FOLDED, the same way handleDeleteMembership folds it and
@@ -3086,6 +3305,629 @@ async function handleDeleteContent(env, origin, name, caller) {
   ).bind(name).run();
 
   await noteAdminWrite(env, caller, "content.unset", name, "");
+  return json({ ok: true }, 200, origin);
+}
+
+/* ------------------------------------------------------------------ */
+/* The effective field spec (0.9-M3-S11, #419).                        */
+
+/*
+ * The shipped spec, as a value this file may edit.
+ *
+ * A JSON round trip rather than a shallow copy, and it is safe here for
+ * a reason the file it copies states in its own header: what may be
+ * written in apps/web/site.config.js is text, numbers, true/false,
+ * lists and tables of them, and nothing computed. So the clone is total
+ * and there is nothing to lose. It is also NECESSARY rather than
+ * defensive, because apps/web/fields.js deep-freezes whatever spec it
+ * is handed: "the reader freezes what it reads, and the table stays a
+ * table". The shipped object is the one every other reader on this
+ * Worker holds, so composing into it would edit the form for the life
+ * of the isolate rather than for one request.
+ *
+ * The throw is the loud half, and it is fields.js's own stance: a spec
+ * that will not load beats a form that quietly asks nothing. It reaches
+ * fetch()'s handler and answers 500.
+ */
+function staticSpec() {
+  const site = globalThis.BINDER_SITE;
+  if (!site) {
+    throw new Error("apps/web/site.config.js has not been loaded, so " +
+      "nothing knows what this form asks");
+  }
+  return JSON.parse(JSON.stringify(site));
+}
+
+/*
+ * One overlay row, read - or null for a row this Worker cannot use.
+ *
+ * FORGIVING ON THE READ AND STRICT ON THE WRITE, which is the same
+ * split floorOf() takes in server/charts-agg.js and for the same
+ * reason: `wrangler d1 execute` validates nothing and is how every
+ * backup and restore is applied, so a row that arrived some other way
+ * has to leave the shipped field standing rather than blank it. An
+ * admin who types something wrong is told at PUT /admin-fields/<id>,
+ * where the value can still be corrected.
+ */
+function readFieldDoc(text) {
+  let doc;
+  try {
+    doc = JSON.parse(text);
+  } catch (e) {
+    return null;
+  }
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
+  if (doc.v !== FIELD_FORMAT) return null;
+  if (doc.values !== undefined && !Array.isArray(doc.values)) return null;
+  return doc;
+}
+
+/*
+ * The values one field OFFERS, in the spec's own `{value, label}`
+ * shape.
+ *
+ * `id` here becomes `value` there, and that rename is the whole of the
+ * label-to-id migration this slice is sometimes described as needing:
+ * apps/web/site.config.js already separates the two - a choice is
+ * `{ value: "admirer", label: "Fat admirer" }` and a stored record
+ * carries the VALUE - so the stable id a relabel needs is the string
+ * members' rows have always held. Nothing stored is rewritten and
+ * nothing has to be, which is why there is no migration step to run.
+ */
+function offeredValues(doc) {
+  return (doc.values || [])
+    .filter((one) => one && typeof one === "object" && one.retired !== true)
+    .map((one) => ({ value: one.id, label: one.label }));
+}
+
+/*
+ * Every overlay row, keyed by field id.
+ *
+ * ORDER BY name, so two admin-added fields land in the effective spec
+ * in the same order on every request - a form whose boxes swapped
+ * places between page loads would be this Worker handing SQLite's row
+ * order to a person.
+ */
+async function fieldDocs(env) {
+  const rows = await env.DB.prepare(FIELD_ROWS_SQL).bind(FIELD_LIKE).all();
+  const docs = new Map();
+  for (const row of (rows && rows.results) || []) {
+    /*
+     * REFUSED, NOT DROPPED, the same wall handleReadConfig and
+     * handleReadContent stand behind: the statement asks only for the
+     * namespace, so a row outside it means the statement was widened,
+     * and a filter here would make that widening invisible.
+     */
+    if (!isFieldName(row.name)) {
+      throw new Error("the field-spec read returned a name outside the " +
+        "field namespace");
+    }
+    /*
+     * THE PREFIX'S OWN CASE IS PART OF THE ID, and SPEC_ID cannot say
+     * so because it never sees the prefix. LIKE folds, so the statement
+     * above hands back `FIELD.gender` exactly as readily as
+     * `field.gender`, and a blind six-character cut composes both onto
+     * `gender` - two rows of a BINARY primary key answering as one
+     * field, with nothing able to say which of them the form meant.
+     * Ignored rather than refused, because a row written by hand is
+     * what the stored format promises to read forgivingly; the write
+     * routes are where a folded spelling is told no.
+     */
+    if (!row.name.startsWith(FIELD_PREFIX)) continue;
+    const id = row.name.slice(FIELD_PREFIX.length);
+    // A row whose id this Worker could never have written - upper case,
+    // too long, an empty tail - is ignored rather than composed, for
+    // readFieldDoc's reason.
+    if (!SPEC_ID.test(id)) continue;
+    const doc = readFieldDoc(row.value);
+    if (doc) docs.set(id, doc);
+  }
+  return docs;
+}
+
+/*
+ * One overlay applied to the spec being composed.
+ *
+ * A ROW THAT NAMES A MEASURED FIELD IS IGNORED HERE, not honored. The
+ * write route refuses one, so the only way to store it is the other
+ * door, and a Worker that composed it would let a hand-written row move
+ * a chart band - which is exactly what #385 rule 6 keeps in the
+ * release.
+ */
+function applyOverlay(site, id, doc) {
+  const index = site.fields.findIndex((one) => one.name === id);
+
+  if (index === -1) {
+    // A retired field the shipped spec never had is simply not there;
+    // the row stays so that un-retiring can bring it back with its
+    // values, which is the whole of #385 rule 7 for a whole field.
+    if (doc.retired === true) return;
+    const made = { name: id, kind: "choice" };
+    if (doc.multiple === true) made.multiple = true;
+    made.label = typeof doc.label === "string" ? doc.label : id;
+    made.term = typeof doc.term === "string" ? doc.term : made.label;
+    if (typeof doc.blank === "string" && doc.blank !== "") {
+      made.blank = doc.blank;
+    }
+    made.choices = offeredValues(doc);
+    // Charted always, which is #385 rule 6's other half: a categorical
+    // field an admin adds becomes a filter chip and a group-makeup
+    // block with no code change, and an admin-facing switch for that
+    // would be a setting nobody asked for.
+    made.chart = true;
+    site.fields.push(made);
+    return;
+  }
+
+  const field = site.fields[index];
+  if (field.kind !== "choice") return;
+  if (doc.retired === true) {
+    site.fields.splice(index, 1);
+    return;
+  }
+  if (typeof doc.label === "string") field.label = doc.label;
+  if (typeof doc.term === "string") field.term = doc.term;
+  if (typeof doc.blank === "string") field.blank = doc.blank;
+  // `multiple` is deliberately not composed: it decides whether a
+  // stored answer is a string or an array, so changing it would re-read
+  // every sealed row under a shape they were not written in. The write
+  // route refuses the change; this is the second refusal.
+  if (Array.isArray(doc.values) && !field.choicesFrom) {
+    field.choices = offeredValues(doc);
+  }
+}
+
+/*
+ * THE EFFECTIVE SPEC: the shipped spec overlaid by what admins have
+ * edited, composed in this one place.
+ *
+ * ONE PLACE, because everything that reads a spec has to read the same
+ * one: GET /spec serves it to the pages, and GET /charts-data hands it
+ * to server/charts-agg.js so a filter, a measure and a group-makeup
+ * block are decided against the form members are actually filling in.
+ * Two compositions would be two forms, and the one that decided a
+ * refusal would not be the one that drew the boxes.
+ *
+ * WITH NO OVERLAY ROWS IT IS THE SHIPPED SPEC, byte for byte. That is
+ * the property the static file's whole role rests on: it is the
+ * fallback, the fork's starting point and the thing a release review
+ * reads, so a composed answer that differed from it by so much as a key
+ * order would make all three claims approximate.
+ */
+async function effectiveSpec(env) {
+  const site = staticSpec();
+  const docs = await fieldDocs(env);
+  for (const [id, doc] of docs) applyOverlay(site, id, doc);
+  return site;
+}
+
+/*
+ * The spec, read by a member.
+ *
+ * A SESSION, not the credential-free door GET /content is. The copy
+ * that route serves stands in for bytes anybody can already fetch from
+ * the published site; this document is what a group's admins have built
+ * their form into, including the words they chose for a question about
+ * their own members, and it is not published anywhere. The pages that
+ * read it are member pages behind the same gate.
+ *
+ * `private, no-store` for the reason GET /charts-data carries it: one
+ * binder's spec is not a document a shared cache may hand to the next
+ * caller.
+ */
+async function handleReadSpec(env, origin) {
+  const site = await effectiveSpec(env);
+  return new Response(JSON.stringify({ ok: true, spec: site }), {
+    status: 200,
+    headers: Object.assign(
+      {
+        "Content-Type": "application/json",
+        "Cache-Control": "private, no-store",
+        Vary: VARY,
+      },
+      origin ? corsHeaders(origin) : {}
+    ),
+  });
+}
+
+/*
+ * A value id minted from the label an admin typed.
+ *
+ * ADMINS DO NOT TYPE IDS. #385 rules 6 and 8 describe a person adding,
+ * renaming and removing options in words; an id is this Worker's own
+ * bookkeeping, and a surface that asked for one would be asking a
+ * person to know why the two are different.
+ *
+ * IT STEPS AROUND EVERY ID THE FIELD HAS EVER HAD, retired ones
+ * included, and that is the load-bearing part rather than tidiness:
+ * re-issuing a retired id would silently re-adopt every sealed answer
+ * stored under it, so an option somebody removed a year ago would come
+ * back holding people it was never offered to.
+ */
+function mintId(label, taken) {
+  const base = String(label).toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    // A label with nothing this charset admits still needs an id, and a
+    // refusal would make a perfectly good option unaddable for a reason
+    // about the alphabet rather than about the form.
+    .replace(/^$/, "value");
+  let candidate = base;
+  let next = 2;
+  while (taken.has(candidate)) {
+    candidate = base + "-" + next;
+    next += 1;
+  }
+  return candidate;
+}
+
+/*
+ * What a field holds now, as the write route's own shape.
+ *
+ * The stored row when there is one, and the shipped field otherwise -
+ * NEVER the effective spec, which is the trap this function exists to
+ * step around: a retired field is spliced out of the effective spec, so
+ * a route that read its current state from there would see nothing and
+ * treat un-retiring as a fresh creation, losing every value the admin
+ * expects back.
+ */
+function currentValues(shipped, held) {
+  if (held && Array.isArray(held.values)) {
+    return held.values
+      .filter((one) => one && typeof one === "object" &&
+        typeof one.id === "string" && typeof one.label === "string")
+      .map((one) => ({ id: one.id, label: one.label,
+        retired: one.retired === true }));
+  }
+  return ((shipped && shipped.choices) || []).map((one) => ({
+    id: one.value, label: one.label, retired: false }));
+}
+
+const TOO_MANY_VALUES =
+  "A field carries up to " + MAX_FIELD_VALUES +
+  " values, retired ones counted.";
+
+const RENAME_NEEDS_MODE =
+  "Renaming a value asks what it means: \"relabel\" if it is the same " +
+  "thing re-worded, so entries already saved follow the new word, or " +
+  "\"replace\" if it is a genuinely new option, so the old one retires " +
+  "and entries keep it.";
+
+/*
+ * The requested value list, merged over the one the field holds.
+ *
+ * THE REQUEST IS THE WHOLE OFFERED LIST, in the order it should be
+ * offered in, so there is no separate index to keep in step with the
+ * values and no per-value verb an admin pane has to compose. What the
+ * request leaves OUT is retired rather than destroyed - #385 rule 7
+ * admits no third answer, and a pane that dropped a value it had not
+ * rendered would otherwise take somebody's stored answer out of the
+ * spec's reach for good.
+ *
+ * AN ID THE FIELD HAS NEVER HAD IS A REFUSAL. An item with no id is a
+ * new value and is minted one; an item WITH an id is a claim about a
+ * value that exists, and honoring a stale one would create a value
+ * under an id nobody chose - the shape where an admin pane a release
+ * behind quietly invents options.
+ */
+function mergeValues(current, requested, mode) {
+  /*
+   * THE BOUND IS READ BEFORE ANYTHING IS MINTED. Every requested item
+   * contributes at least one entry, so a list already past the ceiling
+   * can only end past it - and mintId steps over every id taken so far,
+   * which makes a list of same-labeled values quadratic to merge. The
+   * answer is the same 400 either way; reading the length first is what
+   * keeps a body an admin could paste by accident from buying seconds
+   * of Worker time to say no.
+   */
+  if (requested.length > MAX_FIELD_VALUES) {
+    return { error: TOO_MANY_VALUES };
+  }
+
+  const byId = new Map(current.map((one) => [one.id, one]));
+  const taken = new Set(current.map((one) => one.id));
+  const out = [];
+  const seen = new Set();
+  let renames = 0;
+
+  for (const item of requested) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return { error: "Each value is an object carrying a label." };
+    }
+    const label = item.label;
+    if (typeof label !== "string" || label.trim() === "" ||
+        label.length > MAX_FIELD_LABEL) {
+      return { error: "A value's label is text, up to " + MAX_FIELD_LABEL +
+        " characters." };
+    }
+    const retired = item.retired === true;
+
+    if (item.id === undefined || item.id === null) {
+      const minted = mintId(label, taken);
+      taken.add(minted);
+      seen.add(minted);
+      out.push({ id: minted, label: label, retired: retired });
+      continue;
+    }
+    if (typeof item.id !== "string" || !byId.has(item.id)) {
+      return { error: "That is not a value this field has. A new value " +
+        "is sent with no id and is given one here." };
+    }
+    if (seen.has(item.id)) {
+      return { error: "That value is listed more than once." };
+    }
+    seen.add(item.id);
+
+    const was = byId.get(item.id);
+    if (was.label === label) {
+      out.push({ id: item.id, label: label, retired: retired });
+      continue;
+    }
+
+    renames += 1;
+    if (mode === "relabel") {
+      out.push({ id: item.id, label: label, retired: retired });
+      continue;
+    }
+    if (mode !== "replace") return { error: RENAME_NEEDS_MODE };
+
+    // The old value keeps the word it was retired under, so whoever
+    // reads a sealed answer later can still tell what the member was
+    // offered; the new one takes its place in the list rather than the
+    // end, because the admin edited a box in a position.
+    out.push({ id: item.id, label: was.label, retired: true });
+    const minted = mintId(label, taken);
+    taken.add(minted);
+    seen.add(minted);
+    out.push({ id: minted, label: label, retired: retired });
+  }
+
+  for (const one of current) {
+    if (!seen.has(one.id)) {
+      out.push({ id: one.id, label: one.label, retired: true });
+    }
+  }
+
+  // The bound again, on the list that came OUT: `replace` pushes two
+  // entries for one requested item and every value the request left out
+  // is carried over retired, so a merge can pass the ceiling from a
+  // request that was under it.
+  if (out.length > MAX_FIELD_VALUES) {
+    return { error: TOO_MANY_VALUES };
+  }
+  return { values: out, renames: renames };
+}
+
+const NOT_A_CHOICE_FIELD =
+  "That field is not a choice field. Its units, bounds and chart bands " +
+  "are part of a release somebody read rather than something to edit " +
+  "here.";
+
+/*
+ * Adding a categorical field, or changing one (#385 rules 6, 7 and 8).
+ *
+ * THE WHOLE DESIRED STATE, not a patch. The row that comes out is
+ * everything the field is - its label, its term, its blank line, every
+ * value it has ever offered and which of them are retired - so a reader
+ * needs one row rather than a row and a replay. Names the request does
+ * not carry keep what they had, which is what lets a pane that renders
+ * only the values post only the values.
+ *
+ * VALIDATED HERE AND NOWHERE ELSE, the same posture SETTINGS takes: the
+ * readers downstream are deliberately forgiving, and forgiveness is
+ * right for a row written through `wrangler d1 execute` and wrong as a
+ * substitute for telling an admin their edit did not take.
+ */
+async function handleWriteField(request, env, origin, id, caller) {
+  if (!SPEC_ID.test(id)) return json({ error: "Not found." }, 404, origin);
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch (e) {
+    return json({ error: "Body must be JSON." }, 400, origin);
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return json({ error: "Body must be a JSON object." }, 400, origin);
+  }
+
+  const site = staticSpec();
+  const shipped = site.fields.filter((one) => one.name === id)[0] || null;
+  if (shipped && shipped.kind !== "choice") {
+    return json({ error: NOT_A_CHOICE_FIELD }, 400, origin);
+  }
+
+  const docs = await fieldDocs(env);
+  const held = docs.get(id) || null;
+
+  const text = (name, given, fallback) => {
+    if (given === undefined) return { value: fallback };
+    if (typeof given !== "string" || given.length > MAX_FIELD_LABEL) {
+      return { error: "A field's " + name + " is text, up to " +
+        MAX_FIELD_LABEL + " characters." };
+    }
+    return { value: given };
+  };
+
+  const heldLabel = held && typeof held.label === "string" ? held.label : null;
+  const label = text("label", payload.label,
+    heldLabel !== null ? heldLabel : (shipped ? shipped.label : null));
+  if (label.error) return json({ error: label.error }, 400, origin);
+  if (typeof label.value !== "string" || label.value.trim() === "") {
+    return json({
+      error: "A new field needs a label - the words a member reads " +
+        "beside the box.",
+    }, 400, origin);
+  }
+
+  const heldTerm = held && typeof held.term === "string" ? held.term : null;
+  const term = text("term", payload.term,
+    heldTerm !== null ? heldTerm
+      : (shipped ? shipped.term : label.value.toLowerCase()));
+  if (term.error) return json({ error: term.error }, 400, origin);
+
+  const heldBlank = held && typeof held.blank === "string" ? held.blank : null;
+  const blank = text("blank line", payload.blank,
+    heldBlank !== null ? heldBlank
+      : (shipped && typeof shipped.blank === "string" ? shipped.blank : null));
+  if (blank.error) return json({ error: blank.error }, 400, origin);
+
+  /*
+   * `multiple` IS FIXED AT CREATION. It decides whether a stored answer
+   * is one string or a list of them, so flipping it re-reads every
+   * sealed row under a shape it was not written in - values would
+   * silently read as unstated and the group makeup would empty out,
+   * with nothing destroyed and nothing showing. A new field takes it;
+   * an existing one refuses a different value and ignores the same one.
+   */
+  const exists = Boolean(shipped || held);
+  const multiple = shipped ? shipped.multiple === true
+    : (held ? held.multiple === true : payload.multiple === true);
+  if (exists && payload.multiple !== undefined &&
+      Boolean(payload.multiple) !== multiple) {
+    return json({
+      error: "Whether a field takes one answer or several is fixed when " +
+        "it is added, because it decides how every entry already saved " +
+        "is read.",
+    }, 400, origin);
+  }
+
+  if (payload.retired !== undefined &&
+      typeof payload.retired !== "boolean") {
+    return json({ error: "Retiring a field is true or false." }, 400,
+      origin);
+  }
+  const retired = payload.retired === undefined
+    ? Boolean(held && held.retired === true) : payload.retired;
+
+  if (payload.mode !== undefined &&
+      RENAME_MODES.indexOf(payload.mode) === -1) {
+    return json({ error: RENAME_NEEDS_MODE }, 400, origin);
+  }
+
+  /*
+   * A FIELD WHOSE CHOICES LIVE OUTSIDE THE SPEC TAKES NO VALUE LIST.
+   * `choicesFrom` points at a list a page holds - the country table is
+   * the shipped one - so there is nothing here to edit, and accepting a
+   * list would store an edit every reader then ignores: an admin
+   * watching their change not happen, with a 200 saying it did.
+   */
+  const outside = Boolean(shipped && shipped.choicesFrom);
+  if (payload.values !== undefined && outside) {
+    return json({
+      error: "This field's choices live outside the form spec, so its " +
+        "values are not edited here. Its label is.",
+    }, 400, origin);
+  }
+  if (payload.values !== undefined && !Array.isArray(payload.values)) {
+    return json({ error: "Values are a list, in the order they are " +
+      "offered in." }, 400, origin);
+  }
+
+  let values = currentValues(shipped, held);
+  let renames = 0;
+  if (payload.values !== undefined) {
+    const merged = mergeValues(values, payload.values, payload.mode);
+    if (merged.error) return json({ error: merged.error }, 400, origin);
+    values = merged.values;
+    renames = merged.renames;
+  }
+
+  /*
+   * THE CEILING COUNTS THE FORM, not the rows behind it. `docs` holds
+   * one entry per overlay row, and an overlay on a shipped field is
+   * that field a second time - so adding the two numbers refuses a
+   * binder whose admins have edited three shipped fields three fields
+   * early, while the sentence it prints says the form carries forty.
+   * Composing is what makes the number the one an admin can count on
+   * the page, and it is the same composition the readers do.
+   */
+  if (!exists) {
+    const effective = staticSpec();
+    for (const [key, overlay] of docs) applyOverlay(effective, key, overlay);
+    if (effective.fields.length + 1 > MAX_SPEC_FIELDS) {
+      return json({
+        error: "This form already carries " + MAX_SPEC_FIELDS + " fields.",
+      }, 409, origin);
+    }
+  }
+
+  const doc = { v: FIELD_FORMAT, label: label.value, term: term.value,
+    multiple: multiple, retired: retired };
+  if (blank.value !== null && blank.value !== undefined) {
+    doc.blank = blank.value;
+  }
+  if (!outside) doc.values = values;
+
+  const stored = JSON.stringify(doc);
+  if (stored.length > MAX_CONTENT_VALUE) {
+    return json({ error: "That field is too large to store." }, 413, origin);
+  }
+
+  await writeContentRow(env, FIELD_PREFIX + id, stored, caller);
+
+  /*
+   * The log line carries what an admin typed and the answer they gave
+   * about a rename, which is the half of the rename ruling a later
+   * reader needs: the same-thing-re-worded case and the genuinely-new-
+   * option case leave the same spec behind and different data behind,
+   * so a log that recorded only the spec could not tell them apart. It
+   * carries no id, no handle and no member's answer, and noteAdminWrite
+   * bounds the rest.
+   */
+  await noteAdminWrite(env, caller, "field.set", id,
+    (renames > 0 ? payload.mode + ": " : "") + label.value + " (" +
+    offeredValues(doc).map((one) => one.label).join(", ") + ")");
+  return json({ ok: true }, 200, origin);
+}
+
+/*
+ * Retiring a field: it stops being offered, and every answer members
+ * gave it stays exactly where it is (#385 rule 7).
+ *
+ * RETIRE RATHER THAN DELETE, which is why this route writes a row where
+ * a delete route would remove one. The row is what remembers the values
+ * and their words, so PUT with `retired: false` brings the field back
+ * whole; a deleted row would bring back the shipped field and lose
+ * every value an admin had added to it.
+ *
+ * A field this binder does not have at all is 404 rather than a
+ * retirement of nothing, because a row naming a field that never
+ * existed would be an overlay the reader spends every request stepping
+ * over.
+ */
+async function handleRetireField(env, origin, id, caller) {
+  if (!SPEC_ID.test(id)) return json({ error: "Not found." }, 404, origin);
+
+  const site = staticSpec();
+  const shipped = site.fields.filter((one) => one.name === id)[0] || null;
+  if (shipped && shipped.kind !== "choice") {
+    return json({ error: NOT_A_CHOICE_FIELD }, 400, origin);
+  }
+
+  const docs = await fieldDocs(env);
+  const held = docs.get(id) || null;
+  if (!shipped && !held) return json({ error: "Not found." }, 404, origin);
+
+  const label = held && typeof held.label === "string" ? held.label
+    : (shipped ? shipped.label : id);
+  const term = held && typeof held.term === "string" ? held.term
+    : (shipped ? shipped.term : label);
+  const doc = { v: FIELD_FORMAT, label: label, term: term,
+    multiple: shipped ? shipped.multiple === true
+      : Boolean(held && held.multiple === true),
+    retired: true };
+  if (held && typeof held.blank === "string") doc.blank = held.blank;
+  else if (shipped && typeof shipped.blank === "string") {
+    doc.blank = shipped.blank;
+  }
+  if (!(shipped && shipped.choicesFrom)) {
+    doc.values = currentValues(shipped, held);
+  }
+
+  await writeContentRow(env, FIELD_PREFIX + id, JSON.stringify(doc), caller);
+  await noteAdminWrite(env, caller, "field.retire", id, label);
   return json({ ok: true }, 200, origin);
 }
 
@@ -3778,8 +4620,8 @@ async function handleEraseDeparted(env, origin, accountId, caller) {
  */
 const API_SEGMENTS = new Set([
   "auth", "session", "me", "my-entries", "submit", "charts-data", "export",
-  "submission", "content", "membership", "config", "admin-log",
-  "admin-departed",
+  "submission", "content", "membership", "config", "admin-log", "spec",
+  "admin-departed", "admin-fields",
 ]);
 
 function isApiPath(pathname) {
@@ -3968,6 +4810,44 @@ async function route(request, env, url, allowed, admitted) {
   if (method === "DELETE" && departed) {
     if (!admin) return unauthorized(allowed);
     return handleEraseDeparted(env, allowed, departed[1], caller);
+  }
+
+  /*
+   * The form, as the admins have built it (0.9-M3-S11, #419).
+   *
+   * A SESSION AND NOT AN ADMIN ONE: the pages that draw the form and
+   * the charts are member pages, and the spec is what they draw from.
+   * A break-glass EXPORT_TOKEN caller reads it too and is not refused
+   * here the way POST /submit refuses it, because nothing in this
+   * answer is scoped to an account - there is no member whose spec this
+   * would be.
+   *
+   * READ ONLY. The writes are the two routes below, whose whole job is
+   * checking an edit against what members have already saved; a second
+   * write door onto the same rows would be that checking with a way
+   * around it.
+   */
+  if (method === "GET" && path === "/spec") {
+    if (!caller) return unauthorized(allowed);
+    return handleReadSpec(env, allowed);
+  }
+
+  /*
+   * The form builder, admin in both directions - and HYPHENATED,
+   * never /admin/<anything>. The static-assets layer's html_handling
+   * redirects /admin.html to /admin, so an "admin" API segment would
+   * answer this router's refusal where the admin page belongs; that is
+   * the defect the /charts route hit in #365, and the comment above
+   * API_SEGMENTS carries the whole of it.
+   */
+  const adminField = /^\/admin-fields\/([^/]+)$/.exec(path);
+  if (method === "PUT" && adminField) {
+    if (!admin) return unauthorized(allowed);
+    return handleWriteField(request, env, allowed, adminField[1], caller);
+  }
+  if (method === "DELETE" && adminField) {
+    if (!admin) return unauthorized(allowed);
+    return handleRetireField(env, allowed, adminField[1], caller);
   }
 
   // Membership, admin in every direction, and these two lists are the

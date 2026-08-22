@@ -314,14 +314,42 @@ const DB = {
      * SQLite applies the explicit collation of either operand, and here
      * only the parameter carries one.
      */
+    /*
+     * `LIKE ?` is read the same way and answered as SQLite answers it,
+     * which since 0.9-M3-S11 (#419) is how `site_content` is split in
+     * two: the field-spec namespace is one read and everything else is
+     * its complement. Two properties of LIKE are written out rather
+     * than approximated, and each is a mutation that would otherwise be
+     * invisible - it is CASE-INSENSITIVE for ASCII, which is what puts
+     * a hand-written `Field.Gender` row on the same side of the split
+     * as `field.gender`, and a trailing `%` is a prefix rather than an
+     * equality, which is what makes the split a namespace at all. Only
+     * the trailing-wildcard shape both statements use is supported; a
+     * pattern with a wildcard anywhere else throws rather than
+     * pretending, for the reason every statement this stub does not
+     * recognize does.
+     */
+    const clause = (m) => (m[2]
+      ? { column: m[1], like: true, negated: /NOT/i.test(m[2]) }
+      : { column: m[1], fold: Boolean(m[3]) });
     const bound = where
-      ? Array.from(where[1].matchAll(/(\w+)\s*=\s*\?(\s+COLLATE\s+NOCASE)?/gi))
-        .map((m) => ({ column: m[1], fold: Boolean(m[2]) })) : [];
+      ? Array.from(where[1].matchAll(
+        /(\w+)\s*(?:(NOT\s+LIKE|LIKE)\s*\?|=\s*\?(\s+COLLATE\s+NOCASE)?)/gi))
+        .map(clause) : [];
     const folded = (value, fold) =>
       (fold && typeof value === "string" ? value.toLowerCase() : value);
+    const likeMatch = (value, pattern) => {
+      const text = String(pattern);
+      if (/[%_]/.test(text.slice(0, -1)) || !text.endsWith("%")) {
+        throw new Error("a LIKE pattern this stub does not model: " + text);
+      }
+      return String(value).toLowerCase()
+        .startsWith(text.slice(0, -1).toLowerCase());
+    };
     const matches = (row, a) => bound.length > 0 &&
-      bound.every((b, index) =>
-        folded(row[b.column], b.fold) === folded(a[index], b.fold));
+      bound.every((b, index) => (b.like
+        ? likeMatch(row[b.column], a[index]) !== b.negated
+        : folded(row[b.column], b.fold) === folded(a[index], b.fold)));
 
     /*
      * The last-admin guard, which is a subquery inside the DELETE

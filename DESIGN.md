@@ -630,14 +630,28 @@ The line is not static against dynamic. It is **whether a wrong value
 gets written into a row.**
 
 **The form's field spec is a repository data file, and it exists:**
-`apps/web/site.config.js`, read by `apps/web/fields.js` and by nothing
-else. It carries which fields there are, of what kind, in what units
-and within what bounds — a repository file rather than a runtime one
-because a bad bound produces a plausible record, stores it, and is
-discovered much later. No Worker check could catch that: the Worker
-has no opinion about meaning, deliberately. So the spec ships in a
-release that somebody read, and an admin-editable form means a surface
-that *composes* a spec rather than one that bypasses this.
+`apps/web/site.config.js`, read through `apps/web/fields.js`. It
+carries which fields there are, of what kind, in what units and within
+what bounds — a repository file rather than a runtime one because a bad
+bound produces a plausible record, stores it, and is discovered much
+later. No Worker check could catch that: the Worker has no opinion
+about meaning, deliberately. So the spec ships in a release that
+somebody read, and an admin-editable form means a surface that
+*composes* a spec rather than one that bypasses this.
+
+**That composing surface is the effective spec** (0.9-M3-S11, #419),
+and it is where the line falls in practice. `GET /spec` answers the
+static file overlaid by what admins have edited, computed in one place
+on the Worker and read by the pages and by the aggregation alike; with
+no admin edits it is the static file byte for byte, so that file stays
+the fallback and the fork's starting point. **Only the categorical half
+composes.** Values, their words and their order are admin data stored
+one row per field in `site_content`; the units, the limits and the
+chart bands stay code, which is the same line #385 rule 6 draws from
+the admin's side. Nothing an admin does rewrites a sealed row — a
+retired field or value stays inside members' entries and the spec
+simply stops offering it, and a rename asks whether the word changed or
+the option did.
 
 *Your page renders its fields from the spec (0.9-M2-S2); Charts and the
 admin surfaces do not yet.* Deriving each page's own fields from the
@@ -777,7 +791,7 @@ Worker's secret.
 | Google Apps Script + Sheet | data in a Google product; the CORS hack was the project's only open risk |
 | Supabase | free projects pause when quiet — a dead form, silently |
 | No endpoint (paste the blob) | moves work onto every member; the fallback if the Worker becomes a burden |
-| Form spec served from the Worker | a wrong field is silent until somebody reads the data; see "Where configuration lives" |
+| The form's units, limits and bands served from the Worker | a wrong bound is silent until somebody reads the data; the categorical half composes instead, see "Where configuration lives" |
 | A hash of the handle as the row's identity | the membership oracle, above |
 | Invite codes | bearer credentials people paste in chats; they verify nothing |
 | Widget redirect mode | signed payload in URLs — the oracle in a log file |

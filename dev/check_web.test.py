@@ -762,7 +762,7 @@ check("the real pin is back after the stale-pin arm",
 # (0.9-M2-S14, #380 ruling 2, superseding 0.9-M2-S6/#82 and              #
 # 0.9-M2-S13/#378 entirely): the custom theme itself is retired, so      #
 # footer_problems() reverts to the ruling's original, simpler shape -    #
-# the row, and nothing beside it. Every fixture below drops             #
+# the row, and nothing beside it; every fixture below drops             #
 # EDITOR_MARKUP accordingly.                                            #
 
 # This is the arm with reach, and the reason it had to exist is the

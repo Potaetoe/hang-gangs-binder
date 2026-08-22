@@ -435,13 +435,18 @@ triage had not asked.
   development-only global or a `?sample=` hook.
 - **The form's field spec lives inside `apps/web/`, not beside it.**
   `apps/web/site.config.js` (the file a fork edits) and
-  `apps/web/fields.js` (the only thing that reads it) moved there at
+  `apps/web/fields.js` (the thing that derives from it) moved there at
   0.9-M2-S2 (#353): a `<script>` tag in a shipped page can only reach
   files under the tree `./run build` publishes, and your-page.html is
   the first page to load them. `server/charts-agg.js` reads the same
   two files by the same path. Adding a field-spec file anywhere in
   `apps/web/` is a decision about what a page may read, not a tidying
-  choice.
+  choice. **Since 0.9-M3-S11 (#419) the spec a running page and the
+  aggregation both read is the EFFECTIVE one** — that file overlaid by
+  the admin edits `GET /spec` composes — and the static file is the
+  fallback, the fork's starting point and, with no admin edits, the
+  same bytes. `DESIGN.md`, "Where configuration lives", carries which
+  half composes and which half stays code.
 - **`main` is not a release today** — the GitHub Pages deploy job that
   once published on every push retired 2026-08-13; nothing publishes
   until 1.0's Worker deploy replaces it. Work goes to `accounts` until
@@ -482,7 +487,12 @@ linters cannot express:
   go stale. Take an entry off in the change that next touches its file;
   never raise a count. **A comment that names another file and quotes
   it must still be quoting it**, enforced against the cited file rather
-  than against phrases.
+  than against phrases. **A comment that names a function, constant,
+  route or file that is not in the tree any more is red too** — unless
+  the same sentence says so ("is gone", "replaced", "retired",
+  "deleted", "renamed to") — because a slice that deletes or renames a
+  thing does not always find every comment that named it (0.9-M3-S17,
+  #422).
 - **Comments in the pre-0.9 code slim as 0.9 rewrites each file.** The
   documentation moved to the 0.9 design ahead of the code by owner
   ruling, so a comment in a page or a Worker that argues from the key
