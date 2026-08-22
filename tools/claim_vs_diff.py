@@ -117,11 +117,33 @@ def git_environment():
 
 
 def git(repo, *args):
-    """(returncode, stdout+stderr) for a git command that cannot hang."""
+    """(returncode, stdout+stderr) for a git command that cannot hang.
+
+    `encoding="utf-8", errors="replace"` (0.9-M3-S29, #449): without an
+    explicit encoding, `text=True` decodes under the machine's OWN
+    locale codec (cp1252 on this machine) - and cp1252 has no mapping
+    at all for several byte values (0x81, 0x8D, 0x8F, 0x90, 0x9D), so a
+    git command whose output holds one of them raises UnicodeDecodeError
+    from inside subprocess.run() itself, before this function's own
+    try/except ever sees it (that exception is not a subprocess error,
+    so `except OSError` below does not catch it either - it propagates
+    all the way out as a bare traceback). A curly right double quote
+    (U+201D) is exactly this shape: its UTF-8 encoding is the three
+    bytes E2 80 9D, and that last byte is one of cp1252's undefined
+    five. Latent for years because every prior caller piped only ASCII
+    (rev-parse, diff --numstat) - `errors="replace"` is what keeps a
+    file that genuinely is not valid UTF-8 from taking the gate down
+    the same way: an undecodable byte becomes U+FFFD instead of a
+    crash. (Byte-faithful identity checking despite that replacement is
+    `tools/ship_check.py`'s own `_git_show_bytes()` - see its docstring
+    for why raw bytes, not this decoded text, back the prose-only
+    comparison.)
+    """
     try:
         done = subprocess.run(
             ["git", "-C", repo, *args],
             capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
             stdin=subprocess.DEVNULL,
             timeout=GIT_TIMEOUT,
             env=git_environment(),
@@ -355,6 +377,19 @@ def compare(repo, branch, base, declared_text, allow_empty=False):
 
 
 def main(argv=None):
+    # Encoding-safe stdout/stderr (0.9-M3-S29 fix wave, #449 F2 - the
+    # write-side twin ship_check.py's main() already carries): git()'s
+    # own read-side UTF-8 fix can now hand back a real non-ASCII
+    # character or a replacement character (U+FFFD) - this console's
+    # own cp1252 stdout cannot re-encode either one, and printing
+    # either crashes print() with UnicodeEncodeError, which is exactly
+    # what this reconfigure block exists to prevent. Guarded by
+    # hasattr() so a caller with no real stream (a StringIO capture, as
+    # some suites use) is untouched.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(
         prog="py -3 tools/claim_vs_diff.py",
         description="Compare a branch's real diff against a base to a "
