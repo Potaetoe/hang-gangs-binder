@@ -159,9 +159,9 @@ uncaught `PermissionError: [Errno 13] Permission denied` from
 `FileExistsError`. The cause is NTFS's own delete semantics, not the
 storm fixture mis-sequencing its contenders: `os.remove` on Windows
 marks a file for deletion and the directory entry can persist for a
-short window before it is actually gone, and a concurrent `CREATE_NEW`
-open landing in that window is denied (`ERROR_ACCESS_DENIED`) rather
-than told the file exists (`ERROR_FILE_EXISTS`) - the same fact
+short window before it is actually gone, and a concurrent create-new
+open landing in that window is denied (Windows error 5, access denied)
+rather than told the file exists (Windows error 80) - the same fact
 ("someone else has this path right now") reported through whichever of
 two Windows codes the timing happens to land on. `mutex_is_stale` and
 `steal_mutex` catch it too, for the same reason `FileNotFoundError`
@@ -543,8 +543,9 @@ def steal_mutex(path):
     race above - not a timing sliver but an actual live handle - and it
     is handled the same way for the same reason: a stealer that cannot
     win right now should retry through the caller's spin loop, not crash.
-    `os.remove(graveyard)` gets the same guard for the same class of
-    reason, even though this module could not force that specific call
+    The cleanup `os.remove` on the graveyard name gets the same guard
+    for the same class of reason, even though this module could not
+    force that specific call
     to fail live: by the time replace has succeeded, `graveyard` is a
     name only this stealer's pid+random suffix could reach, so nothing
     else should hold it open - but "should not" is not a promise this
@@ -601,9 +602,9 @@ def mutation_lock(state):
     own delete semantics, not a bug in the barrier fixture: `os.remove`
     on Windows marks a file for deletion and the directory entry persists
     for a short window before it is actually gone, and a concurrent
-    `CREATE_NEW` open landing in that window is denied
-    (`ERROR_ACCESS_DENIED`) rather than told the file exists
-    (`ERROR_FILE_EXISTS`) - the two errors are the same fact ("someone
+    create-new open landing in that window is denied (Windows error 5,
+    access denied) rather than told the file exists (Windows error 80)
+    - the two errors are the same fact ("someone
     else has this path right now") reported through two different
     Windows codes depending on which side of the delete the caller's
     open lands. Treating PermissionError as ordinary contention here

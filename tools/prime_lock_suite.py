@@ -638,9 +638,10 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     # still holds the file handle. Reproduced directly - a subprocess
     # holding the mutex path open (standing in for a holder that is slow
     # rather than crashed) while its mtime is aged past the steal
-    # threshold makes os.replace(path, graveyard) raise exactly
-    # `PermissionError(13, 'The process cannot access the file because
-    # it is being used by another process')`, a THIRD mechanism behind
+    # threshold makes the graveyard replace raise exactly a
+    # `PermissionError` reading "the process cannot access the file
+    # because it is being used by another process", a THIRD mechanism
+    # behind
     # the same error type as the delete-pending race above but a
     # genuinely different cause (a live handle, not a timing sliver).
     # steal_mutex already treats it as ordinary contention; this proves
@@ -676,7 +677,7 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
 
     # The subprocess case above proves os.replace itself can raise
     # PermissionError against a live handle - and steal_mutex already
-    # returns cleanly there without ever reaching os.remove(graveyard).
+    # returns cleanly there without ever reaching its cleanup os.remove.
     # This proves the OTHER half of the same lead deterministically: a
     # SUCCESSFUL replace followed by a cleanup os.remove that itself
     # raises (a virus scanner or search indexer touching the graveyard
@@ -862,39 +863,48 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     # Both interleavings of a contender against the publish, driven at
     # the exact instant rather than hoped for by a stall. A nested
     # acquire re-enters os.link, so each hook fires once.
-    for when in ("before", "after"):
-        race_state = os.path.join(root, "publish-race-%s" % when)
+    def publish_race(when, race_state):
+        """Drive a rival acquire in immediately before or after a publish.
+
+        Returns (publisher's outcome, rival's outcome, hook fire count).
+        A function rather than a loop body because the hook closes over
+        `when` and `race_state`, and a closure over a loop variable is
+        the bug this shape exists to rule out.
+        """
         race_path = prime_lock.lock_path(race_state)
         fired = {"n": 0}
         rival = {}
 
         def racing_link(src, dst, *a, **kw):
-            if dst == race_path and fired["n"] == 0:
-                fired["n"] += 1
-                if when == "before":
-                    rival["out"] = run(["acquire", "rival", "--state",
-                                        race_state, "--take-stale",
-                                        "--stale-hours", "12"])
-                    return real_link(src, dst, *a, **kw)
-                result = real_link(src, dst, *a, **kw)
-                rival["out"] = run(["acquire", "rival", "--state",
-                                    race_state, "--take-stale",
-                                    "--stale-hours", "12"])
-                return result
-            return real_link(src, dst, *a, **kw)
+            if dst != race_path or fired["n"]:
+                return real_link(src, dst, *a, **kw)
+            fired["n"] += 1
+            contend = ["acquire", "rival", "--state", race_state,
+                       "--take-stale", "--stale-hours", "12"]
+            if when == "before":
+                rival["out"] = run(contend)
+                return real_link(src, dst, *a, **kw)
+            result = real_link(src, dst, *a, **kw)
+            rival["out"] = run(contend)
+            return result
         os.link = racing_link
         try:
-            code, said = run(["acquire", "publisher", "--state",
-                              race_state])
+            mine = run(["acquire", "publisher", "--state", race_state])
         finally:
             os.link = real_link
-        rival_code, rival_said = rival.get("out", (None, ""))
+        return mine, rival.get("out", (None, "")), fired["n"]
+
+    for when in ("before", "after"):
+        race_state = os.path.join(root, "publish-race-%s" % when)
+        mine, theirs, fires = publish_race(when, race_state)
+        code, said = mine
+        rival_code, rival_said = theirs
         # Without this the whole arm passes vacuously if the publish ever
         # stops going through os.link: the rival would simply never be
         # driven in, and one uncontended winner looks exactly like one
         # contended winner.
         check("a rival arriving %s the publish: the rival was actually "
-              "driven in at that instant" % when, fired["n"] == 1)
+              "driven in at that instant" % when, fires == 1)
         check("a rival arriving %s the publish: exactly one of the two "
               "wins" % when,
               [code, rival_code].count(0) == 1)
