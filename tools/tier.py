@@ -108,8 +108,8 @@ def judge(path):
     claim-vs-diff's own declared-list paths never carry a "./" prefix in
     practice, but the anchored rows this amendment sits beside
     (`(^|/)wrangler\\.toml$`) already tolerate a prefix by construction,
-    and the two rows modelled on them should read the same regardless of
-    which of the two spellings a caller happens to use."""
+    and the two rows patterned on them should read the same regardless
+    of which of the two spellings a caller happens to use."""
     p = path.strip().replace("\\", "/")
     while p.startswith("./"):
         p = p[2:]

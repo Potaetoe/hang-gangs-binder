@@ -296,19 +296,34 @@ const BUDGET_SECONDS = envNumber("BINDER_GATE_BUDGET_SECONDS",
    harness's foreground-timeout trap; a hung arm is exactly that case
    with no other floor under it before this fix.
 
-   180s is comfortably above the three slowest arms this ticket measured
-   on a CONTENDED worktree (tests/reaper.test.mjs, worst observed 76.0s;
-   tests/worktree-contract.test.mjs, worst observed 39.0s; tests/
-   ship-check.test.mjs, worst observed 30.6s - review comment
-   5379811881, "Numbers I re-fired myself") - better than 2x the
-   slowest real arm measured anywhere in this ticket, while staying
-   under the whole gate's own 300s budget so ONE stuck arm cannot by
-   itself burn the entire budget before it is even named.
-   BINDER_ARM_TIMEOUT_SECONDS overrides it, with a reason stated where it
-   is raised, the same convention BINDER_GATE_BUDGET_SECONDS already
-   uses - CI reads this default, since neither workflow sets either
-   variable (confirmed in review comment 5379811881, "What held"). */
-const DEFAULT_ARM_TIMEOUT_SECONDS = 180;
+   FIX WAVE 2 (#460, re-fire #1, finding F2): the previous paragraph
+   here claimed "worst observed 76.0s" and "better than 2x the slowest
+   real arm measured anywhere in this ticket" - both already false when
+   written, by the SAME wave's own final gate table two screens away
+   (tests/reaper.test.mjs at 102.1s), and the re-fire measured worse
+   still (119.0s across 26 runs, a real margin of 1.51x). A comment is
+   a claim like any other; this one was falsified by evidence sitting
+   beside it. Re-measured at THIS head, 30 consecutive foreground
+   `node tests/run.mjs` runs (the ticket's own required proof for fix
+   wave 2's F1, so the same runs cover both findings): the three
+   slowest arms measured tests/reaper.test.mjs at 63.5-79.3s,
+   tests/worktree-contract.test.mjs at 29.7-38.3s, tests/ship-check.
+   test.mjs at 26.1-33.9s - a worst of 79.3s. 200s is set here, not the
+   bare 158.6s a literal 2x would allow: this same 30-run measurement
+   session also produced far worse anomalies among the OTHER 33 arms
+   under a machine-wide contention spike this fix wave did not cause
+   and cannot fix (up to 8 unrelated arms failing in one run, one
+   genuinely hitting the prior 180s timeout on tests/claim-vs-diff.
+   test.mjs) - 200s (2.52x the measured worst of the three slowest arms
+   specifically) is a deliberately rounder, more conservative number
+   than the floor, while staying under the whole gate's own 300s
+   budget so ONE stuck arm cannot by itself burn the entire budget
+   before it is even named. BINDER_ARM_TIMEOUT_SECONDS overrides it,
+   with a reason stated where it is raised, the same convention
+   BINDER_GATE_BUDGET_SECONDS already uses - CI reads this default,
+   since neither workflow sets either variable (confirmed in review
+   comment 5379811881, "What held"). */
+const DEFAULT_ARM_TIMEOUT_SECONDS = 200;
 const ARM_TIMEOUT_SECONDS = envNumber("BINDER_ARM_TIMEOUT_SECONDS",
   DEFAULT_ARM_TIMEOUT_SECONDS);
 
