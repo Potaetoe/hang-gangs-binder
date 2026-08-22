@@ -16,6 +16,8 @@
    
    
    
+   
+   
   const DEFAULT_THEME_KEY = "hgb-default-theme";
   const BG = {
     pink: "#1e141a", daylight: "#f3eadb", midnight: "#120d10",
@@ -36,12 +38,22 @@
     );
   }
 
-  function apply(name) {
-    document.documentElement.setAttribute("data-theme", name);
-    paintChrome(name);
+   
+   
+   
+   
+   
+   
+   
+   
+   
+  function apply(paintName, pressedName) {
+    document.documentElement.setAttribute("data-theme", paintName);
+    paintChrome(paintName);
+    const mark = pressedName || paintName;
     Array.prototype.forEach.call(buttons, function (b) {
       b.setAttribute("aria-pressed",
-        String(b.getAttribute("data-set-theme") === name));
+        String(b.getAttribute("data-set-theme") === mark));
     });
   }
 
@@ -54,14 +66,10 @@
    
    
    
-   
-   
-   
-  function preferred() {
-    if (!window.matchMedia) return "midnight";
-    if (matchMedia("(prefers-contrast: more)").matches) return "contrast";
-    if (matchMedia("(prefers-color-scheme: light)").matches) return "daylight";
-    return "midnight";
+  function schemeDefault() {
+    return (window.matchMedia &&
+      matchMedia("(prefers-color-scheme: dark)").matches)
+      ? "midnight" : "daylight";
   }
 
   let stored = null;
@@ -85,9 +93,6 @@
    
    
    
-   
-   
-   
   let adminDefault = null;
   try { adminDefault = localStorage.getItem(DEFAULT_THEME_KEY); } catch (e) {}
   if (adminDefault && !Object.prototype.hasOwnProperty.call(BG, adminDefault)) {
@@ -97,14 +102,22 @@
   
 
   if (!buttons.length) {
-    paintChrome(stored || adminDefault || preferred());
+    paintChrome(stored || schemeDefault());
     return;
   }
 
    
    
    
-  apply(stored || adminDefault || preferred());
+   
+   
+   
+   
+   
+   
+  const resting = stored || schemeDefault();
+  const pressed = stored || adminDefault || resting;
+  apply(resting, pressed);
 
    
    
