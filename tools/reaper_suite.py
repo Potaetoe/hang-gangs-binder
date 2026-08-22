@@ -85,7 +85,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 213
+EXPECTED = 221
 
 
 def check(label, condition):
@@ -900,17 +900,53 @@ try:
         first)
     git(harness_norecord, "checkout", "--detach", accounts)
 
-    # Fixture C: a PARKED record whose worktree directory is already
-    # gone. The branch is orphaned and MUST fall through to the ordinary
-    # ancestry proof - the worktree's own reap is what disposes of a
-    # parked worktree's branch, and protecting it here on top of that
-    # would be a live branch that can never be reaped once its worktree
-    # is gone.
+    # Fixture C: a PARKED record whose worktree directory is gone AND
+    # whose registration is gone too. The branch is orphaned in every
+    # sense and MUST fall through to the ordinary ancestry proof - the
+    # worktree's own reap is what disposes of a parked worktree's
+    # branch, and protecting it here on top of that would be a live
+    # branch that can never be reaped once its worktree is gone.
+    #
+    # Fix wave 1, F1 (0.9-M3-S21 review, #431): `shutil.rmtree` ALONE
+    # does not deregister a worktree - only `git worktree prune` (or a
+    # `git worktree remove`) touches `.git/worktrees/`, so a fixture
+    # built by rmtree alone still answers "registered" to
+    # `protect_harness_branch`'s own check (confirmed against a real
+    # repository: `git worktree list --porcelain` keeps listing the
+    # path, marked prunable, until pruned). Without the explicit prune
+    # below, this fixture was secretly the SAME shape as fixture E
+    # below it - still registered - and its assertion locked in the
+    # pre-fix answer (reap) for the wrong reason: the old
+    # `protect_harness_branch` returned on the parked record before it
+    # ever consulted the table, so registered-or-not made no difference
+    # to it. Pruning here makes fixture C unambiguously the
+    # NEITHER-record-nor-registration case that the ordinary ancestry
+    # proof is supposed to own.
     harness_parked = add_worktree(
         primary, "agent-harnessparked", "worktree-agent-harnessparked",
         first)
     park(harness_parked, state)
     shutil.rmtree(harness_parked)
+    git(primary, "worktree", "prune")
+
+    # Fixture E (fix wave 1, F1, 0.9-M3-S21 review, #431): a PARKED
+    # record whose worktree directory is still there and still
+    # registered - the exact shape this repository's own machine
+    # produced when the review found it (agent-a3faf444bda433c36 and
+    # three more, all still registered with parked records, all planned
+    # for reaping). `park()` alone would leave `record["branch"]` naming
+    # THIS worktree's own harness branch, which would make it
+    # `spoken_for` in plan() and hide it from branch_items() entirely -
+    # so, matching fixture A and the real bug (`agent-init` rewrites a
+    # record's `branch` field to the SLICE branch on every run), this
+    # checks out a different branch before parking, so the certificate
+    # names "slice-harnessparkedregistered", never the harness branch.
+    harness_parked_registered = add_worktree(
+        primary, "agent-harnessparkedregistered",
+        "worktree-agent-harnessparkedregistered", first)
+    git(harness_parked_registered, "checkout", "-b",
+        "slice-harnessparkedregistered", accounts)
+    park(harness_parked_registered, state)
 
     # Fixture D: a live record naming a worktree that was NEVER a real,
     # registered git worktree - the same shape the pre-existing "F1"
@@ -974,6 +1010,47 @@ try:
     check("its branch survives being acted on directly",
           "worktree-agent-harnessrecordonly" in branches(primary))
 
+    # Fixture E's assertions (fix wave 1, F1, #431): a registered
+    # worktree protects its harness branch REGARDLESS of what its own
+    # record says - the record here says parked, which alone protects
+    # nothing (fixture C proves that half), but the registration still
+    # does. This is the ticket's own promised sentence, and the arm that
+    # goes red if the early return the old code took on a parked record
+    # is ever restored.
+    protected_parked_registered = find(
+        items, "live harness branch, left alone",
+        "worktree-agent-harnessparkedregistered")
+    check("a parked record's harness branch IS protected while its "
+          "worktree is still registered - registration outranks a "
+          "stale record",
+          protected_parked_registered is not None
+          and verdict(protected_parked_registered) == "report")
+    check("it is NOT also a debris-branch candidate",
+          find(items, "debris branch",
+               "worktree-agent-harnessparkedregistered") is None)
+    check("the protection proof names the registration, since the "
+          "record alone (parked) does not license it",
+          protected_parked_registered and "registers" in " ".join(
+              proof.said for proof in
+              protected_parked_registered["proofs"]))
+    said_parked_registered = reaper.act(
+        primary, protected_parked_registered, state, roots)
+    check("acting on the registration-protected parked item performs "
+          "nothing",
+          said_parked_registered == ["REPORTED and left alone."])
+    check("its branch survives being acted on directly",
+          "worktree-agent-harnessparkedregistered" in branches(primary))
+    # Retired here rather than left lingering: unlike fixtures A/B/D,
+    # this worktree is NOT protected as a "parked worktree" candidate in
+    # its own right (only its BRANCH is protected), so a later blanket
+    # `--act` elsewhere in this suite would genuinely reap the directory
+    # - harmless, but it would make a much later assertion's evidence
+    # depend on this fixture's fate. Removing it here keeps this
+    # fixture's proof scoped to what it was built to show.
+    git(primary, "worktree", "remove", "--force",
+        harness_parked_registered)
+    git(primary, "branch", "-D", "worktree-agent-harnessparkedregistered")
+
     orphaned_debris = find(items, "debris branch",
                            "worktree-agent-harnessparked")
     check("a parked record's harness branch is NOT protected once its "
@@ -1017,6 +1094,45 @@ try:
           any("ancestor of" in line for line in said_parked))
     check("--report predicted exactly what --act did: it is gone now",
           "worktree-agent-harnessparked" not in branches(primary))
+
+    print("\n--- F2 (fix wave 1, 0.9-M3-S21 review, #431): act() re-checks "
+          "harness protection too, not only plan() ---")
+
+    # The general shape of every race arm in this file (see BLOCKER 2 and
+    # BLOCKER 3 below): plan a candidate, then change the fact the plan
+    # relied on, then drive the STALE item through act() directly. Here
+    # the fact that changes is the one this fix wave added -
+    # `protect_harness_branch`'s own answer - which act() did not
+    # re-ask at all before this fix (F2): a `worktree-agent-<id>`
+    # classified debris when the plan ran stayed classified debris
+    # forever, even if a record for `<id>` went live before the act
+    # loop reached it.
+    git(primary, "branch", "worktree-agent-actgap", first)
+    before_race = reaper.plan(primary, state, roots)
+    raced_debris = find(before_race, "debris branch",
+                        "worktree-agent-actgap")
+    check("the not-yet-protected harness branch is planned for reaping "
+          "before the race",
+          raced_debris is not None and verdict(raced_debris) == "reap")
+
+    # The record appears between the plan and the act - an agent-init
+    # that finally ran, or (the two-step race the docstring names) one
+    # that ran and then wrote a fresh worktree record for an id the plan
+    # had already looked at and found nothing for.
+    agent_init.write_json(
+        agent_init.record_path(os.path.join(root, "agent-actgap"), state),
+        {"schema": agent_init.SCHEMA, "contract": agent_init.CONTRACT,
+         "worktree": os.path.join(root, "agent-actgap"), "kind": "linked",
+         "branch": "slice-actgap", "state": "live",
+         "initialized_at": agent_init.now(), "ports": [8196, 8197],
+         "scratch": None})
+
+    said_actgap = reaper.act(primary, raced_debris, state, roots)
+    check("act() refuses the branch that went live during the race, "
+          "naming the new record",
+          any("live harness ref" in line for line in said_actgap))
+    check("THE RACED HARNESS BRANCH SURVIVES THE ACT",
+          "worktree-agent-actgap" in branches(primary))
 
     print("\n--- no branch is deleted without the proof in the output ---")
 
