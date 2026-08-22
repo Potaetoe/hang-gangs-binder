@@ -207,7 +207,7 @@
  * their own named red now.
  */
 import { readdir, readFile, stat } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { cpus } from "node:os";
 import { runPool } from "./gate-pool.mjs";
@@ -286,6 +286,54 @@ const DEFAULT_BUDGET_SECONDS = 300;
 const BUDGET_SECONDS = envNumber("BINDER_GATE_BUDGET_SECONDS",
   DEFAULT_BUDGET_SECONDS);
 
+/* THE PER-ARM TIMEOUT (0.9-M3-S35 fix wave 1, #460, review comment
+   5379811881, finding F3). THE BUDGET above reds a run that finished
+   slow; it cannot red one that never finishes at all, because it runs
+   AFTER `await runPool(...)` returns - a hung arm (one that never exits
+   on its own: a deadlock, a wedged subprocess, an `await` on something
+   that never resolves) hangs the whole gate forever and the budget line
+   never prints. The ticket's own *Why* is builders being killed by the
+   harness's foreground-timeout trap; a hung arm is exactly that case
+   with no other floor under it before this fix.
+
+   180s is comfortably above the three slowest arms this ticket measured
+   on a CONTENDED worktree (tests/reaper.test.mjs, worst observed 76.0s;
+   tests/worktree-contract.test.mjs, worst observed 39.0s; tests/
+   ship-check.test.mjs, worst observed 30.6s - review comment
+   5379811881, "Numbers I re-fired myself") - better than 2x the
+   slowest real arm measured anywhere in this ticket, while staying
+   under the whole gate's own 300s budget so ONE stuck arm cannot by
+   itself burn the entire budget before it is even named.
+   BINDER_ARM_TIMEOUT_SECONDS overrides it, with a reason stated where it
+   is raised, the same convention BINDER_GATE_BUDGET_SECONDS already
+   uses - CI reads this default, since neither workflow sets either
+   variable (confirmed in review comment 5379811881, "What held"). */
+const DEFAULT_ARM_TIMEOUT_SECONDS = 180;
+const ARM_TIMEOUT_SECONDS = envNumber("BINDER_ARM_TIMEOUT_SECONDS",
+  DEFAULT_ARM_TIMEOUT_SECONDS);
+
+/* Windows has no process GROUPS the way POSIX does, so `-pid` (the
+   POSIX kill-the-group trick, which needs `detached: true` at spawn
+   time to put the child in its own group) does nothing there - the one
+   portable primitive that kills a WHOLE descendant tree on Windows is
+   `taskkill /T`, walking the OS's own parent-child records rather than
+   anything this file tracked itself. `/F` forces it (SIGKILL has no
+   Windows analogue to ask nicely with); a `taskkill` failure (the
+   process already gone, most commonly - a race this function does not
+   need to win, only to not throw on) is swallowed rather than thrown,
+   because the caller's own `close` handler is what actually resolves
+   the arm's result either way. */
+const isWindows = process.platform === "win32";
+function killTree(child) {
+  if (isWindows) {
+    spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
+    return;
+  }
+  try { process.kill(-child.pid, "SIGKILL"); }
+  catch (error) { try { child.kill("SIGKILL"); } catch (inner) { /* already
+    gone - the same harmless race the Windows branch above swallows */ } }
+}
+
 const exists = async (path) => {
   try {
     await stat(path);
@@ -309,27 +357,54 @@ async function everyFile(dir) {
 }
 
 /* Start it, wait for it, and report what it did. The exit code is the
-   verdict; the output is the evidence and is never parsed. */
+   verdict; the output is the evidence and is never parsed.
+
+   `detached: !isWindows` puts a POSIX child in its own process group, so
+   `killTree()`'s `-pid` can reach a subprocess THIS arm itself spawned
+   (a suite's own git or wrangler call) and not just the node process
+   this file started directly - the timeout's whole point is a hung
+   descendant, not only a hung top-level arm. Windows needs no such flag:
+   `taskkill /T` already walks the OS's own parent-child records. */
 function runFile(path) {
   return new Promise((resolve) => {
     const started = Date.now();
     const child = spawn(process.execPath, [path], {
       cwd: ROOT,
       stdio: ["ignore", "pipe", "pipe"],
+      detached: !isWindows,
     });
     let output = "";
+    let timedOut = false;
     child.stdout.on("data", (chunk) => { output += chunk; });
     child.stderr.on("data", (chunk) => { output += chunk; });
-    child.on("error", (error) => resolve({
-      code: 1, output: "could not start it: " + error.message,
-      ms: Date.now() - started,
-    }));
-    child.on("close", (code, signal) => resolve({
-      // A signal is a death, not a pass. Without this an arm killed
-      // for running long arrives with code null and reads as zero.
-      code: code === null ? "signal " + signal : code,
-      output, ms: Date.now() - started,
-    }));
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killTree(child);
+    }, ARM_TIMEOUT_SECONDS * 1000);
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      resolve({
+        code: 1, output: "could not start it: " + error.message,
+        ms: Date.now() - started, timedOut: false,
+      });
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      resolve({
+        // A signal is a death, not a pass. Without this an arm killed
+        // for running long arrives with code null and reads as zero.
+        // A TIMED-OUT arm is graded "timeout" specifically rather than
+        // folded into the signal case, because close() sees signal
+        // OR null depending on the platform's own kill path
+        // (taskkill's /F does not always deliver a signal Node
+        // observes) - `timedOut`, set synchronously the moment the
+        // timer fires, is the one fact that does not depend on the
+        // platform's own reporting of the kill.
+        code: timedOut ? "timeout" : (code === null ? "signal " + signal
+          : code),
+        output, ms: Date.now() - started, timedOut,
+      });
+    });
   });
 }
 
@@ -427,7 +502,18 @@ for (let index = 0; index < arms.length; index += 1) {
   if (ok) console.log("    " + verdictLine(result.output));
   else {
     spill(name, result);
-    problems.push(name);
+    if (result.timedOut) {
+      console.log("\nTIMED OUT: " + name + " ran past its " +
+        ARM_TIMEOUT_SECONDS + "s per-arm timeout and its process tree " +
+        "was killed rather than left to hang the gate forever - " +
+        "BINDER_ARM_TIMEOUT_SECONDS raises the figure, with a reason " +
+        "stated where it is set, for an arm known to need longer than " +
+        "this default assumes.");
+      problems.push(name + " (timed out after " + ARM_TIMEOUT_SECONDS +
+        "s)");
+    } else {
+      problems.push(name);
+    }
   }
 }
 
