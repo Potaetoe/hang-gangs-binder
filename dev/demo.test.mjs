@@ -559,13 +559,20 @@ await check("every endpoint call in apps/web is spelled the way the reader reads
  * "/admin-fields/" for both verbs, per endpointCallsIn's own docstring
  * on the call-site idioms it reads. 0.9-M3-S30 (#452) swapped the
  * Fields card's own read from GET /spec to GET /admin-fields
- * (0.9-M3-S25's landed admin-only overlay, #440), so /spec left this
- * list and the STATIC (no dynamic id) "/admin-fields" joined it -
- * a different literal path from the dynamic-id one above, since this
- * one never concatenates an id onto the URL. Building real stub
- * answers for the admin API is out of scope for a page-only slice; the
- * honest stub answer for all of it stays the same 404 an unknown path
- * gets. Everything else apps/web calls must still resolve.
+ * (0.9-M3-S25's landed admin-only overlay, #440), so admin.js dropped
+ * its own /spec call and the STATIC (no dynamic id) "/admin-fields"
+ * joined this list instead - a different literal path from the
+ * dynamic-id one above, since this one never concatenates an id onto
+ * the URL. But 0.9-M3-S14 (#434, merged forward into this branch after
+ * S30, so the two never saw each other in the same tree until now) gave
+ * `apps/web/charts.js` an unrelated call to the SAME route (the
+ * effective spec, read once at setup to build the filter chips from -
+ * this file's own header), so GET /spec re-joins the gap list for that
+ * reason alone: nothing about the admin API, and the demo has never
+ * modeled it for any caller. Building real stub answers for the admin
+ * API is out of scope for a page-only slice; the honest stub answer for
+ * all of it stays the same 404 an unknown path gets. Everything else
+ * apps/web calls must still resolve.
  *
  * 0.9-M3-S34 (#458) adds two more, the same idiom: GET /admin-departed
  * (static) and DELETE /admin-departed/<id> (dynamic id, so the literal
@@ -573,12 +580,13 @@ await check("every endpoint call in apps/web is spelled the way the reader reads
  * the two /admin-fields/ entries above).
  */
 const DEMO_STUB_GAPS = Object.freeze(["/admin-log", "/admin-fields",
-  "/admin-fields/", "/admin-departed", "/admin-departed/"]);
+  "/admin-fields/", "/admin-departed", "/admin-departed/", "/spec"]);
 await check("the stub answers every call apps/web makes, by verb and " +
   "path - except the admin API's standing gap (GET /admin-log, GET " +
   "/admin-fields, PUT/DELETE /admin-fields/<id>, GET /admin-departed, " +
-  "DELETE /admin-departed/<id> - the demo has not grown with 0.9-M3's " +
-  "admin surface)", () =>
+  "DELETE /admin-departed/<id>) and GET /spec (the demo has not grown " +
+  "with 0.9-M3's admin surface, nor with the effective-spec route " +
+  "0.9-M3-S14's charts page now reads)", () =>
   calls.every((one) => DEMO_STUB_GAPS.indexOf(one.path) !== -1 ||
     Demo.routeFor(one.path, one.method) !== null));
 
