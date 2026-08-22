@@ -954,9 +954,11 @@ check("positionTooltipBox clamps the right edge rather than letting " +
     distributionFigureBox(320), { width: 60, height: 20 }
   ).left === 320 - 60);
 
-/* chartsURL: self=1 always, units always, filter+value only together. */
+/* chartsURL: self=1 always, units always, filters (a LIST of {field,
+   value} pairs, 0.9-M3-S14 against 0.9-M3-S31's landed contract, #455)
+   only when there is at least one. */
 const bare = new URL(Charts.chartsURL("https://w.example",
-  { measure: "weight", units: "imperial" }));
+  { measure: "weight", units: "imperial", filters: [] }));
 /* /charts-data, not /charts (0.9-M2-S8, #365): the route was renamed
    out of the way of this page's own basename, because the assets
    layer's html_handling redirects /charts.html to /charts and the
@@ -968,12 +970,38 @@ check("the bare request names the renamed route, plus measure and self",
   bare.searchParams.get("filter") === null);
 
 const filtered = new URL(Charts.chartsURL("https://w.example",
-  { measure: "weight", units: "metric", filter: "gender",
-    value: "female" }));
+  { measure: "weight", units: "metric",
+    filters: [{ field: "gender", value: "female" }] }));
 check("a filtered request carries filter and value alongside self",
   filtered.searchParams.get("filter") === "gender" &&
   filtered.searchParams.get("value") === "female" &&
   filtered.searchParams.get("self") === "1");
+
+/*
+ * SEVERAL PAIRS NAMING ONE FIELD ARE THAT FIELD'S SET (0.9-M3-S31,
+ * #455) - PAIRED BY POSITION, so getAll("filter")[i] must line up with
+ * getAll("value")[i] for every i, not merely contain the same bag of
+ * strings. Two fields, one of them carrying two values, interleaved in
+ * the order activeFilterPairs() would build them (field order, then
+ * candidate order within a field) - the shape the real ask sends.
+ */
+const setUrl = new URL(Charts.chartsURL("https://w.example",
+  { measure: "weight", units: "imperial", filters: [
+    { field: "gender", value: "male" },
+    { field: "gender", value: "female" },
+    { field: "country", value: "US" },
+  ] }));
+check("several pairs naming one field arrive as that field's own " +
+  "positional set - every filter= paired with the value= at the same " +
+  "index, not merely present somewhere in the query",
+  JSON.stringify(setUrl.searchParams.getAll("filter")) ===
+  JSON.stringify(["gender", "gender", "country"]) &&
+  JSON.stringify(setUrl.searchParams.getAll("value")) ===
+  JSON.stringify(["male", "female", "US"]));
+check("an empty filters list sends neither filter= nor value= at all - " +
+  "Everyone, not an empty pair",
+  bare.searchParams.getAll("filter").length === 0 &&
+  bare.searchParams.getAll("value").length === 0);
 
 /*
  * THE ASK CARRIES THE UNIT SYSTEM NOW (owner ruling 4, #396): the Worker
@@ -1055,6 +1083,244 @@ check("a field with real spec labels (gender) passes its label " +
     COUNTRY_TABLE) === "Male");
 
 /* ------------------------------------------------------------------ */
+/* 2a-bis. The filter chips, pure (0.9-M3-S14, #454 items 16-18; the    */
+/* gate, Prime's ruling on #455 comment 5378956164).                    */
+
+/*
+ * presentValuesOf: the one place a value list is built from an answer's
+ * own group-makeup block rather than the spec alone (#454 item 18).
+ */
+const genderGroupEntry = { field: "gender", label: "Gender",
+  values: [
+    { value: "male", label: "Male", count: 10, bucket: null },
+    { value: "female", label: "Female", count: 0, bucket: null },
+    { value: null, label: "Not stated", count: 3, bucket: "blank" },
+  ] };
+check("presentValuesOf offers only a cell that cleared the floor - a " +
+  "zero-count value is not offered as a filter, exactly as it is not " +
+  "offered as one anywhere else on this page",
+  JSON.stringify(Charts.presentValuesOf(genderGroupEntry,
+    genderMeasureFixture, null)) ===
+  JSON.stringify([{ value: "male", label: "Male" }]));
+check("presentValuesOf never offers the blank/pooled bucket - both are " +
+  "keyed by null, and neither is a real value a filter can name",
+  Charts.presentValuesOf(
+    { field: "gender", values: [{ value: null, label: "Not stated",
+      count: 50, bucket: "blank" }] }, genderMeasureFixture, null).length
+  === 0);
+check("presentValuesOf resolves a country cell's real name through the " +
+  "same table groupCellLabel() already uses - one lookup, not a second",
+  JSON.stringify(Charts.presentValuesOf(
+    { field: "country", values: [
+      { value: "US", label: "US", count: 5, bucket: null }] },
+    countryMeasureFixture, COUNTRY_TABLE)) ===
+  JSON.stringify([{ value: "US", label: "United States" }]));
+
+/*
+ * pinFirst: pinned codes to the front, in the PINNED list's own order,
+ * WITHOUT duplication (#454 item 18; the superseded build's own review,
+ * #434 comment 5378073973, finding F5 - a duplicated entry lit two
+ * chips for one selection).
+ */
+const pinFirstInput = [
+  { value: "AL", label: "Albania" }, { value: "GB", label: "United Kingdom" },
+  { value: "US", label: "United States" },
+];
+check("pinFirst moves every pinned code to the front, in the PINNED " +
+  "list's own order - not the input's",
+  JSON.stringify(Charts.pinFirst(pinFirstInput, ["US", "GB", "CA"])) ===
+  JSON.stringify([
+    { value: "US", label: "United States" },
+    { value: "GB", label: "United Kingdom" },
+    { value: "AL", label: "Albania" },
+  ]));
+check("pinFirst never duplicates a pinned entry - each value appears " +
+  "exactly once in the output, not once at the front and again in its " +
+  "alphabetical place",
+  Charts.pinFirst(pinFirstInput, ["US", "GB", "CA"]).length === 3);
+check("pinFirst skips a pinned code the list does not carry (CA here) " +
+  "rather than inventing an entry for it",
+  !Charts.pinFirst(pinFirstInput, ["US", "GB", "CA"])
+    .some((c) => c.value === "CA"));
+check("pinFirst with no pinned codes at all returns the input untouched",
+  JSON.stringify(Charts.pinFirst(pinFirstInput, [])) ===
+  JSON.stringify(pinFirstInput));
+
+/*
+ * rowsUsed / fitsTwoRows / decideMode: the two-row measurement (#454
+ * item 17: "measured on the device... not a count"), proven here as
+ * plain arithmetic over already-measured numbers - the real
+ * measurement itself is a browser-time claim (this file's own driven()
+ * harness has no real layout engine; see the completion's browser
+ * section).
+ */
+check("rowsUsed counts DISTINCT rows, not chips - four chips at the " +
+  "same top offset (one row that wrapped nothing) is one row",
+  Charts.rowsUsed([12, 12, 12, 12]) === 1);
+check("rowsUsed reads a genuine two-row wrap as 2, never more just " +
+  "because there were many chips in each row",
+  Charts.rowsUsed([12, 12, 12, 52, 52, 52, 52, 52]) === 2);
+check("rowsUsed reads a three-row wrap (the twelve-value, 360px-wide " +
+  "case this file's browser section measures) as 3, past the two-row " +
+  "budget",
+  Charts.rowsUsed([12, 12, 12, 12, 52, 52, 52, 52, 92, 92, 92, 92]) === 3);
+check("rowsUsed tolerates a sub-pixel difference within the same row - " +
+  "rounds before counting distinct values, so 12.0 and 12.4 read as one",
+  Charts.rowsUsed([12.0, 12.4, 11.6]) === 1);
+check("rowsUsed of an empty row is 0 - no chips, nothing to measure",
+  Charts.rowsUsed([]) === 0);
+check("fitsTwoRows is exactly rowsUsed(tops) <= 2",
+  Charts.fitsTwoRows([12, 12]) === true &&
+  Charts.fitsTwoRows([12, 52]) === true &&
+  Charts.fitsTwoRows([12, 52, 92]) === false);
+check("decideMode falls to chips when any offset is unmeasured (no real " +
+  "getBoundingClientRect - the Node DOM stub's own shape) rather than " +
+  "guessing at a real answer",
+  Charts.decideMode([12, null, 52]) === "chips" &&
+  Charts.decideMode([]) === "chips");
+check("decideMode with real geometry that fits two rows renders chips",
+  Charts.decideMode([12, 12, 52, 52]) === "chips");
+check("0.9-M3-S14: decideMode with real geometry past two rows falls to " +
+  "the drop list - the twelve-value, 360px-wide arm this file's own " +
+  "browser section measures, reproduced as plain numbers here",
+  Charts.decideMode([12, 12, 12, 12, 52, 52, 52, 52, 92, 92, 92, 92]) ===
+  "list");
+
+/*
+ * fieldIsRestricted / nextFieldSelection: the gate's whole decision
+ * (Prime's ruling on #455, comment 5378956164). `field(candidates,
+ * selected)` below is this suite's own shorthand for the {candidateValues,
+ * selected} shape buildFieldStates() produces.
+ */
+function field(candidateValues, selected) {
+  return { field: "gender", candidateValues: candidateValues.map((v) =>
+    ({ value: v, label: v })), selected };
+}
+const ABCD = ["a", "b", "c", "d"];
+
+check("fieldIsRestricted is false at Everyone (every candidate selected)",
+  Charts.fieldIsRestricted(field(ABCD, ABCD)) === false);
+check("fieldIsRestricted is true with some but not all selected",
+  Charts.fieldIsRestricted(field(ABCD, ["a"])) === true);
+
+/* GATED (combinedEnabled === false): everyone <-> exactly one, nothing
+   in between - the shape the shipped constant carries today. */
+check("gated: tapping a chip from Everyone narrows STRAIGHT to that one " +
+  "value - never merely turning the tapped one off, which would still " +
+  "leave a three-value set",
+  JSON.stringify(Charts.nextFieldSelection(field(ABCD, ABCD), "b", false,
+    false)) === JSON.stringify({ selected: ["b"], notice: null }));
+check("gated: tapping the field's own already-active value clears it " +
+  "back to Everyone - every candidate relights",
+  JSON.stringify(Charts.nextFieldSelection(field(ABCD, ["b"]), "b", false,
+    false).selected.sort()) === JSON.stringify(ABCD));
+check("0.9-M3-S14: gated, a SECOND chip in the SAME already-restricted " +
+  "field is refused in place - the selection does not change and the " +
+  "field's own notice is the within-field sentence",
+  JSON.stringify(Charts.nextFieldSelection(field(ABCD, ["b"]), "c", false,
+    false)) === JSON.stringify({ selected: ["b"],
+    notice: Charts.WITHIN_FIELD_GATE_NOTICE }));
+check("0.9-M3-S14: gated, any tap while ANOTHER field already holds one " +
+  "value is refused with the cross-field sentence, changing nothing - " +
+  "even a field currently at Everyone",
+  JSON.stringify(Charts.nextFieldSelection(field(ABCD, ABCD), "a", true,
+    false)) === JSON.stringify({ selected: ABCD,
+    notice: Charts.CROSS_FIELD_GATE_NOTICE }));
+check("the two gate notices are distinct plain-word sentences, never " +
+  "the same string reused for both refusals",
+  Charts.WITHIN_FIELD_GATE_NOTICE !== Charts.CROSS_FIELD_GATE_NOTICE &&
+  /reviewed/.test(Charts.WITHIN_FIELD_GATE_NOTICE) &&
+  /reviewed/.test(Charts.CROSS_FIELD_GATE_NOTICE));
+
+/* FULL MULTI-SELECT (combinedEnabled === true) - armed here directly,
+   since the shipped page never reaches this branch at all (this file's
+   header: "a test arms both states by calling the pure function
+   twice"). */
+check("combined: tapping an UNselected value adds it to the set - real " +
+  "multi-select, several values live at once",
+  JSON.stringify(Charts.nextFieldSelection(field(ABCD, ["a"]), "b", false,
+    true).selected.sort()) === JSON.stringify(["a", "b"]));
+check("combined: tapping a SELECTED value with others still selected " +
+  "removes just that one",
+  JSON.stringify(Charts.nextFieldSelection(field(ABCD, ["a", "b"]), "b",
+    false, true).selected) === JSON.stringify(["a"]));
+check("0.9-M3-S14: combined, the LAST selected value cannot be tapped " +
+  "off - \"at least one chip stays lit\" (#454 item 16) - a no-op, not " +
+  "a jump to Everyone",
+  JSON.stringify(Charts.nextFieldSelection(field(ABCD, ["a"]), "a", false,
+    true)) === JSON.stringify({ selected: ["a"], notice: null }));
+check("combined: cross-field restriction never gates anything - the " +
+  "third argument is ignored entirely when the constant is true",
+  Charts.nextFieldSelection(field(ABCD, ["a"]), "b", true, true).notice ===
+  null);
+
+/* activeFilterPairs: the whole ask, field order then candidate order -
+   never click order, which a re-render would lose. */
+const everyoneField = { field: "gender",
+  candidateValues: [{ value: "male" }, { value: "female" }],
+  selected: ["male", "female"] };
+const oneField = { field: "gender",
+  candidateValues: [{ value: "male" }, { value: "female" }],
+  selected: ["female"] };
+const countryTwoField = { field: "country",
+  candidateValues: [{ value: "US" }, { value: "GB" }, { value: "AL" }],
+  selected: ["AL", "US"] };
+check("activeFilterPairs sends NO pair for a field at Everyone - the " +
+  "identity 0.9-M3-S31 built the Worker side to hold (#455)",
+  JSON.stringify(Charts.activeFilterPairs([everyoneField])) ===
+  JSON.stringify([]));
+check("activeFilterPairs sends exactly one pair for a field narrowed to " +
+  "one value",
+  JSON.stringify(Charts.activeFilterPairs([oneField])) ===
+  JSON.stringify([{ field: "gender", value: "female" }]));
+check("0.9-M3-S14: with the constant true, a field with TWO selected " +
+  "values sends TWO pairs for that one field, in the field's own " +
+  "candidate order (US before GB before AL) - never click order",
+  JSON.stringify(Charts.activeFilterPairs([countryTwoField])) ===
+  JSON.stringify([{ field: "country", value: "US" },
+    { field: "country", value: "AL" }]));
+check("0.9-M3-S14: two fields each narrowed send pairs for BOTH, one " +
+  "field at Everyone in the mix sends nothing for itself",
+  JSON.stringify(Charts.activeFilterPairs(
+    [oneField, everyoneField, countryTwoField])) ===
+  JSON.stringify([
+    { field: "gender", value: "female" },
+    { field: "country", value: "US" },
+    { field: "country", value: "AL" },
+  ]));
+
+/* filterValueLabel / activeFilterWords: the status line and the xlsx's
+   own filter phrase - F3's fix, this file's own header (#434 comment
+   5378073973): a plain choice reads lowercase, a country name never
+   does. */
+const wordsMeasureFor = (name) => (name === "country" ?
+  { name: "country", choicesFrom: "countries" } :
+  { name: "gender", choices: [{ value: "female", label: "Female" }] });
+check("filterValueLabel lowercases a PLAIN choice's own label - \"female\"," +
+  " matching the owner's own #454 item 19 example (\"male feeders, weight\")",
+  Charts.filterValueLabel({ field: "gender", value: "female" },
+    wordsMeasureFor, null) === "female");
+check("0.9-M3-S14: filterValueLabel NEVER lowercases a country's real " +
+  "name - \"United States of America\", not \"united states of america\" " +
+  "(F3's own fix)",
+  Charts.filterValueLabel({ field: "country", value: "US" },
+    wordsMeasureFor, { US: "United States of America" }) ===
+  "United States of America");
+check("activeFilterWords is empty for no filters at all",
+  Charts.activeFilterWords([], wordsMeasureFor, null) === "");
+check("activeFilterWords joins several values of ONE field with \"/\"",
+  Charts.activeFilterWords(
+    [{ field: "gender", value: "female" }], wordsMeasureFor, null) ===
+  "female");
+check("0.9-M3-S14: activeFilterWords joins several FIELDS with a space, " +
+  "each field's own values \"/\"-joined first",
+  Charts.activeFilterWords(
+    [{ field: "gender", value: "female" },
+      { field: "country", value: "US" }],
+    wordsMeasureFor, { US: "United States of America" }) ===
+  "female United States of America");
+
+/* ------------------------------------------------------------------ */
 /* 2b. The xlsx workbook (0.9-M2-S14, #380 ruling 3): workbookColumns() */
 /* and workbookRows() are the row-marshaling this file adds; the bytes  */
 /* themselves are BinderXlsx.build()'s, reused rather than reimplemented. */
@@ -1066,15 +1332,39 @@ check("and carries no unit token when the measure is unitless",
   JSON.stringify(Charts.workbookColumns(null)) ===
   JSON.stringify(["Section", "Label", "Count", "Average", "You"]));
 
-check("a not-enough answer's whole workbook is one Status row - the " +
-  "same honest sentence the page prints, plus the same broader-filter " +
-  "hint",
+/*
+ * THE WORKBOOK LEADS WITH A FILTERS ROW (0.9-M3-S14, this file's own
+ * header) - "Everyone" with no filters, ahead of the not-enough
+ * sentence itself, which stays the route's own words verbatim
+ * (unchanged by this slice: workbookRows() never composes a variant of
+ * `answer.note`, only prepends a row ahead of it).
+ */
+check("a not-enough answer's workbook leads with a Filters row (Everyone, " +
+  "no filters on the ask), then the same honest sentence the page " +
+  "prints plus the same broader-filter hint",
   JSON.stringify(Charts.workbookRows(
-    { enough: false, note: "Not enough people for this view." },
+    { enough: false, note: "Not enough people for this view.", filters: [] },
     {}, () => null)) ===
-  JSON.stringify([["Status",
-    "Not enough people for this view. " + Charts.BROADER_FILTER_HINT,
-    "", "", ""]]));
+  JSON.stringify([
+    ["Filters", "Everyone", "", "", ""],
+    ["Status",
+      "Not enough people for this view. " + Charts.BROADER_FILTER_HINT,
+      "", "", ""]]));
+
+const NOT_ENOUGH_FILTER_FOR = (name) => (name === "gender"
+  ? { name: "gender", choices: [{ value: "female", label: "Female" }] }
+  : null);
+check("a not-enough answer WITH a filter still leads with a Filters row " +
+  "naming it, ahead of the unchanged route sentence",
+  JSON.stringify(Charts.workbookRows(
+    { enough: false, note: "Not enough people for this view.",
+      filters: [{ field: "gender", value: "female" }] },
+    {}, NOT_ENOUGH_FILTER_FOR)) ===
+  JSON.stringify([
+    ["Filters", "female", "", "", ""],
+    ["Status",
+      "Not enough people for this view. " + Charts.BROADER_FILTER_HINT,
+      "", "", ""]]));
 
 /*
  * A fixture shaped exactly like server/charts-agg.js's real answer -
@@ -1090,6 +1380,7 @@ check("a not-enough answer's whole workbook is one Status row - the " +
 const WORKBOOK_COUNTRIES = { US: "=SUM(A1:A10)" };
 const WORKBOOK_ANSWER = {
   enough: true,
+  filters: [{ field: "country", value: "US" }],
   units: { system: "imperial", unit: "lb", locked: false },
   distribution: { bins: [
     { count: 3, from: 25, to: 150 },
@@ -1112,11 +1403,17 @@ const workbookMeasureFor = (name) => (name === "country"
 const workbookRows = Charts.workbookRows(WORKBOOK_ANSWER,
   WORKBOOK_COUNTRIES, workbookMeasureFor);
 
+check("0.9-M3-S14: the workbook's very first row is Filters, ahead of " +
+  "every other section - the same words the status line would print, " +
+  "resolved through the same country table the group-makeup row below " +
+  "uses (the hostile-string proof applies here too: a country name " +
+  "shaped like a formula arrives as that literal text, not as row 0's " +
+  "own special case)",
+  workbookRows[0][0] === "Filters" && workbookRows[0][1] === "=SUM(A1:A10)");
 check("the distribution row carries the exact band range in the unit " +
   "the answer is expressed in, and the raw count as a NUMBER",
-  workbookRows[0][0] === "Distribution" &&
-  workbookRows[0][1] === "25 lb–150 lb" && workbookRows[0][2] === 3 &&
-  typeof workbookRows[0][2] === "number");
+  workbookRows.some((r) => r[0] === "Distribution" &&
+    r[1] === "25 lb–150 lb" && r[2] === 3 && typeof r[2] === "number"));
 check("the group's own average trend point lands in the Average column, "
   + "the You column blank",
   workbookRows.some((r) => r[0] === "Trend" && r[3] === 178.6 && r[4] === ""));
@@ -1136,6 +1433,7 @@ check("the group-makeup row carries the field's own label in its " +
  */
 const WORKBOOK_TRIM_ANSWER = {
   enough: true,
+  filters: [],
   units: { system: "imperial", unit: "lb", locked: false },
   distribution: { bins: [
     { count: 2, from: 25, to: 50 },
@@ -1325,7 +1623,7 @@ function node(tag) {
  */
 const PAGE_HTML = webTexts["charts.html"];
 const IDS = [...PAGE_HTML.matchAll(/\bid="([\w-]+)"/g)].map((m) => m[1]);
-const NEEDED = ["filter-field", "filter-value-field", "filter-value",
+const NEEDED = ["filter-rows",
   "measure", "picture-field", "picture-tab-trend",
   "picture-tab-distribution", "picture-trend", "picture-distribution",
   "figure-trend", "figure-distribution", "groups", "groups-body",
@@ -1398,17 +1696,8 @@ function buildDom(opts) {
   const byId = new Map();
   for (const id of NEEDED) byId.set(id, node("div"));
 
-  byId.get("filter-field").tag = "select";
-  byId.get("filter-value").tag = "select";
   byId.get("measure").tag = "select";
   byId.get("show-me").tag = "button";
-  // The static "Everyone" option apps/web/charts.html ships in the
-  // markup itself, ahead of anything charts.js appends - so "Everyone"
-  // (an empty filter) is the default selection, exactly as a browser
-  // starts it.
-  const everyone = node("option");
-  everyone.value = "";
-  byId.get("filter-field").appendChild(everyone);
   byId.get("download").tag = "a";
   // apps/web/charts.html ships the download anchor `hidden` by default;
   // offerDownload() is what reveals it once a response exists.
@@ -1509,17 +1798,60 @@ function measureFixture() {
 }
 
 /*
+ * The baseline (unfiltered) GET /charts-data answer setUp() reads
+ * `groups` off to build the filter rows (0.9-M3-S14; this file's own
+ * header). A real value in each categorical field's own present-value
+ * list - never zero-candidate rows a driven() caller would then have
+ * to special-case just to exercise a click.
+ */
+function defaultBaselineAnswer() {
+  return {
+    ok: true, enough: true, filters: [],
+    groups: [
+      { field: "gender", label: "Gender", term: "gender", multiple: false,
+        values: [
+          { value: "male", label: "Male", count: 10, bucket: null },
+          { value: "female", label: "Female", count: 8, bucket: null },
+          { value: null, label: "Not stated", count: 2, bucket: "blank" },
+        ] },
+      { field: "country", label: "Country", term: "country", multiple: false,
+        values: [
+          { value: "US", label: "US", count: 5, bucket: null },
+          { value: "AL", label: "AL", count: 1, bucket: null },
+          { value: null, label: "Not stated", count: 3, bucket: "blank" },
+        ] },
+    ],
+  };
+}
+
+/*
  * `opts.defaultSystem` stands in for apps/web/site.config.js's
  * units.default, read through apps/fields.js's defaultSystem() (F2's
  * arm below flips it both directions). It is a fixture value here for
  * the same reason BinderFields itself is fixtured throughout this
  * file - never the real site.config.js/fields.js pair - but it is
  * standing in for the exact same fact currentSystem() now derives from.
+ *
+ * SETUP NOW MAKES TWO FETCHES OF ITS OWN, AHEAD OF ANY SHOW-ME PRESS
+ * (0.9-M3-S14, this file's own header): GET /spec (the effective spec)
+ * and one unfiltered GET /charts-data (to learn which filter values are
+ * present). `fetchImpl`, the caller's own argument, answers ONLY calls
+ * beyond those two - which for every existing call site means exactly
+ * what it always meant, the Show-me press's own response - so the huge
+ * majority of this file's driven() calls needed no change at all.
+ * `opts.spec`/`opts.baseline` override the two setup answers when a
+ * test is specifically about them; `opts.captureFieldsArgs` records
+ * every `given` argument BinderFields.measures()/measure() was called
+ * with, which is how this file proves charts.js is really reading the
+ * EFFECTIVE spec GET /spec returned rather than some fixed global (the
+ * gap DESIGN.md's "Where configuration lives" named: "Charts... do not
+ * yet").
  */
 async function driven(fetchImpl, opts) {
   const options = opts || {};
   const { doc, byId, unitsInputs, createdAnchors } = buildDom(options);
   const calls = [];
+  const fieldsCalls = [];
   // The create-revoke pairing (0.9-M2-S12, #373's pattern, carried to
   // this file's own rebuild): two arrays rather than a count, because a
   // count alone cannot tell "every created URL got revoked" from "one
@@ -1551,10 +1883,22 @@ async function driven(fetchImpl, opts) {
   // (0.9-M2-S14, #380 ruling 4) rather than importing that file, the
   // same fixture-not-import shape every other BinderFields member here
   // already takes - pinnedCountries() ignores the `site` it is handed
-  // for the same reason.
+  // for the same reason. `given` is the effective spec (GET /spec's
+  // own body, or the default fixture below) - measures()/measure()
+  // themselves still ignore it and answer measureFixture() regardless,
+  // matching the fixture-not-import shape, but `given` is RECORDED when
+  // `captureFieldsArgs` asks for it, which is what proves the SAME
+  // object /spec returned is what reaches every call.
+  const specFixtureMeasures = options.measures || measureFixture();
   g.BinderFields = {
-    measures: () => measureFixture(),
-    measure: (name) => measureFixture().find((m) => m.name === name),
+    measures: (given) => {
+      if (options.captureFieldsArgs) fieldsCalls.push({ fn: "measures", given });
+      return specFixtureMeasures;
+    },
+    measure: (name, given) => {
+      if (options.captureFieldsArgs) fieldsCalls.push({ fn: "measure", given });
+      return specFixtureMeasures.find((m) => m.name === name);
+    },
     defaultSystem: () => options.defaultSystem || "imperial",
     pinnedCountries: () => ["US", "GB", "CA"],
     orderedChoices: (choices, pinned) => {
@@ -1569,21 +1913,53 @@ async function driven(fetchImpl, opts) {
   g.BINDER_SITE = { fields: [] };
   // GB and CA join the two countries already here (0.9-M2-S14, #380
   // ruling 4's own fixture): all three pinned codes now have a real
-  // name behind them, so the filter-field arm below can prove the
-  // pinned block lands at indexes 0-2 exactly, not merely "some of it".
+  // name behind them, so the pin-ordering arm below can prove the
+  // pinned block lands at the front in full, not merely "some of it".
   g.BINDER_COUNTRIES = { US: "United States", AL: "Albania",
     GB: "United Kingdom", CA: "Canada" };
   g.BINDER_CONFIG = { endpoint: "https://w.example" };
+
+  // The effective spec GET /spec answers with, as a distinct OBJECT
+  // (not merely equal JSON) when `opts.spec` names one - object
+  // identity is what fieldsCalls above can prove reached BinderFields,
+  // which JSON equality could not tell apart from a coincidence.
+  const specBody = Object.prototype.hasOwnProperty.call(options, "spec")
+    ? options.spec : {};
+  let baselineServed = false;
   g.fetch = async (url, init) => {
     calls.push(String(url));
+    const target = new URL(String(url));
+    if (target.pathname === "/spec") {
+      return response(200, { spec: specBody });
+    }
+    if (!baselineServed) {
+      baselineServed = true;
+      const baseline = Object.prototype.hasOwnProperty.call(options, "baseline")
+        ? options.baseline : defaultBaselineAnswer();
+      return response(200, baseline === null
+        ? { ok: true, enough: false, filters: [],
+          note: "Not enough people for this view.", groups: null }
+        : baseline);
+    }
     return fetchImpl(url, init);
   };
 
   await import("data:text/javascript," + encodeURIComponent(uiSrc) +
     "#charts-ui-" + Math.random());
-  await import("data:text/javascript," + encodeURIComponent(src) +
-    "#charts-page-" + Math.random());
+  // `options.source` is the combined-mode arms' own escape hatch (this
+  // file's own header, section 3b): the REAL file's bytes with exactly
+  // one line's constant flipped, in memory only - apps/web/charts.js on
+  // disk is never touched.
+  await import("data:text/javascript," +
+    encodeURIComponent(options.source || src) + "#charts-page-" +
+    Math.random());
 
+  // Two ticks rather than one: setUp() now chains TWO sequential
+  // fetches (GET /spec, then the baseline GET /charts-data) ahead of
+  // any wiring - still pure microtasks under this stub's synchronous
+  // fetch, which drain fully before either timer fires, but the extra
+  // tick is cheap insurance against a future await this chain grows.
+  await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
   // 0.9-M2-S15 (#383): `skipPress` leaves setUp() run but Show me
   // unpressed - the one way this harness can inspect the page's own
@@ -1591,8 +1967,8 @@ async function driven(fetchImpl, opts) {
   // arm below), since every other caller wants the post-press page.
   if (!options.skipPress) await pressShowMe(byId);
 
-  return { byId, doc, calls, unitsInputs, created, revoked, blobs,
-    createdAnchors };
+  return { byId, doc, calls, fieldsCalls, unitsInputs, created, revoked,
+    blobs, createdAnchors };
 }
 
 async function pressShowMe(byId) {
@@ -1620,12 +1996,20 @@ function response(status, body) {
  */
 {
   const { byId, calls } = await driven(() => {
-    throw new Error("Show me was never pressed - fetch should not fire");
+    throw new Error("Show me was never pressed - GET /charts-data should " +
+      "not fire a second time");
   }, { skipPress: true });
+  // setUp() itself fetches GET /spec and one unfiltered GET /charts-data
+  // now (0.9-M3-S14, this file's own header, to build the filter rows) -
+  // "nothing fetched to get there" now means no THIRD call, never that
+  // setup itself fetched nothing.
   check("0.9-M2-S15: the picture toggle is absent before any Show me " +
-    "press - hidden, not merely disabled, and nothing fetched to get " +
-    "there",
-    byId.get("picture-field").hidden === true && calls.length === 0);
+    "press - hidden, not merely disabled - and setUp()'s own two " +
+    "fetches (GET /spec, one baseline GET /charts-data) are the whole " +
+    "of what fired",
+    byId.get("picture-field").hidden === true && calls.length === 2 &&
+    new URL(calls[0]).pathname === "/spec" &&
+    new URL(calls[1]).pathname === "/charts-data");
 }
 
 /*
@@ -1654,17 +2038,26 @@ function chipsOf(row) {
  */
 const NOT_ENOUGH_FIXTURE = {
   ok: true, measure: { name: "weight", label: "Weight", term: "weight",
-    kind: "bins" }, filter: { field: null, value: null }, floor: 0,
+    kind: "bins" },
+  // The LIST echo (0.9-M3-S31, #455), superseding the old single
+  // {field,value} pair - empty for Everyone, exactly what
+  // activeFilterPairs() sends when every chip is lit.
+  filters: [], floor: 0,
   enough: false, note: "Not enough people for this view.", units: null,
   trend: null, distribution: null, groups: null, self: null,
 };
 
 {
   const { byId, calls } = await driven(() => response(200, NOT_ENOUGH_FIXTURE));
-  check("Show me fires exactly one GET /charts-data, never /snapshot " +
-    "and never the page's own /charts URL",
-    calls.length === 1 &&
-    new URL(calls[0]).pathname === "/charts-data" &&
+  // Three calls total now: GET /spec, the baseline GET /charts-data
+  // (0.9-M3-S14, this file's own header) and the Show-me press's own -
+  // "exactly one" narrows to the press itself, the last of the three.
+  check("Show me fires exactly one GET /charts-data of its own beyond " +
+    "setUp()'s baseline read, never /snapshot and never the page's own " +
+    "/charts URL",
+    calls.length === 3 &&
+    calls.filter((u) => new URL(u).pathname === "/charts-data").length === 2 &&
+    new URL(calls[calls.length - 1]).pathname === "/charts-data" &&
     !calls.some((u) => u.includes("/snapshot")));
   /*
    * Owner ruling 7, #243: the honest sentence plus a broader-filter
@@ -1743,7 +2136,7 @@ const NOT_ENOUGH_FIXTURE = {
 const ENOUGH_FIXTURE = {
   ok: true,
   measure: { name: "weight", label: "Weight", term: "weight", kind: "bins" },
-  filter: { field: null, value: null },
+  filters: [],
   floor: 0,
   enough: true,
   note: null,
@@ -2163,32 +2556,110 @@ const LOCKED_FIXTURE = Object.assign({}, ENOUGH_FIXTURE_METRIC, {
 }
 
 /*
- * Pinned countries, driven end to end (0.9-M2-S14, #380 ruling 4):
- * selecting the country filter field fires populateFilterValue(),
- * which now runs the alphabetical option list through
- * Fields.orderedChoices() before appending it. The fixture BinderFields
- * above replicates the real algorithm; this proves charts.js actually
- * calls it, at the right moment, on the right field.
+ * The new filter rows (0.9-M3-S14, #454 items 16-18): one entry per
+ * categorical field in `#filter-rows`, each carrying `data-field` -
+ * these three helpers read them the same disciplined way chipsOf()
+ * above reads the read-only group-makeup chips, never trusting a flat
+ * string this suite would have to re-split.
+ */
+function filterRowFor(byId, field) {
+  return byId.get("filter-rows").children.find(
+    (row) => row.getAttribute("data-field") === field) || null;
+}
+
+function filterChipsOf(row) {
+  const chipRow = row.children.find((c) =>
+    c.className.split(" ").includes("filter-chip-row"));
+  if (!chipRow) return null;
+  return chipRow.children.map((chip) => ({
+    value: chip.getAttribute("data-value"),
+    label: chip.textContent,
+    pressed: chip.getAttribute("aria-pressed") === "true",
+    disabled: chip.disabled === true,
+  }));
+}
+
+function filterSelectOf(row) {
+  return row.children.find((c) => c.tag === "select") || null;
+}
+
+function filterNoticeOf(row) {
+  return row.children.find((c) =>
+    c.className.split(" ").includes("filter-notice")) || null;
+}
+
+/* The LIVE button node for one field's own chip - re-fetch `row` fresh
+   (filterRowFor()) after any click that changes state, since
+   renderFilterRows() rebuilds the whole #filter-rows subtree; a cached
+   row from before such a click points at a detached tree. */
+function chipButtonFor(row, value) {
+  const chipRow = row.children.find((c) =>
+    c.className.split(" ").includes("filter-chip-row"));
+  if (!chipRow) return null;
+  return chipRow.children.find((b) => b.getAttribute("data-value") === value)
+    || null;
+}
+
+/* The most recent GET /charts-data call in `calls` - setUp()'s own
+   baseline read and every Show-me press are both this pathname, so
+   "the request the last press made" is the last match, never calls[0]
+   (GET /spec) or a fixed index. */
+function lastChartsDataCall(calls) {
+  const matches = calls.filter((u) => new URL(u).pathname === "/charts-data");
+  return matches.length ? new URL(matches[matches.length - 1]) : null;
+}
+
+/*
+ * Pinned countries, driven end to end (owner ruling, 0.9-M2-S14, #380
+ * ruling 4, carried into the chip row by #454 item 18: "pinned US/GB/CA
+ * order kept") - WITHOUT duplication (pinFirst()'s own header; the
+ * superseded build's own review, #434 comment 5378073973, finding F5,
+ * is the reason it must not duplicate: two lit chips for one selection).
+ * The baseline's own country cells arrive in the RESPONSE's count-desc
+ * order (AL, GB, US - server/charts-agg.js's cellsOf(), never
+ * alphabetical) precisely so this proves a real reorder happened rather
+ * than the fixture already being pin-first by luck.
  */
 {
-  const { byId } = await driven(() => response(200, ENOUGH_FIXTURE));
-  byId.get("filter-field").value = "country";
-  await byId.get("filter-field").dispatch("change");
+  const pinnedBaseline = {
+    ok: true, enough: true, filters: [],
+    groups: [
+      { field: "gender", label: "Gender", term: "gender", multiple: false,
+        values: [
+          { value: "male", label: "Male", count: 10, bucket: null },
+          { value: "female", label: "Female", count: 8, bucket: null },
+        ] },
+      { field: "country", label: "Country", term: "country", multiple: false,
+        values: [
+          { value: "AL", label: "AL", count: 9, bucket: null },
+          { value: "GB", label: "GB", count: 6, bucket: null },
+          { value: "US", label: "US", count: 5, bucket: null },
+        ] },
+    ],
+  };
+  const { byId } = await driven(() => response(200, ENOUGH_FIXTURE),
+    { baseline: pinnedBaseline });
 
-  const options = byId.get("filter-value").children.map((o) => o.value);
-  check("the country filter's pinned block is exactly US, GB, CA, in " +
-    "that order, at indexes 0-2",
-    options[0] === "US" && options[1] === "GB" && options[2] === "CA");
-  check("the full alphabetical run still follows, pinned codes present " +
-    "a second time - a reader scanning either way finds them",
-    options.slice(3).join(",") === "AL,CA,GB,US");
-  byId.get("filter-field").value = "gender";
-  await byId.get("filter-field").dispatch("change");
+  const countryChips = filterChipsOf(filterRowFor(byId, "country"));
+  check("the country filter chips lead with US then GB, pinned - not " +
+    "the response's own AL/GB/US count-desc order",
+    countryChips[0].value === "US" && countryChips[1].value === "GB");
+  check("AL (not pinned) follows, exactly once - no chip appears twice " +
+    "for one value (pinFirst() does not duplicate, unlike the pattern " +
+    "that lit two chips for one selection in the superseded build)",
+    countryChips.length === 3 && countryChips[2].value === "AL" &&
+    countryChips.filter((c) => c.value === "US").length === 1);
+  check("the chip labels resolve through the countries table, not the " +
+    "response's own code placeholder",
+    countryChips[0].label === "United States" &&
+    countryChips[1].label === "United Kingdom" &&
+    countryChips[2].label === "Albania");
+
+  const genderChips = filterChipsOf(filterRowFor(byId, "gender"));
   check("a non-country categorical field is never reordered - the " +
     "pinning is positional (measure.choicesFrom === \"countries\"), " +
-    "not applied to every filter value list",
-    byId.get("filter-value").children.map((o) => o.value).join(",") ===
-    "male,female");
+    "never applied to every filter value list",
+    genderChips.map((c) => c.value).join(",") === "male,female");
 }
 
 /*
@@ -2257,6 +2728,375 @@ const LOCKED_FIXTURE = Object.assign({}, ENOUGH_FIXTURE_METRIC, {
     clickedSheet.includes("150 lb") && clickedSheet.includes("175 lb"));
 }
 
+/* ------------------------------------------------------------------ */
+/* 3b. The filter chips, driven end to end (0.9-M3-S14, #384; #454      */
+/* items 16-18; the gate, Prime's ruling on #455, comment 5378956164).  */
+
+/*
+ * Chips come from the EFFECTIVE spec (GET /spec, 0.9-M3-S11, #419) -
+ * never root.BINDER_SITE and never a hard-coded field list (this
+ * file's header). `specMarker` is a distinct OBJECT (not merely equal
+ * JSON), which is what proves the SAME thing GET /spec answered
+ * reaches BinderFields, not a coincidence of two objects that happen
+ * to look alike. The admin-added "mood" field - present only in this
+ * test's own fixture, named nowhere in apps/web/charts.js's source -
+ * renders its own row with zero code changes (#384 ruling 3).
+ */
+{
+  const specMarker = { marker: "0.9-M3-S14-admin-added-field-fixture" };
+  const measuresWithMood = measureFixture().concat([
+    { name: "mood", label: "Mood", term: "mood", kind: "categorical",
+      choices: [{ value: "great", label: "Great" },
+                { value: "flat", label: "Flat" }] },
+  ]);
+  const moodBaseline = {
+    ok: true, enough: true, filters: [],
+    groups: [
+      { field: "gender", label: "Gender", term: "gender", multiple: false,
+        values: [{ value: "male", label: "Male", count: 10, bucket: null }] },
+      { field: "country", label: "Country", term: "country", multiple: false,
+        values: [{ value: "US", label: "US", count: 5, bucket: null }] },
+      { field: "mood", label: "Mood", term: "mood", multiple: false,
+        values: [
+          { value: "great", label: "Great", count: 6, bucket: null },
+          { value: "flat", label: "Flat", count: 4, bucket: null },
+        ] },
+    ],
+  };
+  const { byId, fieldsCalls } = await driven(
+    () => response(200, ENOUGH_FIXTURE),
+    { spec: specMarker, measures: measuresWithMood, baseline: moodBaseline,
+      captureFieldsArgs: true });
+
+  // A real fetch round-trips through JSON, so `given` can never be the
+  // SAME object `specMarker` is - a plain HTTP response has no way to
+  // preserve identity. The deep-equal fixture value is the whole of
+  // what a wire response could ever carry, so that is the proof this
+  // page reads the fetched effective spec rather than a fixed global.
+  const specJson = JSON.stringify(specMarker);
+  check("0.9-M3-S14: every BinderFields.measures()/measure() call this " +
+    "session made was handed the SAME body GET /spec answered with - " +
+    "proof this page reads the fetched effective spec, not a fixed " +
+    "global (DESIGN.md, \"Where configuration lives\": \"Charts... do " +
+    "not yet\" - this slice closes that)",
+    fieldsCalls.length > 0 &&
+    fieldsCalls.every((c) => JSON.stringify(c.given) === specJson));
+  check("apps/web/charts.js's own source names the admin-added field " +
+    "nowhere - the row below is derived, not hard-coded",
+    !src.includes("mood"));
+
+  const moodRow = filterRowFor(byId, "mood");
+  check("0.9-M3-S14: an admin-added categorical field renders its own " +
+    "filter row with zero code changes",
+    moodRow !== null);
+  check("its chips come from the baseline answer's own present values",
+    filterChipsOf(moodRow).map((c) => c.value).sort().join(",") ===
+    "flat,great");
+}
+
+/*
+ * Resting state (0.9-M3-S14; #454 item 16): driven()'s own default
+ * press, nothing tapped - every candidate lit in every field.
+ */
+{
+  const { byId, calls } = await driven(() => response(200, ENOUGH_FIXTURE));
+  const genderChips = filterChipsOf(filterRowFor(byId, "gender"));
+  check("0.9-M3-S14: at rest, every chip in every field is lit " +
+    "(aria-pressed=true) - Everyone, with no \"All\" chip anywhere",
+    genderChips.every((c) => c.pressed === true));
+  const call = lastChartsDataCall(calls);
+  check("0.9-M3-S14: all-lit sends NO filter/value pair at all - the " +
+    "identity 0.9-M3-S31 built the Worker side to hold (#455)",
+    call.searchParams.getAll("filter").length === 0 &&
+    call.searchParams.getAll("value").length === 0);
+}
+
+/* One chip lit sends one pair. */
+{
+  const { byId, calls } = await driven(() => response(200, ENOUGH_FIXTURE),
+    { skipPress: true });
+  await chipButtonFor(filterRowFor(byId, "gender"), "male")
+    .dispatch("click");
+  await pressShowMe(byId);
+  const call = lastChartsDataCall(calls);
+  check("0.9-M3-S14: tapping one chip from Everyone sends exactly one " +
+    "filter/value pair for that field",
+    call.searchParams.getAll("filter").join(",") === "gender" &&
+    call.searchParams.getAll("value").join(",") === "male");
+  const genderChips = filterChipsOf(filterRowFor(byId, "gender"));
+  check("and only that one chip reads pressed - the rest went dark, not " +
+    "merely disabled",
+    genderChips.filter((c) => c.pressed).map((c) => c.value).join(",") ===
+    "male");
+}
+
+/*
+ * Under the gate, a SECOND chip in the SAME already-restricted field is
+ * refused in place - the shipped COMBINED_FILTERS_ENABLED === false
+ * path (Prime's ruling on #455, comment 5378956164).
+ */
+{
+  const { byId, calls } = await driven(() => response(200, ENOUGH_FIXTURE),
+    { skipPress: true });
+  await chipButtonFor(filterRowFor(byId, "gender"), "male")
+    .dispatch("click");
+  const before = calls.length;
+  await chipButtonFor(filterRowFor(byId, "gender"), "female")
+    .dispatch("click");
+  check("0.9-M3-S14: a second chip in the same restricted field sends " +
+    "nothing new - no fetch fired for the refused tap",
+    calls.length === before);
+  const genderChips = filterChipsOf(filterRowFor(byId, "gender"));
+  check("the selection is unchanged - male stays the only lit chip",
+    genderChips.filter((c) => c.pressed).map((c) => c.value).join(",") ===
+    "male");
+  const notice = filterNoticeOf(filterRowFor(byId, "gender"));
+  check("0.9-M3-S14: the refusal reason renders in plain words, in " +
+    "place, in the field's own row",
+    notice !== null && notice.hidden === false &&
+    notice.textContent === Charts.WITHIN_FIELD_GATE_NOTICE);
+}
+
+/*
+ * Under the gate, a selection in a SECOND field while another already
+ * holds one value is refused the same way, and disables the other
+ * field's whole row.
+ */
+{
+  const { byId, calls } = await driven(() => response(200, ENOUGH_FIXTURE),
+    { skipPress: true });
+  await chipButtonFor(filterRowFor(byId, "gender"), "male")
+    .dispatch("click");
+  const before = calls.length;
+  await chipButtonFor(filterRowFor(byId, "country"), "US")
+    .dispatch("click");
+  check("0.9-M3-S14: a tap in a second field while another is already " +
+    "restricted sends nothing new either",
+    calls.length === before);
+  const countryChips = filterChipsOf(filterRowFor(byId, "country"));
+  check("every chip in the OTHER field disables while a field elsewhere " +
+    "is restricted",
+    countryChips.every((c) => c.disabled === true) &&
+    countryChips.every((c) => c.pressed === true));
+  const countryNotice = filterNoticeOf(filterRowFor(byId, "country"));
+  check("0.9-M3-S14: the cross-field refusal carries its OWN distinct " +
+    "sentence, in the other field's own row",
+    countryNotice !== null && countryNotice.hidden === false &&
+    countryNotice.textContent === Charts.CROSS_FIELD_GATE_NOTICE &&
+    Charts.CROSS_FIELD_GATE_NOTICE !== Charts.WITHIN_FIELD_GATE_NOTICE);
+}
+
+/* The last lit chip cannot be unlit (#454 item 16) - tapping the field's
+   own already-active chip clears it back to Everyone instead, which is
+   what re-enables every other field's row. */
+{
+  const { byId, calls } = await driven(() => response(200, ENOUGH_FIXTURE),
+    { skipPress: true });
+  await chipButtonFor(filterRowFor(byId, "gender"), "male")
+    .dispatch("click");
+  await chipButtonFor(filterRowFor(byId, "gender"), "male")
+    .dispatch("click");
+  const genderChips = filterChipsOf(filterRowFor(byId, "gender"));
+  check("0.9-M3-S14: tapping the field's own sole active chip clears it " +
+    "back to Everyone - every chip in the row relights",
+    genderChips.every((c) => c.pressed === true));
+  const countryChips = filterChipsOf(filterRowFor(byId, "country"));
+  check("clearing the active field's own restriction re-enables every " +
+    "other field's row",
+    countryChips.every((c) => c.disabled === false));
+  await pressShowMe(byId);
+  const call = lastChartsDataCall(calls);
+  check("and the next Show-me press sends no pair at all again",
+    call.searchParams.getAll("filter").length === 0);
+}
+
+/* A retired value never renders - this page reads candidates from the
+   baseline's own present-value list and nothing else, so a value the
+   Worker never lists (server/worker.js's offeredValues(), #385 rule 7)
+   simply is not there for this page to re-add. */
+{
+  const retiredBaseline = {
+    ok: true, enough: true, filters: [],
+    groups: [
+      { field: "gender", label: "Gender", term: "gender", multiple: false,
+        values: [
+          { value: "male", label: "Male", count: 10, bucket: null },
+          { value: "female", label: "Female", count: 8, bucket: null },
+          { value: null, label: "Not stated", count: 2, bucket: "blank" },
+        ] },
+    ],
+  };
+  const { byId } = await driven(() => response(200, ENOUGH_FIXTURE),
+    { baseline: retiredBaseline, measures: [measureFixture()[0],
+      measureFixture()[1]] });
+  const genderChips = filterChipsOf(filterRowFor(byId, "gender"));
+  check("0.9-M3-S14: a retired value (\"nonbinary\", named in the " +
+    "measure fixture's own choices but absent from this baseline's own " +
+    "makeup block) never renders as a filter chip",
+    genderChips.map((c) => c.value).sort().join(",") === "female,male" &&
+    !genderChips.some((c) => c.value === "nonbinary"));
+}
+
+/* The status line and the makeup block both follow the active filter -
+   one tap, one press, one served answer whose own echo names it. */
+{
+  const servedAnswer = Object.assign({}, ENOUGH_FIXTURE, {
+    filters: [{ field: "gender", value: "male" }],
+    groups: [
+      { field: "gender", label: "Gender", term: "gender", multiple: false,
+        values: [{ value: "male", label: "Male", count: 10, bucket: null }] },
+    ],
+  });
+  const { byId } = await driven(() => response(200, servedAnswer),
+    { skipPress: true });
+  await chipButtonFor(filterRowFor(byId, "gender"), "male")
+    .dispatch("click");
+  await pressShowMe(byId);
+  check("0.9-M3-S14: the status line names the filter in words, ahead " +
+    "of the measure sentence",
+    byId.get("status")._text === "Showing male - Weight (lb).");
+  const groupsChips = chipsOf(byId.get("groups-body").children
+    .find((c) => c.tag === "div"));
+  check("0.9-M3-S14: the group-makeup block follows the SAME filtered " +
+    "answer - one chip, Male's own count, not the whole group's",
+    groupsChips.length === 1 && groupsChips[0].name === "Male" &&
+    groupsChips[0].count === "10");
+}
+
+/* The xlsx download carries the same filter label as the status line. */
+{
+  const servedAnswer = Object.assign({}, ENOUGH_FIXTURE, {
+    filters: [{ field: "gender", value: "male" }],
+  });
+  const { byId, blobs } = await driven(() => response(200, servedAnswer),
+    { skipPress: true });
+  await chipButtonFor(filterRowFor(byId, "gender"), "male")
+    .dispatch("click");
+  await pressShowMe(byId);
+  await byId.get("download").dispatch("click");
+  const bytes = new Uint8Array(await blobs[blobs.length - 1].arrayBuffer());
+  const xml = new TextDecoder().decode(
+    unzip(bytes).find((e) => e.name === "xl/worksheets/sheet1.xml").data);
+  check("0.9-M3-S14: the downloaded workbook's own Filters row carries " +
+    "the same word the status line printed - \"male\", inline text",
+    xml.includes(">male<"));
+}
+
+/*
+ * NOTHING IS PRESS-TIME EITHER (design mandate 2): every fetch above is
+ * traced to a click (a chip's own click event or Show-me's), never a
+ * change this suite made by writing state onto the field objects
+ * directly.
+ */
+
+/*
+ * ARMED BOTH STATES (this file's header; "a test arms both states by
+ * calling the pure function twice, never by mutating a frozen module
+ * constant" - the DOM WIRING itself gets the same proof here, on a
+ * SEPARATE loaded copy of the real source with the one line flipped,
+ * exactly the technique the superseded build's own review used
+ * ("flipping that one line to true in my checkout, nothing committed") -
+ * apps/web/charts.js on disk is untouched; only this in-memory string
+ * differs.
+ */
+const combinedSrc = src.replace(
+  "const COMBINED_FILTERS_ENABLED = false;",
+  "const COMBINED_FILTERS_ENABLED = true;");
+check("0.9-M3-S14 test-apparatus check: the flip target string is " +
+  "present exactly once in the real file, so this suite's own combined-" +
+  "mode arms below are really testing the shipped gate, not a typo that " +
+  "silently no-opped",
+  src.split("const COMBINED_FILTERS_ENABLED = false;").length === 2 &&
+  combinedSrc !== src);
+
+async function drivenCombined(fetchImpl, opts) {
+  return driven(fetchImpl, Object.assign({}, opts, { source: combinedSrc }));
+}
+
+/*
+ * REST IS EVERY CANDIDATE LIT (#454 item 16), so combined mode's own
+ * tap TURNS A LIT CHIP OFF - it narrows AWAY from the tapped value,
+ * never toward it. Building a real "two of three selected" state by
+ * TAPS therefore means turning the ONE UNWANTED candidate off, not
+ * tapping the two that are wanted (which start lit already) - the
+ * three-candidate country fixture below is what makes that a genuine
+ * subset rather than degenerating back to Everyone on a two-candidate
+ * field.
+ */
+const threeCountryBaseline = {
+  ok: true, enough: true, filters: [],
+  groups: [
+    { field: "gender", label: "Gender", term: "gender", multiple: false,
+      values: [
+        { value: "male", label: "Male", count: 10, bucket: null },
+        { value: "female", label: "Female", count: 8, bucket: null },
+      ] },
+    { field: "country", label: "Country", term: "country", multiple: false,
+      values: [
+        { value: "US", label: "US", count: 5, bucket: null },
+        { value: "AL", label: "AL", count: 1, bucket: null },
+        { value: "GB", label: "GB", count: 2, bucket: null },
+      ] },
+  ],
+};
+
+{
+  const { byId, calls } = await drivenCombined(
+    () => response(200, ENOUGH_FIXTURE),
+    { skipPress: true, baseline: threeCountryBaseline });
+  // Turn GB off, leaving US and AL both still lit - a real two-of-three
+  // set, not Everyone in disguise.
+  await chipButtonFor(filterRowFor(byId, "country"), "GB")
+    .dispatch("click");
+  await pressShowMe(byId);
+  const call = lastChartsDataCall(calls);
+  check("0.9-M3-S14: with the constant true, two chips left lit in ONE " +
+    "field send TWO pairs for that field",
+    call.searchParams.getAll("filter").join(",") === "country,country" &&
+    call.searchParams.getAll("value").sort().join(",") === "AL,US");
+}
+
+{
+  const { byId, calls } = await drivenCombined(
+    () => response(200, ENOUGH_FIXTURE), { skipPress: true });
+  // Turn the UNwanted candidate off in each field, leaving exactly one
+  // lit in each - "male" and "US" respectively.
+  await chipButtonFor(filterRowFor(byId, "gender"), "female")
+    .dispatch("click");
+  await chipButtonFor(filterRowFor(byId, "country"), "AL")
+    .dispatch("click");
+  await pressShowMe(byId);
+  const call = lastChartsDataCall(calls);
+  check("0.9-M3-S14: with the constant true, TWO FIELDS each narrowed " +
+    "send pairs for BOTH - real combining, never the gate's refusal",
+    call.searchParams.getAll("filter").sort().join(",") ===
+    "country,gender" &&
+    call.searchParams.getAll("value").sort().join(",") === "US,male");
+  const genderChips = filterChipsOf(filterRowFor(byId, "gender"));
+  check("neither field disabled the other - the cross-field gate does " +
+    "not apply when the constant is true",
+    genderChips.every((c) => c.disabled === false));
+}
+
+{
+  // The last-chip invariant holds in combined mode too, by a different
+  // mechanism than the gate's clear-to-Everyone (a real toggle-off
+  // refusal): narrow gender to "male" alone, then try to turn that
+  // last lit chip off too.
+  const { byId } = await drivenCombined(
+    () => response(200, ENOUGH_FIXTURE), { skipPress: true });
+  await chipButtonFor(filterRowFor(byId, "gender"), "female")
+    .dispatch("click");
+  await chipButtonFor(filterRowFor(byId, "gender"), "male")
+    .dispatch("click");
+  const genderChips = filterChipsOf(filterRowFor(byId, "gender"));
+  check("0.9-M3-S14: combined mode's own last-chip invariant - with " +
+    "\"male\" the sole remaining lit chip, tapping it again is a no-op, " +
+    "not a jump back to Everyone",
+    genderChips.filter((c) => c.pressed).map((c) => c.value).join(",") ===
+    "male");
+}
+
 /*
  * DISTRIBUTION: NULL IS A DIFFERENT ANSWER FROM A GRID WHOSE BANDS ALL
  * READ ZERO (server/charts-agg.js's own header, since S10's fix wave,
@@ -2315,7 +3155,7 @@ const LOCKED_FIXTURE = Object.assign({}, ENOUGH_FIXTURE_METRIC, {
  */
 {
   const filteredAnswer = Object.assign({}, ENOUGH_FIXTURE, {
-    filter: { field: "gender", value: "male" },
+    filters: [{ field: "gender", value: "male" }],
     groups: [
       { field: "gender", label: "Gender", term: "gender", multiple: false,
         values: [{ value: "male", label: "Male", count: 10,
@@ -3137,7 +3977,8 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
     { noUnitsChecked: true, defaultSystem: "imperial" });
   check("F2: with no units radio checked, the request follows the spec " +
     "defaultSystem() - imperial here",
-    new URL(calls[0]).searchParams.get("units") === "imperial");
+    new URL(calls[calls.length - 1]).searchParams.get("units") ===
+    "imperial");
 }
 
 {
@@ -3146,7 +3987,7 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
   check("F2: flipping the spec defaultSystem() to metric flips the ask " +
     "too - the page derives the fallback from the spec, it does not " +
     "hardcode one",
-    new URL(calls[0]).searchParams.get("units") === "metric");
+    new URL(calls[calls.length - 1]).searchParams.get("units") === "metric");
 }
 
 /*
@@ -3217,7 +4058,7 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
  * source text contains.
  */
 
-const EXPECTED = 240;
+const EXPECTED = 307;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
