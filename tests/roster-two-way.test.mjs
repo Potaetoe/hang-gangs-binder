@@ -120,8 +120,20 @@ async function buildFixture(rosterText, arms) {
    reads its arms, so a message this arm greps for is read exactly the
    way a human reading the real gate's log would see it. */
 function runFixture(root) {
+  // The pool's own two environment overrides (0.9-M3-S35, #460) are
+  // cleared before this spawns, not merely left unset here - an
+  // inherited BINDER_GATE_BUDGET_SECONDS from whatever ran THIS file
+  // (found the hard way in tests/gate-budget.test.mjs's own fixture,
+  // which shares this exact pattern: a low outer budget makes every
+  // "exits 0"/"all green" scenario here false-red on its own timing,
+  // nothing to do with the roster logic these scenarios are actually
+  // about) would make this file's own green scenarios fail for a
+  // reason that has nothing to do with what they test.
+  const env = Object.assign({}, process.env);
+  delete env.BINDER_GATE_POOL;
+  delete env.BINDER_GATE_BUDGET_SECONDS;
   const done = spawnSync(process.execPath, [join(root, "tests", "run.mjs")],
-    { encoding: "utf8" });
+    { encoding: "utf8", env });
   return {
     code: done.status,
     output: (done.stdout || "") + (done.stderr || ""),

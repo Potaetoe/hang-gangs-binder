@@ -77,11 +77,27 @@ async function buildFixture(arms) {
    arms - and returns { code, output, ms }: `ms` is THIS CALL's own
    measured wall time, an independent cross-check against the runner's
    own printed "wall time" line rather than trusting that line to grade
-   itself. */
+   itself.
+
+   The two levers `tests/run.mjs` itself reads are deleted from the base
+   environment FIRST, then `env`'s own choices applied on top - not
+   `Object.assign({}, process.env, env)` alone. Without the delete, a
+   scenario that wants the DEFAULT (the "RESTORE" ones below) silently
+   inherits whatever this OUTER process happens to have set for either
+   variable - which is exactly what happened running this file's own
+   "RESTORE" checks by hand with BINDER_GATE_BUDGET_SECONDS=1 set in the
+   shell to drive a different mutation: the fixture read the outer
+   value, not the absence this scenario asked for, and reported OVER
+   BUDGET where it should not have. A scenario that WANTS a lever unset
+   passes nothing for it in `env`, and gets a genuinely absent variable
+   rather than an inherited one. */
 function runFixture(root, env) {
   const started = Date.now();
+  const base = Object.assign({}, process.env);
+  delete base.BINDER_GATE_POOL;
+  delete base.BINDER_GATE_BUDGET_SECONDS;
   const done = spawnSync(process.execPath, [join(root, "tests", "run.mjs")], {
-    encoding: "utf8", env: Object.assign({}, process.env, env || {}),
+    encoding: "utf8", env: Object.assign(base, env || {}),
   });
   return {
     code: done.status,
