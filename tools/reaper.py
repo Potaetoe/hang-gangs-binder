@@ -21,13 +21,14 @@ Four candidate classes, and nothing else is a candidate:
                      gone - the prune class
   debris branch      a `worktree-agent-*` branch whose tip is an
                      ancestor of a mainline AND whose own worktree record
-                     says parked or reaped, or names no record and no
-                     registered worktree at all; the fleet's harness
-                     makes these per worktree and nothing else deletes
-                     them. A live record or a registered worktree still
-                     claiming the id is never in this class - see "WHY A
-                     LIVE WORKTREE'S OWN HARNESS BRANCH IS NEVER DEBRIS"
-                     below.
+                     says parked or reaped (or names no record at all)
+                     AND git registers no worktree directory for it
+                     either; the fleet's harness makes these per
+                     worktree and nothing else deletes them. A live
+                     record protects the branch outright, and a
+                     REGISTERED worktree protects it too, whatever that
+                     id's own record says - see "WHY A LIVE WORKTREE'S
+                     OWN HARNESS BRANCH IS NEVER DEBRIS" below.
   merged branch      any other local branch proven an ancestor of
                      `accounts`
 
@@ -92,15 +93,46 @@ accident from a genuinely dead one, for two reasons that compound:
 
 So a `worktree-agent-<id>` branch is asked a further question before it
 is ever treated as debris: does `<id>`'s own worktree record say
-anything other than parked or reaped, or does git still register a
+anything other than parked or reaped, OR does git still register a
 worktree directory for it at all (`protect_harness_branch`)? Either one
 licenses nothing - the branch is printed under "live harness branch,
 left alone" with the evidence, and `--report` shows the same answer
-`--act` would give, because both walk this one check. Only a record
-that says parked or reaped, or an id matching neither a record nor a
-registered worktree, falls through to the ordinary ancestry proof below
-- a reviewer that stays on the harness branch its whole life needs no
+`--act` would give, because both walk this one check (act() asks it
+again too - see below). Only an id with NEITHER a live record NOR a
+registered worktree falls through to the ordinary ancestry proof below -
+a reviewer that stays on the harness branch its whole life needs no
 special case here at all, because `checked_out` already protects it.
+
+THE REGISTRATION CHECK MUST NOT SIT BEHIND THE RECORD CHECK (fix wave 1,
+F1, review comment 5376697023): the first cut of `protect_harness_branch`
+returned `None` the instant it found a parked-or-reaped record for
+`<id>`, before it ever consulted the worktree table - so the
+registration fallback was unreachable whenever ANY record named the id,
+whatever the table said. This repository's own machine produced the
+live counter-example the review reproduced against it: four worktrees
+(agent-a3faf444bda433c36 among them), still registered, whose records
+said parked, every one of them planned for reaping anyway. The
+registration question is now asked every time, whatever the record said
+- a parked or reaped record no longer disqualifies an id from the
+registration check, it only means the record-alone answer (the cheaper,
+more specific one) is not available, and the id falls to registration
+instead of to nothing. `tools/reaper_suite.py`'s fixture E is built
+exactly this shape: a parked record, a still-registered worktree,
+expected protected.
+
+ACT() ASKS AGAIN TOO (fix wave 1, F2, review comment 5376697023): this
+protection is decided once, in plan(), the same as every other proof in
+this file - and `act()`'s own docstring is explicit that decisions made
+at plan time are not carried across the gap to the act, because the
+world does not hold still while a report prints. The first cut of this
+slice left the harness-branch check as the one exception: `act()`
+re-proves ancestry and re-resolves the branch's tip before a delete, but
+never asked `protect_harness_branch` again, so a `worktree-agent-<id>`
+classified debris when the plan ran stayed classified debris even if a
+record for `<id>` went live, or a worktree for it got registered, before
+the act loop reached it. `act()` now re-asks the SAME classifier this
+section describes - not a second one - against a freshly-read table,
+immediately before a debris-branch delete.
 
 WHY `-d` IS TRIED BEFORE `-D`, AND WHAT MAKES `-D` LEGITIMATE
 
@@ -814,23 +846,34 @@ def harness_worktree_dirname(name):
 def protect_harness_branch(state, table, dirname):
     """A Proof this harness branch's worktree is still live, or None.
 
-    Scope (0.9-M3-S21, #431): `worktree-agent-<id>` is debris ONLY when
-    the worktree record for `<id>` says parked or reaped, or when no
-    record and no registered worktree names `<id>` at all - so this asks
-    about `<id>`'s OWN record and OWN registration, never about a
-    record's `branch` field (that is `live`, above, and it answers a
-    different question - see the module docstring's "WHY A LIVE
-    WORKTREE'S OWN HARNESS BRANCH IS NEVER DEBRIS"). Records are read
-    fresh here rather than passed in, the same way every other proof in
-    this file re-reads the machine rather than trusting a caller's
-    snapshot of it.
+    Scope (0.9-M3-S21, #431; corrected fix wave 1, F1): a live record
+    (state neither parked nor reaped) protects the branch on its own,
+    and a worktree git still registers for `<id>` protects it too -
+    REGARDLESS of what `<id>`'s own record says, not only when no record
+    exists. Never about a record's `branch` field (that is `live`,
+    above, and it answers a different question - see the module
+    docstring's "WHY A LIVE WORKTREE'S OWN HARNESS BRANCH IS NEVER
+    DEBRIS"). Records are read fresh here rather than passed in, the
+    same way every other proof in this file re-reads the machine rather
+    than trusting a caller's snapshot of it.
 
-    A parked-or-reaped record returns None on purpose: that worktree is
-    itself a parked-worktree or already-gone candidate, whose OWN reap
-    (or the ordinary ancestry proof below, once its directory is fully
-    gone) is what disposes of this branch - protecting it here would be
-    the mutation this slice's suite arms against in the other direction.
+    The first cut of this function returned `None` the instant it found
+    a parked-or-reaped record, before it ever looked at the table - so
+    the registration fallback below was unreachable whenever ANY record
+    named the id, whatever the table said. This repository's own
+    machine produced the live counter-example: four worktrees, still
+    registered, whose records said parked, all planned for reaping (the
+    review that found it: 0.9-M3-S21 comment 5376697023, F1). Only an id
+    with NEITHER a live record NOR a registered worktree - the record
+    says parked/reaped or names nothing at all, and registration says
+    nothing either - returns None: that id's own reap (or the ordinary
+    ancestry proof below, once its directory is fully gone and its
+    registration pruned) is what disposes of this branch; protecting it
+    here regardless would be the mutation this slice's suite arms
+    against in the other direction.
     """
+    record_name = None
+    record_state = None
     for source, record in records(state):
         worktree = record.get("worktree")
         if not worktree:
@@ -838,20 +881,32 @@ def protect_harness_branch(state, table, dirname):
         if os.path.basename(os.path.abspath(worktree)) != dirname:
             continue
         record_state = record.get("state")
-        if record_state in ("parked", "reaped"):
-            return None
-        return Proof(
-            "harness", True,
-            "the worktree record %s for %s says state %s, not parked or "
-            "reaped, so this is a live harness ref rather than debris"
-            % (os.path.basename(source), dirname, record_state))
+        if record_state not in ("parked", "reaped"):
+            return Proof(
+                "harness", True,
+                "the worktree record %s for %s says state %s, not parked "
+                "or reaped, so this is a live harness ref rather than "
+                "debris" % (os.path.basename(source), dirname,
+                           record_state))
+        # A parked-or-reaped record does not return here any more - it
+        # only stops the record loop early (there is at most one record
+        # per id) and falls into the registration check below, which
+        # decides on its own regardless of what this record said.
+        record_name = os.path.basename(source)
+        break
     registered = {os.path.basename(entry["path"]) for entry in table}
     if dirname in registered:
         return Proof(
             "harness", True,
-            "no worktree record names %s, but git still registers a "
-            "worktree at it, so this is a live harness ref rather than "
-            "debris" % dirname)
+            ("git still registers a worktree at %s, so this is a live "
+             "harness ref rather than debris - its record %s says state "
+             "%s, but registration protects the branch regardless of "
+             "what a record claims"
+             % (dirname, record_name, record_state))
+            if record_name else
+            ("no worktree record names %s, but git still registers a "
+             "worktree at it, so this is a live harness ref rather than "
+             "debris" % dirname))
     return None
 
 
@@ -1073,12 +1128,40 @@ def act(repo, item, state=None, roots=None):
                  success, its lease dropped and its record stamped reaped.
                  A surviving registration is now an incomplete reap:
                  nonzero, nothing further touched, safely retryable.
+      F2         (fix wave 1, 0.9-M3-S21 review, #431) a `worktree-agent-
+                 <id>` branch's harness protection is decided by plan()
+                 and act() never asked again, so a record that went live
+                 or a worktree that got (re-)registered between the two
+                 was still deleted on the strength of the plan's stale
+                 answer. `protect_harness_branch` - the SAME classifier
+                 the plan used, not a second one - is asked again here,
+                 against a freshly-read table, immediately before a
+                 debris-branch delete.
     """
     if item["verdict"] != "reap":
         return ["REPORTED and left alone."]
     kind = item["kind"]
     roots = roots or worktree_roots(repo)
     if kind in ("debris branch", "merged branch"):
+        if kind == "debris branch":
+            # F2: re-ask the harness-branch question before deleting one.
+            # `kind == "debris branch"` already means the name matches
+            # DEBRIS_PREFIX (branch_items is the only place that sets
+            # this kind), so `harness_worktree_dirname` never returns
+            # None here - the guard is defensive symmetry with the plan
+            # side, not a case this can reach.
+            table = worktree_table(repo)
+            if table is None:
+                return ["REPORTED: the worktree table could not be read "
+                        "between the plan and the act, so %s was left "
+                        "untouched." % item["subject"]]
+            dirname = harness_worktree_dirname(item["subject"])
+            harness_proof = (protect_harness_branch(state, table, dirname)
+                             if dirname else None)
+            if harness_proof is not None:
+                return ["REPORTED: %s became a live harness ref between "
+                        "the plan and the act, so it was left untouched: "
+                        "%s" % (item["subject"], harness_proof.said)]
         proof = item["proofs"][0]
         if not is_ancestor(repo, item["sha"],
                            proof.said.split("an ancestor of ")[-1]):
