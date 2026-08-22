@@ -3076,6 +3076,34 @@ const manyCountryBaseline = {
     groupsChips[0].count === "10");
 }
 
+/*
+ * The DRIVEN status-line proof above uses gender=male, whose id
+ * ("male") happens to equal its own lowercased label - a passthrough
+ * that never resolves anything at all would still pass it, exactly the
+ * "criterion met while the property is absent" shape the superseded
+ * build's own review caught (#434 comment 5378073973, finding F3): the
+ * one driven arm it had used the same coincidence and stayed green
+ * while three PURE arms reddened under the identical mutation. Country
+ * is the ready-made case the review names - "US" resolves through the
+ * table to "United States", nothing alike - so THIS arm catches a
+ * filterValueLabel() that quietly returns the raw value where the
+ * gender-only arm above could not.
+ */
+{
+  const servedAnswer = Object.assign({}, ENOUGH_FIXTURE, {
+    filters: [{ field: "country", value: "US" }],
+  });
+  const { byId } = await driven(() => response(200, servedAnswer),
+    { skipPress: true });
+  await chipButtonFor(filterRowFor(byId, "country"), "US")
+    .dispatch("click");
+  await pressShowMe(byId);
+  check("0.9-M3-S14: the status line resolves a country filter through " +
+    "the real countries table (\"United States\"), not the bare code " +
+    "(\"US\") a passthrough would print",
+    byId.get("status")._text === "Showing United States - Weight (lb).");
+}
+
 /* The xlsx download carries the same filter label as the status line. */
 {
   const servedAnswer = Object.assign({}, ENOUGH_FIXTURE, {
@@ -4171,7 +4199,7 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
  * source text contains.
  */
 
-const EXPECTED = 315;
+const EXPECTED = 316;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
