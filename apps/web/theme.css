@@ -1388,7 +1388,11 @@ button.primary:disabled {
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: var(--space-3) var(--space-4);
-  font-size: var(--text-sm);
+  /* var(--text-base), the owner's ruled body-text size (#454 item 3;
+     F2, 0.9-M3-S30 fix wave 1, #452, review comment 5379370482) - the
+     other sizes in this file are .small/.hint text on purpose, and a
+     toast that CONFIRMS a write is body text, not a caption. */
+  font-size: var(--text-base);
   color: var(--color-text);
   z-index: 20;
 }

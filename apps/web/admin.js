@@ -1149,6 +1149,26 @@
         .map((v) => ({ id: v.id, label: v.label }));
     }
 
+    // EVERY value the read shows for this field, active and already-
+    // retired alike, in the read's own order, each carrying its own
+    // `retired` marker (F1, 0.9-M3-S30 fix wave 1, #452, review comment
+    // 5379370482). fieldWriteValues() above drops that marker on
+    // purpose - every caller of it either wants actives only or is
+    // about to set the marker itself - but retiring and un-retiring
+    // need to hand the WHOLE list straight back with one marker
+    // flipped, because server/worker.js's mergeValues() builds its
+    // output in REQUEST order and appends anything the request left
+    // out, retired, past everything the request DID list. A value
+    // this function omits is a value that function moves.
+    function fieldWriteAllValues(fieldId) {
+      const fields = (currentSpec && currentSpec.fields) || [];
+      const field = fields.filter((f) => f && f.name === fieldId)[0];
+      const choices = field && Array.isArray(field.choices)
+        ? field.choices : [];
+      return choices.map((v) => ({ id: v.id, label: v.label,
+        retired: v.retired === true }));
+    }
+
     function putField(id, body) {
       return fetch(
         config.endpoint + "/admin-fields/" + encodeURIComponent(id), {
@@ -1231,10 +1251,22 @@
         "Restored.");
     }
 
+    // RETIRING KEEPS THE VALUE IN ITS OWN PLACE (F1, 0.9-M3-S30 fix
+    // wave 1, #452, review comment 5379370482). The request is the
+    // read's whole list, unchanged, with only this one value's marker
+    // turned on - never the old shape (the actives alone, the target
+    // left out), which handed mergeValues() a request with a hole in
+    // it and let the Worker's own "an omitted value is retired, past
+    // everything the request DID list" rule decide where the value
+    // landed. That rule is real (0.9-M3-S25's own fields-overlay suite
+    // relies on it for the plain "omit to retire" case) but it answers
+    // a question this function should never be asking: bring-back could
+    // only ever hand back a place this function had already thrown
+    // away.
     function retireValue(fieldId, valueId) {
-      const remaining = fieldWriteValues(fieldId, false)
-        .filter((v) => v.id !== valueId);
-      return sendFieldWrite(() => putField(fieldId, { values: remaining }),
+      const values = fieldWriteAllValues(fieldId).map((v) =>
+        v.id === valueId ? { id: v.id, label: v.label, retired: true } : v);
+      return sendFieldWrite(() => putField(fieldId, { values: values }),
         "Retired.");
     }
 
@@ -1242,9 +1274,15 @@
     // /admin-fields, 0.9-M3-S25/#440) - never invented, never
     // re-minted, so the entries members already saved under that id
     // are the ones this brings back, from any session that retired it.
+    // BROUGHT BACK IN THE PLACE IT HELD (F1, fix wave 1): the request
+    // is the read's whole list, unchanged, with only this one value's
+    // marker turned off - so a value retireValue() above kept in place
+    // is restored to that same place, the property 0.9-M3-S25's own
+    // "in the place it held" arm (tests/fields-overlay.test.mjs) checks
+    // by constructing its own request the same way.
     function unretireValue(fieldId, valueId, label) {
-      const values = fieldWriteValues(fieldId, false)
-        .concat([{ id: valueId, label: label, retired: false }]);
+      const values = fieldWriteAllValues(fieldId).map((v) =>
+        v.id === valueId ? { id: v.id, label: label, retired: false } : v);
       return sendFieldWrite(() => putField(fieldId, { values: values }),
         "Restored.");
     }

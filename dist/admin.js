@@ -980,6 +980,26 @@
         .map((v) => ({ id: v.id, label: v.label }));
     }
 
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+    function fieldWriteAllValues(fieldId) {
+      const fields = (currentSpec && currentSpec.fields) || [];
+      const field = fields.filter((f) => f && f.name === fieldId)[0];
+      const choices = field && Array.isArray(field.choices)
+        ? field.choices : [];
+      return choices.map((v) => ({ id: v.id, label: v.label,
+        retired: v.retired === true }));
+    }
+
     function putField(id, body) {
       return fetch(
         config.endpoint + "/admin-fields/" + encodeURIComponent(id), {
@@ -1062,10 +1082,22 @@
         "Restored.");
     }
 
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
     function retireValue(fieldId, valueId) {
-      const remaining = fieldWriteValues(fieldId, false)
-        .filter((v) => v.id !== valueId);
-      return sendFieldWrite(() => putField(fieldId, { values: remaining }),
+      const values = fieldWriteAllValues(fieldId).map((v) =>
+        v.id === valueId ? { id: v.id, label: v.label, retired: true } : v);
+      return sendFieldWrite(() => putField(fieldId, { values: values }),
         "Retired.");
     }
 
@@ -1073,9 +1105,15 @@
      
      
      
+     
+     
+     
+     
+     
+     
     function unretireValue(fieldId, valueId, label) {
-      const values = fieldWriteValues(fieldId, false)
-        .concat([{ id: valueId, label: label, retired: false }]);
+      const values = fieldWriteAllValues(fieldId).map((v) =>
+        v.id === valueId ? { id: v.id, label: label, retired: false } : v);
       return sendFieldWrite(() => putField(fieldId, { values: values }),
         "Restored.");
     }
