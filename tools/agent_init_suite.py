@@ -79,7 +79,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 140
+EXPECTED = 146
 
 
 def check(label, condition):
@@ -1193,6 +1193,90 @@ try:
             os.environ.pop("PYTHONPATH", None)
         else:
             os.environ["PYTHONPATH"] = old_pythonpath
+
+    # ------------------------------------------------------------------
+    # J. The pool grows from six blocks to ten, and take_lease's own
+    # exclusive create is hardened the way S23 hardened prime_lock.py's
+    # (#441).
+    #
+    # Sections F and G0 above already exercise take_lease, lease_refusal
+    # and lease_reclaimable GENERICALLY against agent_init.PORT_BLOCKS at
+    # whatever length it holds - section F's own loop walks
+    # range(1, len(PORT_BLOCKS)) and the refusal/reclaim checks read the
+    # constant directly rather than a hard-coded count - so growing the
+    # pool re-exercises every one of those checks against ten blocks with
+    # no separate arm required. This section proves the shape of the
+    # growth itself: the new count, the four new blocks' exact values,
+    # and that nothing in the pool (old or new) overlaps anything else or
+    # the primary's own block.
+    # ------------------------------------------------------------------
+    check("the pool holds ten blocks now, not six (#441)",
+          len(agent_init.PORT_BLOCKS) == 10)
+    check("the four new blocks are exactly 8190-95, 8200-05, 8210-15 and "
+          "8220-25, continuing the same 10-apart/6-wide pattern the "
+          "first six already set",
+          agent_init.PORT_BLOCKS[6:] == [(8190, 8195), (8200, 8205),
+                                         (8210, 8215), (8220, 8225)])
+    every_block = [*agent_init.PORT_BLOCKS, agent_init.PRIMARY_BLOCK]
+    overlaps = [(a, b) for i, a in enumerate(every_block)
+               for b in every_block[i + 1:]
+               if a[0] <= b[1] and b[0] <= a[1]]
+    check("no two blocks overlap - old, new and the primary's own block "
+          "all included, so the new ports are proven to collide with "
+          "nothing this pool already leases",
+          overlaps == [])
+
+    # F5 (S23's review on #436, carried into this slice's scope by #441):
+    # take_lease's own exclusive create - the fast allocation path in
+    # section F above - is the SAME os.open(O_CREAT | O_EXCL) pattern
+    # S23 hardened in tools/prime_lock.py, and it only ever caught
+    # FileExistsError. The same Windows quirk documented there (NTFS can
+    # present a file mid-delete as "access denied" (PermissionError)
+    # instead of "file exists" (FileExistsError) for a narrow window)
+    # crashes this call uncaught here instead of being retried as
+    # ordinary contention. Injected deterministically rather than chased
+    # through a live race, for the same reason S23's own suite did: this
+    # is a real Windows filesystem fact, not a fixture ordering bug.
+    # Patches the bare `os.open` this file already imports at module
+    # scope. agent_init.py imports that same os module through its own
+    # `import os`, so patching the name here reaches its call too,
+    # restored in `finally` before anything else in the suite can
+    # observe it.
+    print("\n--- F5 (#441, carried from S23's review on #436): a "
+          "transient PermissionError racing take_lease's exclusive "
+          "create is contention, not a crash ---")
+    perm_state = os.path.join(base, "f5-permission-collision")
+    perm_repo = os.path.join(base, "f5-permission-asker")
+    os.makedirs(perm_repo, exist_ok=True)
+    target_path = agent_init.lease_path(agent_init.PORT_BLOCKS[0],
+                                        perm_state)
+    real_open = os.open
+    calls = {"n": 0}
+
+    def flaky_once(target, flags, *a, **kw):
+        if target == target_path and calls["n"] == 0:
+            calls["n"] += 1
+            raise PermissionError(13, "Permission denied (injected, F5, "
+                                      "#441)")
+        return real_open(target, flags, *a, **kw)
+
+    os.open = flaky_once
+    raised, block = None, None
+    try:
+        block, _note = agent_init.take_lease(perm_repo, "slice-f5",
+                                             perm_state)
+    except Exception as exc:  # proving NONE escapes
+        raised = exc
+    finally:
+        os.open = real_open
+    check("take_lease retries a transient PermissionError on the "
+          "exclusive create instead of propagating it (F5, #441)",
+          raised is None)
+    check("the injected collision actually fired once", calls["n"] == 1)
+    check("the collided block is treated as contended and the call "
+          "lands on the next one instead, rather than crashing the "
+          "whole allocation",
+          raised is None and block == agent_init.PORT_BLOCKS[1])
 
 finally:
     # No ignore_errors. Swallowing a teardown failure is what left one
