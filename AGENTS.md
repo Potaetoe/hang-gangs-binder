@@ -307,6 +307,15 @@ guards, never as the pattern for a new one.
   report-only (`--issue N`). Its own stdout, unedited, is the block a
   completion comment pastes - see `tools/ship_check.py`'s own module
   docstring for the whole argument.
+- **A slice whose declared files are provably prose-only owes no RED
+  commit, mutation table or browser note** (0.9-M3-S22, #435): `./run
+  ship-check`'s slice-tier stage proves this itself - comment- or
+  token-stripped source identical to the base for every declared file,
+  plus an unchanged dist/ blob for any declared page file - and prints
+  its own per-file comparison for every declared file: a hash pair for
+  code (JS, CSS, SQL, TOML), and, for a `.md` file, the plain fact that
+  markdown is prose by nature with no code to hash - never the claim on
+  the word "prose" alone.
 - **A new check is registered where its apparatus registers checks**,
   and **confirmed armed by mutation, in both directions**: break it,
   watch it fail, restore it, watch it pass, and state the mutations in
