@@ -844,7 +844,8 @@ const TELEGRAM_ID = /^[0-9]{1,20}$/;
  * whole reason these are two numbers instead of one.
  *
  * Both are caps on a session that is being used. What bounds one that is
- * not is ADMIN_IDLE_MINUTES below, and only for an admin.
+ * not is SESSION_IDLE_MINUTES below, which is one window over every
+ * session rather than a second privilege split like this pair.
  */
 const SESSION_HOURS = { member: 24 * 7, admin: 2 };
 
@@ -1595,17 +1596,17 @@ async function groupStanding(env, userId) {
  * id, which is that account's own sign-in. A stolen session token cannot
  * forge one, so nobody can revoke anybody but themselves.
  *
- * An idle window on member sessions is the obvious thing to reach for
+ * SESSION_IDLE_MINUTES above is the idle window a reader reaches for
  * against that residual, and it half-bounds it. A window ends the
  * session nobody is touching; a leaver who keeps using theirs slides it
  * out again on every request, all the way to the cap - so the half a
  * window closes is the half the cap already closes on its own, and the
  * half where somebody is actively using a credential they should not
- * have is the half it cannot reach. The bound is therefore stated here
- * rather than shortened, and ADMIN_IDLE_MINUTES carries what a member
- * window would cost besides. dev/worker.test.mjs pins both this
- * residual and the no-window decision as assertions, so shortening
- * either breaks the suite instead of passing quietly.
+ * have is the half no window reaches. The residual is therefore stated
+ * here as a live bound rather than treated as closed by a number set
+ * elsewhere. dev/worker.test.mjs pins both this residual and the one
+ * window over every session as assertions, so weakening either breaks
+ * the suite instead of passing quietly.
  *
  * By account id and never by token, because the point is every session
  * that account holds - a leaver with three tabs open is three rows.
@@ -2640,16 +2641,26 @@ async function handleExport(request, env, origin, caller) {
     return json({ error: "Not authorized." }, 401, origin);
   }
 
-  // account_id travels with the row. The export page groups by it rather
-  // than by the decrypted handle, which is what makes "one per person" a
-  // fact instead of a guess about two rows spelling a name the same way.
+  // account_id travels with the row. This route does not group these
+  // rows and no page fetches it: /export is the admin-only route an
+  // operator reads by hand, break-glass EXPORT_TOKEN included, and it
+  // answers with the rows sealed exactly as they are stored. So the
+  // column has to be in the response for "one per person" to be a fact
+  // instead of a guess about two rows spelling a name the same way -
+  // whoever reads it groups on the id, never on a handle they would have
+  // to open the ciphertext to see.
   //
   // `supersedes` travels for the same reason and is resolved in the same
-  // place. This side knows which row a correction replaces and cannot
-  // know what either of them says, so dropping tombstones from a series
-  // is work for the keyholder's browser, where the plaintext already is.
-  // Without the column in this response that resolution is not possible
-  // at all, and a correction reads as a repeat measurement.
+  // place. The column is clear, so this route can say which row a
+  // correction replaces without opening either one - and since it opens
+  // nothing, dropping tombstones from a series is work for whatever
+  // reads this export and opens the ciphertext. Not that the Worker
+  // cannot open one: it opens rows through store-crypto.js's openRow()
+  // to serve GET /my-entries and GET /charts-data to signed-in members,
+  // which is the trade ruled in DESIGN.md, "Trust model: the Worker
+  // reads". It never opens one for /export. Without the column in this
+  // response that resolution is not possible at all, and a correction
+  // reads as a repeat measurement.
   const rows = await env.DB.prepare(
     "SELECT id, account_id, ciphertext, received_at, supersedes " +
     "FROM submissions ORDER BY id"
