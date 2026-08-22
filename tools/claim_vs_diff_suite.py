@@ -47,6 +47,16 @@ from contextlib import redirect_stdout
 # whole wiring.
 import claim_vs_diff
 
+# Encoding-safe stdout/stderr (0.9-M3-S29 fix wave, #449 F2): this
+# suite's own fixtures write invalid-UTF-8 bytes on purpose, and its
+# checks print the results - the same exposure ship_check.py's main()
+# guards against. This file runs at import time (no __main__ guard, by
+# this fleet's own convention - see the module docstring), and nothing
+# imports it, so reconfiguring here is always the real run.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 failures = 0
 performed = 0
 
@@ -55,7 +65,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 36
+EXPECTED = 40
 
 
 def check(label, condition):
@@ -78,7 +88,9 @@ def git(repo, *args):
     done = subprocess.run(
         ["git", "-C", repo, "-c", "user.email=suite@example.invalid",
          "-c", "user.name=suite", *args],
-        capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+        stdin=subprocess.DEVNULL,
         timeout=FIXTURE_TIMEOUT,
     )
     return done.returncode, done.stdout + done.stderr
@@ -88,6 +100,50 @@ def write(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(data)
+
+
+def write_bytes(path, data):
+    """Like write() but for raw bytes - what a Python str literal cannot
+    hold, which a LONE invalid-UTF-8 byte (0.9-M3-S29, #449's second
+    fixture) is."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as handle:
+        handle.write(data)
+
+
+def git_show_report(repo, ref, path):
+    """`git(repo, "show", "ref:path")` run in a SEPARATE process, so a
+    crash inside it is observed rather than taking this suite down with
+    it - the exact failure mode 0.9-M3-S29 (#449) exists to end.
+    "OK <code> <ascii(out)>" on success, "CRASH <type> <message>" if the
+    subprocess call itself raised (an uncaught UnicodeDecodeError,
+    before this ticket's fix, is exactly that). `ascii()`, not `repr()`
+    - the child's own stdout is written under ITS console codec, and
+    this suite hit exactly the collision this ticket is about while
+    piping a real curly quote back through `repr()`: cp1252 CAN encode
+    U+201D (byte 0x94), but that lone byte is not valid UTF-8, so the
+    parent's own errors="replace" read on the pipe silently turned it
+    into U+FFFD before this string ever reached a check. `ascii()`
+    escapes every non-ASCII codepoint to a `\\uXXXX` literal, so the
+    channel between the two processes never carries a non-ASCII byte at
+    all - the fixture's own transport can no longer reproduce the bug
+    it exists to catch in the code under test."""
+    script = (
+        "import sys\n"
+        "sys.path.insert(0, %r)\n"
+        "import claim_vs_diff\n"
+        "try:\n"
+        "    code, out = claim_vs_diff.git(%r, 'show', %r)\n"
+        "    print('OK', code, ascii(out))\n"
+        "except Exception as exc:\n"
+        "    print('CRASH', type(exc).__name__, str(exc))\n"
+    ) % (os.path.dirname(os.path.abspath(claim_vs_diff.__file__)),
+        repo, "%s:%s" % (ref, path))
+    done = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        stdin=subprocess.DEVNULL, timeout=FIXTURE_TIMEOUT)
+    return (done.stdout + done.stderr).strip()
 
 
 # The name every working root of this suite is made under, and the only
@@ -443,6 +499,58 @@ try:
           "F10" in claim_vs_diff.__doc__
           and "Prime" in claim_vs_diff.__doc__
           and "own summaries" in claim_vs_diff.__doc__)
+
+    print("\n--- git() decodes a non-ASCII byte instead of crashing "
+          "(0.9-M3-S29, #449) ---")
+    # Root cause: git(), before this fix, ran subprocess.run() with
+    # text=True and NO encoding, so Python decoded the child's stdout
+    # under this machine's OWN locale codec (cp1252 on Windows) rather
+    # than UTF-8 - and cp1252 has no mapping at all for byte 0x9D (nor
+    # 0x81, 0x8D, 0x8F, 0x90). A curly right double quote, U+201D,
+    # encodes in UTF-8 as the three bytes E2 80 9D - the last of which
+    # is exactly that undefined byte - so a perfectly valid UTF-8 file
+    # crashed subprocess.run() itself with UnicodeDecodeError, before
+    # git()'s own try/except (which only catches TimeoutExpired and
+    # OSError - a decode error is neither) ever saw it. Driven through
+    # a SEPARATE process below (git_show_report()) rather than called
+    # in-process, because the whole point of this arm is to observe a
+    # crash without that crash taking this suite down with it - which
+    # is exactly the shape ship_check.py hit for real (S15's builder,
+    # 2026-08-22): a bare traceback and nothing printed.
+    git(primary, "checkout", "accounts")
+    git(primary, "checkout", "-b", "slice-nonascii")
+    write(os.path.join(primary, "curly-quote.txt"),
+         "a right curly quote: ”, valid UTF-8 throughout\n")
+    write_bytes(os.path.join(primary, "invalid-byte.txt"),
+               b"before \x9d after, 0x9D alone is not valid UTF-8\n")
+    git(primary, "add", "-A")
+    git(primary, "commit", "-m", "add non-ASCII fixtures for git() (#449)")
+
+    quote_report = git_show_report(primary, "slice-nonascii",
+                                   "curly-quote.txt")
+    check("a file holding a valid-UTF-8 non-ASCII character (U+201D, "
+         "whose UTF-8 encoding's last byte 0x9D has no mapping in "
+         "cp1252) decodes through git() without crashing - exit 0, not "
+         "an escaped UnicodeDecodeError",
+          quote_report.startswith("OK 0"))
+    check("...and the real character comes through decoded, not "
+         "replaced - it IS valid UTF-8, so errors=\"replace\" never "
+         "needs to touch it (ascii()'s own \\u201d escape names the "
+         "real character; \\ufffd would name a replacement instead)",
+          "\\u201d" in quote_report and "\\ufffd" not in quote_report)
+
+    invalid_report = git_show_report(primary, "slice-nonascii",
+                                     "invalid-byte.txt")
+    check("a file holding a byte that is NOT valid UTF-8 on its own "
+         "(a lone 0x9D) also decodes through git() without crashing - "
+         "exit 0, proving errors=\"replace\" (not just an encoding "
+         "name) is what stands between a genuinely bad byte and a "
+         "bare traceback",
+          invalid_report.startswith("OK 0"))
+    check("...and the invalid byte reads back as the replacement "
+         "character (U+FFFD), not silently dropped and not misread as "
+         "something else",
+          "\\ufffd" in invalid_report)
 
 finally:
     shutil.rmtree(root, ignore_errors=True)

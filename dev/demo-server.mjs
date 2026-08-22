@@ -61,10 +61,11 @@ await load("./demo-stub.js");
 const Demo = globalThis.BinderDemo;
 
 // The committed default. 8126 is next in this repository's 8124/8125
-// convention, and it is deliberately outside the 8130-8185 range the
-// agent fleet assigns itself preview blocks from: a permanent verb whose
-// port a future agent's preview can take is a verb that breaks on a day
-// nobody changed it. --port is for those previews.
+// convention, and it is deliberately outside the 8130-8225 range the
+// agent fleet assigns itself preview blocks from (grown from 8130-8185
+// at #441): a permanent verb whose port a future agent's preview can
+// take is a verb that breaks on a day nobody changed it. --port is for
+// those previews.
 const DEFAULT_PORT = 8126;
 
 const TYPES = {
@@ -89,7 +90,7 @@ const MIRROR_PREFIX = "/demo/";
  * own demo answers on - so `--port 8199x` and a `--port` with nothing
  * after it take a port somebody else was told to expect, while the
  * operator sees the server start normally. Worse, Number() reads
- * hexadecimal: `0x1FE0` is 8160, inside the 8130-8185 range agent
+ * hexadecimal: `0x1FE0` is 8160, inside the 8130-8225 range agent
  * sessions assign themselves preview blocks from, so a typo can bind
  * another session's port while looking like it honored the request.
  *

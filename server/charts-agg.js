@@ -27,6 +27,20 @@
  * population of the same size: the same document, cell for cell, that
  * this file answers for an unfiltered group that small.
  *
+ * A FIELD CARRIES A SET OF VALUES, AND THAT ADDS NO RULE EITHER
+ * (0.9-M3-S31, #455). The owner's UX record (#454, items 16-18) rules
+ * the chips MULTI-SELECT: every option starts lit, tapping one turns it
+ * off and narrows, at least one stays lit, and there is no "All" chip
+ * because everyone IS every option selected. So the values of one field
+ * are ORed, the fields are ANDed, and a field the caller does not name
+ * matches everybody. A union is a population like any other and the
+ * floor reduces it by the one rule it reduces the whole group by, on
+ * the terms the paragraph above states: at every floor a union is
+ * treated exactly as a whole population of the same size, the same
+ * document cell for cell. What DID change with sets is a channel the
+ * floor has never bounded, and WHAT THE FLOOR DOES NOT BOUND below
+ * states it whole rather than leaving it to be discovered.
+ *
  * NOTHING WAS RIPPED OUT. The Other bucket, person-pooling and band
  * merging all still stand below and all obey whatever floor they are
  * given; at 0 each of them is the IDENTITY - reached by the same code
@@ -115,6 +129,15 @@
  *                  filtered). It is an echo and never an enumeration -
  *                  echoFilters() below carries why that distinction is
  *                  the whole of mandate 5.
+ *
+ *                  SEVERAL PAIRS MAY NAME ONE FIELD, and they are the
+ *                  values of that field's set (#455). The list is
+ *                  UNGROUPED and in the caller's own order, however
+ *                  their pairs were interleaved: it is their question
+ *                  handed back rather than this file's reading of it,
+ *                  and the answer does not depend on the order either
+ *                  way, since a set is unordered and AND is
+ *                  commutative.
  *
  *   ONE ANSWER IS IN ONE UNIT SYSTEM AND CARRIES NO OTHER READING OF
  *   ITSELF. Every number below - a band edge, a trend average, a self
@@ -304,20 +327,51 @@
  * WHAT THE FLOOR DOES NOT BOUND, said out loud because a rule stated
  * without its limit reads as a stronger promise than it is.
  *
- * At the shipped floor of 0 the answer is the group's own figures, so
- * there is nothing here to subtract back out: the disclosure is the
- * ruled one and a reader keeping two responses learns what a reader
- * keeping one already knew. What the machinery below bounds is the
- * RAISED-floor world, and there the old limit still holds and is still
- * worth saying: every rule is about what ONE response discloses, and a
- * reader who keeps several can still difference two views of the same
- * measure under different filters, or the same view at two times.
- * DESIGN.md, "Charts", takes that channel knowingly - the owner ruled on
- * #153 to accept it rather than charge every member the mean's real
- * value to close it, and the #243 sitting subsumed the question by
- * ruling the visibility itself. Both rulings rest on a members-only
- * readership, which the session gate on GET /charts-data preserves. That
- * premise is the thing to re-take if the readership ever widens.
+ * EVERY RULE HERE IS ABOUT WHAT ONE RESPONSE DISCLOSES. Nothing below
+ * bounds what a reader learns by keeping several and subtracting them,
+ * and that is a ruled limit rather than an oversight: the owner ruled
+ * on #153 to accept the channel rather than charge every member the
+ * mean's real value to close it, and the #243 sitting subsumed the
+ * question by ruling the visibility itself. DESIGN.md, "Charts", takes
+ * it knowingly.
+ *
+ * At the shipped floor of 0 there is nothing to subtract back out - the
+ * answer is the group's own figures, so a reader keeping two responses
+ * learns what a reader keeping one already knew. All of what follows is
+ * about the RAISED-floor world, where the reach has widened twice and
+ * both are recorded here rather than in a ticket nobody reading this
+ * file will open.
+ *
+ *   ONE FILTER reached a two-way cross-tab at most: the filter, plus
+ *   the group-makeup block. Every finer cell was either suppressed or
+ *   could not be named by any request.
+ *
+ *   COMBINING FILTERS (#438) put the whole joint distribution within
+ *   reach, and two ALLOWED answers subtract into a cell the direct
+ *   question is refused for: male AND feeder draws four, male AND
+ *   feeder AND US draws three, so exactly one member is male, a feeder
+ *   and not in the US - which is the question the floor refuses when it
+ *   is asked outright.
+ *
+ *   VALUE SETS (#455) make that subtraction RELIABLE rather than
+ *   incidental, and that is the sharpest way to put what this slice
+ *   costs. Combining narrows, so the finer of the two questions is the
+ *   one likely to fall under the floor and be refused, and the
+ *   subtraction often cannot be set up at all. A set is differenced the
+ *   other way round: ask a union of many values, then the same union
+ *   with ONE value dropped. Both answers are large, both clear the
+ *   floor, neither is ever refused, and the difference is that value's
+ *   own count. No small question is ever asked.
+ *
+ * MAX_FILTER_PAIRS below bounds one request and nothing bounds a
+ * sequence; GET /charts-data carries no rate limit. The mitigations on
+ * the table - a per-session query budget, a coarser limit on how many
+ * fields may combine, or flooring a view against the supersets already
+ * served - are the batch security consult's to rule (#438's review
+ * finding F1, carried to #455). Every ruling above rests on a
+ * members-only readership, which the session gate on GET /charts-data
+ * preserves. That premise is the thing to re-take if the readership
+ * ever widens.
  */
 import "../apps/web/site.config.js";
 import "../apps/web/fields.js";
@@ -521,41 +575,67 @@ const ASK_PARAMS = new Set(["measure", "filter", "value", "self", "units"]);
  * is a caller contradicting themselves and honoring either would be this
  * route guessing which they meant.
  *
- * A FIELD STILL MAY NOT REPEAT. That refusal survives from the
- * single-filter world in its own words, raised against the FIELD rather
- * than against the parameter: #384 ruled ONE value per dimension, so two
- * values for one field would be an OR inside an AND - a different
- * question, and one no chip in the ruled design can express.
+ * A FIELD MAY REPEAT, AND THAT REPEAT IS ITS SET (0.9-M3-S31, #455).
+ * #384 ruled one value per dimension; the owner's later UX record
+ * (#454 item 16) ruled the chips multi-select, so an OR inside the AND
+ * is exactly the question the ruled design expresses and the refusal it
+ * had to defeat is gone. What survives from that refusal is its
+ * subject: the SAME value twice for one field is still refused, because
+ * a set is a set and a request that says one thing twice is malformed
+ * rather than ambiguous. Collapsing it silently would answer a question
+ * the caller did not write, which is the thing askFor() below declines
+ * to do with any parameter.
  */
 const REPEATABLE = new Set(["filter", "value"]);
 
 /*
- * The most predicates one request may carry.
+ * The most `filter=`/`value=` PAIRS one request may carry, which is a
+ * different count from the fields it names (0.9-M3-S31, #455). A field
+ * carried one value until this slice, so a pair and a field were the
+ * same thing and one constant stood for both; a field carries a set
+ * now, the two counts came apart, and the name says which one this is.
  *
- * A BOUND ON THE REQUEST, NOT ON THE FORM. The spec's categorical fields
- * are admin data since 0.9-M3-S11 (#419) - an admin may add as many as
- * they like, and #384 ruling 3 is that a field they add becomes a chip
- * with no code change - so a cap read off the spec would be no cap at
- * all. Four is a fixed number: one more than the shipped form's three
- * categorical fields (gender, roles, country), so nothing the shipped
- * chips can build is out of reach, and the work one request may ask for
- * stays constant however far a fork's form grows.
+ * A BOUND ON THE REQUEST, NOT ON THE FORM AND NOT ON THE GROUP. The
+ * spec's categorical fields are admin data since 0.9-M3-S11 (#419) - an
+ * admin may add as many as they like, and #384 ruling 3 is that a field
+ * they add becomes a chip with no code change - and the countries a
+ * group holds are member data. A cap read off either would grow with
+ * exactly the thing it exists to bound, which is no cap at all.
+ *
+ * WHY SIXTY-FOUR. The shipped form LISTS eight values across its
+ * categorical fields, and a member may light every one of them at once,
+ * so the floor under this number is eight. What puts it far above that
+ * is the country list, whose values live outside the spec: the owner's
+ * UX record (#454 item 18) has the page offer only the countries
+ * somebody has entered, so the set a member can send grows with the
+ * GROUP rather than with the form. A member holds one country, so
+ * sixty-four covers a binder whose members sit in more than fifty
+ * distinct countries - past anything a group of a few dozen reaches -
+ * while the work one request may ask for stays constant however far a
+ * fork's form or membership grows.
  *
  * WHAT IT BOUNDS IS THE SWEEP, NOT THE ARITHMETIC. Matching costs one
- * heldValues() read per predicate per person, which is small; what grows
- * without a cap is how finely a single request may cut the group, and a
- * caller walking the product of every field's values is the shape this
- * declines to serve one request at a time.
+ * heldValues() read per FIELD per person - a set is that one read and a
+ * lookup, not a read per value - so the values past the first are
+ * nearly free, and what a cap declines to serve is one request cutting
+ * the group arbitrarily finely. Because every field a caller names
+ * needs at least one pair, this number bounds the FIELDS one request
+ * may name as well - sixty-four of them, which is a far looser bound on
+ * how finely one request may cut the group than a cap counted in fields
+ * gives. That looseness is stated here rather than left to be found,
+ * and it is a widening the floor rather than this constant answers for.
  *
  * IT IS NOT A PRIVACY RULE AND MUST NOT BE READ AS ONE. The floor is
- * that rule, and it applies to an intersection exactly as it applies to
- * the whole - this file's own header carries the ruling and what was put
- * to the owner adversarially before it was re-accepted. Raising this
- * number would cost nothing in disclosure that the floor does not
- * already answer for; lowering it would not protect anybody the floor
- * leaves exposed.
+ * that rule, and it applies to a union and to an intersection exactly
+ * as it applies to the whole - this file's own header carries the
+ * ruling and what was put to the owner adversarially before it was
+ * re-accepted. Raising this number would cost nothing in disclosure
+ * that the floor does not already answer for; lowering it would not
+ * protect anybody the floor leaves exposed. The channel sets DO widen
+ * is a cross-request one no cap addresses, and WHAT THE FLOOR DOES NOT
+ * BOUND in this file's header states it whole.
  */
-const MAX_FILTERS = 4;
+const MAX_FILTER_PAIRS = 64;
 
 /* An account id as server/worker.js writes one: SHA-256 HMAC, hex. */
 const ACCOUNT_ID = /^[0-9a-f]{64}$/;
@@ -785,10 +865,13 @@ function askFor(params, spec) {
   }
 
   /*
-   * THE PREDICATES: one value per categorical field, ANDed (#438,
-   * building #384's chips). Read as two positional lists, so the nth
-   * filter owns the nth value - REPEATABLE above carries why the names
-   * repeat rather than a new parameter arriving.
+   * THE PREDICATES: a SET of values per categorical field, ORed inside
+   * the field and ANDed across fields (#455, generalizing #438 to the
+   * multi-select chips of #454 item 16). Read as two positional lists,
+   * so the nth filter owns the nth value - REPEATABLE above carries why
+   * the names repeat rather than a new parameter arriving - and the
+   * pairs naming one field are that field's set however they are
+   * interleaved with another field's.
    *
    * THE COUNT IS CHECKED BEFORE ANY NAME IS RESOLVED. An over-cap
    * request then costs one comparison whatever it names, and - the part
@@ -808,12 +891,15 @@ function askFor(params, spec) {
    * (#385 rule 7; server/worker.js's offeredValues() is what drops it),
    * so it is refused in the same sentence a value that never existed
    * gets - a caller cannot read a refusal for the group's own history.
+   * The duplicate refusal is about the request's own shape and names
+   * only the field the caller sent, so it says nothing the effective
+   * spec does not already say to the same reader.
    */
   const by = params.getAll("filter");
   const values = params.getAll("value");
-  if (by.length > MAX_FILTERS) {
-    return fault("This view takes at most " + MAX_FILTERS +
-      " filters at once.");
+  if (by.length > MAX_FILTER_PAIRS) {
+    return fault("This view takes at most " + MAX_FILTER_PAIRS +
+      " filter values at once.");
   }
   if (by.length > values.length) {
     return fault("That filter needs a value.");
@@ -828,11 +914,13 @@ function askFor(params, spec) {
     const on = measures.filter((one) =>
       one.name === field && one.kind === "categorical")[0];
     if (!on) return fault("That is not a filter this form offers.");
-    if (filters.some((one) => one.field === field)) {
-      return fault('"' + field + '" is given more than once.');
-    }
     if (!permits(on, values[i])) {
       return fault("That is not a value of that filter.");
+    }
+    if (filters.some((one) =>
+      one.field === field && one.value === values[i])) {
+      return fault('"' + field + '" is given the same value more than ' +
+        "once.");
     }
     filters.push({ field: field, value: values[i], measure: on });
   }
@@ -1256,6 +1344,13 @@ function echoMeasure(measure) {
  * particular count. The caller's own order is kept, because this is
  * their question handed back - and the answer around it does not depend
  * on that order, since AND is commutative.
+ *
+ * IT IS NOT GROUPED AND NOT DEDUPLICATED (#455). Several pairs may name
+ * one field, and they go back one pair each, in the caller's order,
+ * however their pairs were interleaved. Grouping them would hand back
+ * this file's reading of the question rather than the question, and a
+ * page comparing what it sent against what came back would have to
+ * reproduce the grouping rule to do it.
  */
 function echoFilters(filters) {
   return filters.map((one) => ({ field: one.field, value: one.value }));
@@ -1270,14 +1365,21 @@ function echoFilters(filters) {
  * arrive here and leave with the same bytes: same status, same sentence,
  * no counts, no partition, no band residue, no group makeup.
  *
- * THE COMBINED CASE IS THE ONE THIS NOW EARNS ITS KEEP ON (#438). Two
- * chips can cut the group to one member where one chip could not, so at
- * any floor above 0 the isolating combination and the combination
- * nobody is in have to be the same document - otherwise the difference
- * between them answers "is there exactly one person who is both of
- * these", which is the question the floor exists to refuse. The only
- * thing that varies between them is the echo, which is the caller's own
- * question and tells them nothing they did not send.
+ * THE COMBINED CASE IS THE ONE THIS NOW EARNS ITS KEEP ON (#438,
+ * widened to sets by #455). Two chips can cut the group to one member
+ * where one chip could not, and a set can cut it to one member from
+ * either direction, so at any floor that suppresses at all the
+ * isolating ask and the ask nobody is in have to be the same document -
+ * otherwise the difference between them answers "is there exactly one
+ * person who is both of these", which is the question the floor exists
+ * to refuse. The only thing that varies between them is the echo, which
+ * is the caller's own question and tells them nothing they did not
+ * send.
+ *
+ * WHAT THIS SHUTS IS THE DIRECT QUESTION AND NOTHING WIDER. Two
+ * documents that both DRAW can still be subtracted, and with sets that
+ * subtraction is easy to set up; this file's header, under WHAT THE
+ * FLOOR DOES NOT BOUND, carries that limit whole.
  * Telling any two of those apart would answer "does anybody in this
  * group hold that value", which is the question a floor exists to
  * refuse, asked from outside the data. At the shipped floor of 0 only
@@ -1318,7 +1420,32 @@ function latestPerAccount(rows) {
 }
 
 /*
- * Whether one person is in this view: they hold EVERY predicate's value.
+ * The caller's pairs GROUPED BY FIELD, which is the shape a match runs
+ * on: one entry per field they named, carrying every value they named
+ * for it.
+ *
+ * DERIVED FROM ask.filters RATHER THAN CARRIED BESIDE IT. The pair list
+ * is the question the caller asked and the echo is a projection of it;
+ * a grouped copy stored on the ask would be two spellings of one idea
+ * for a later reader to keep in step, which is the trade REPEATABLE
+ * above already refused for the wire format. Computed once per request
+ * rather than once per person, because the match below runs over every
+ * member.
+ */
+function setsOf(filters) {
+  const byField = new Map();
+  for (const one of filters) {
+    const held = byField.get(one.field);
+    if (held) held.values.push(one.value);
+    else byField.set(one.field,
+      { measure: one.measure, values: [one.value] });
+  }
+  return Array.from(byField.values());
+}
+
+/*
+ * Whether one person is in this view: for EVERY field the caller named,
+ * they hold one of that field's values.
  *
  * Decided on their CURRENT record, for both pictures. Placing somebody
  * by whatever they held at the time of each row instead would let the
@@ -1326,22 +1453,38 @@ function latestPerAccount(rows) {
  * average could be a change in who is being averaged - a chart that
  * cannot be read is worse than one that is coarse.
  *
- * AND, ACROSS FIELDS, AND THE EMPTY SET IS EVERYONE (#438, #384's
- * chips). A member holding a value on a multiple-choice field satisfies
- * that field's predicate once however many values they hold, so nobody
- * is counted twice by combining - the person-rule the whole file runs on
- * is untouched by there being more predicates.
+ * OR WITHIN A FIELD, AND ACROSS FIELDS, AND NO FIELD AT ALL IS EVERYONE
+ * (#455, generalizing #438 to #454's multi-select chips). A member
+ * holding several values of a multiple-choice field satisfies that
+ * field once however many of the set they hold, so nobody is counted
+ * twice by widening a set - the person-rule the whole file runs on is
+ * untouched by there being more values in a predicate, exactly as it
+ * was untouched by there being more predicates.
+ *
+ * A SET NAMING EVERY VALUE OF A FIELD IS THE FIELD'S OWN EVERYONE, AND
+ * THAT IS NOT QUITE THE GROUP'S. A member who stated nothing for a
+ * field holds no value of it, so they are in the unfiltered view and in
+ * no set - which is right, since a set is a set of VALUES, and the
+ * alternative would make "every chip lit" mean something different from
+ * what the chips say. The page's half of that is to send NO pair for a
+ * field whose chips are all lit rather than the full set; the arms in
+ * tests/charts-aggregate.test.mjs section 11 pin both halves.
  *
  * Everyone is the empty list rather than a null, which is why there is
- * no special case here to get wrong: a loop over no predicates is
- * vacuously true, so "no chips" reaches the same code every other count
- * reaches.
+ * no special case here to get wrong: a loop over no fields is vacuously
+ * true, so "no chips" reaches the same code every other count reaches.
  */
-function matchesAll(record, filters) {
-  for (const filter of filters) {
-    if (heldValues(filter.measure, record).indexOf(filter.value) === -1) {
-      return false;
+function matchesAll(record, sets) {
+  for (const set of sets) {
+    const held = heldValues(set.measure, record);
+    let inside = false;
+    for (const value of held) {
+      if (set.values.indexOf(value) !== -1) {
+        inside = true;
+        break;
+      }
     }
+    if (!inside) return false;
   }
   return true;
 }
@@ -1477,11 +1620,24 @@ function cellsOf(people, measure, floor) {
  * "what this view weighs". A block computed over everybody would be a
  * second population inside a document about the first, and a reader
  * could difference the two. With several filters set that view is the
- * INTERSECTION (#438), and this needs no code of its own: `people` is
- * already whoever matched every predicate, so the block describes them
- * and the floor reduces their cells by the same rule it reduces the
- * whole binder's - which is what stops a two-chip cut naming a value
- * only one of the people behind it holds.
+ * INTERSECTION (#438), and with several values on one field it is the
+ * intersection of unions (#455); this needs no code of its own, since
+ * `people` is already whoever matched every field, so the block
+ * describes them and the floor reduces their cells by the same rule it
+ * reduces the whole binder's - which is what stops a narrow cut naming
+ * a value only one of the people behind it holds.
+ *
+ * IT IS ALSO WHERE THE PAGE READS WHICH VALUES EXIST (#454 item 18,
+ * #455 scope 4). A big list offers only the values somebody has
+ * entered, and the only place a page can learn that is here - a line
+ * whose count is above zero and whose `value` is not null, since the
+ * blank and the pooled bucket are both keyed by null and neither is a
+ * value. Because these cells are floored before they leave, presence
+ * obeys the floor for free: a value too few members hold has no line at
+ * all, so it is not offered as a filter in the first place. That is the
+ * right way round - the page never has to know the floor to respect
+ * it - and it is why nothing here hands back a list of what the spec
+ * offers instead.
  *
  * `multiple` rides along because it changes how the numbers read: on a
  * field a member may answer more than once the lines sum to holdings
@@ -1609,10 +1765,15 @@ function aggregate(rows, ask, spec, settings) {
   const system = systemFor(ask, site, settings);
   const part = partitionOf(ask.measure, site, system);
 
+  /* Grouped once for the whole request rather than inside the loop:
+     the pairs are the caller's question and the sets are what a match
+     is asked against. */
+  const sets = setsOf(ask.filters);
+
   const people = [];
   const accounts = new Set();
   for (const row of latestPerAccount(rows).values()) {
-    if (!matchesAll(row.record, ask.filters)) continue;
+    if (!matchesAll(row.record, sets)) continue;
     people.push(row);
     accounts.add(row.accountId);
   }
@@ -1691,4 +1852,4 @@ function selfSeries(rows, accountId, ask, spec, settings) {
   return { points: points };
 }
 
-export { DEFAULT_FLOOR, MAX_FILTERS, askFor, aggregate, selfSeries };
+export { DEFAULT_FLOOR, MAX_FILTER_PAIRS, askFor, aggregate, selfSeries };
