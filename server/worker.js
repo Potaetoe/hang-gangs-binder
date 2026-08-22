@@ -841,6 +841,21 @@ const UNKNOWN_LIST_UNREADABLE =
   "the operator's allow list could not be read, so try again shortly";
 
 /*
+ * A FOURTH, AND IT BELONGS TO THE ERASE ALONE (fix wave 3, review
+ * finding F2). The three above are verdict reasons: they say why the
+ * question "has this account left?" could not be answered.
+ * handleEraseDeparted() makes one more read before it asks that
+ * question at all - the membership invariant it checks ahead of the
+ * transaction - and a read that did not answer there is neither a
+ * silent bot nor an unreadable allow list. It is the erase's own
+ * pre-check, and it has the same next action as the other two waits.
+ * Borrowing UNKNOWN_LIST_UNREADABLE would point an admin at the allow
+ * list, which is a different question about the same table.
+ */
+const MEMBERSHIP_UNREADABLE =
+  "the membership table could not be read, so try again shortly";
+
+/*
  * How much of an account id the change log records for an erase.
  *
  * ENOUGH TO TELL TWO ERASES APART, and deliberately not the whole HMAC.
@@ -867,6 +882,27 @@ const MAX_LABEL = 64;
 
 // An account id as this Worker writes one: SHA-256 HMAC, hex.
 const ACCOUNT_ID = /^[0-9a-f]{64}$/;
+
+/*
+ * An account id as SQLITE would still match one, which is a wider set
+ * and a different question (0.9-M3-S15 fix wave 3, review finding F1).
+ *
+ * Nothing this Worker writes is upper case; `wrangler d1 execute` is
+ * what writes upper-case hex, so a row spelled that way is an
+ * operator's hand-written one. ACCOUNT_ID refuses it, and that refusal
+ * is right for AUTHORITY - a row nobody can prove was meant grants
+ * nothing. It is wrong for PROTECTION: `COLLATE NOCASE` is how the
+ * erase's own DELETE matches, so a row spelled either way is a row the
+ * erase would destroy, and a guard that cannot see it lets the erase
+ * destroy the entry that was meant to stop it.
+ *
+ * So the two questions are asked with two patterns, and this one means
+ * "the erase would match this row" and never "this row grants
+ * anything". Anything not matching this cannot be equal to a
+ * sixty-four-character hex id under NOCASE either, which is what makes
+ * the pair exact rather than approximate.
+ */
+const ACCOUNT_ID_ANY_CASE = /^[0-9a-fA-F]{64}$/;
 
 /*
  * Who wrote a row, when the writer might be a secret rather than a
@@ -1295,26 +1331,48 @@ function grantsAnythingSql(column) {
  * makes for collapsing every way it cannot ask into one answer.
  * A row this Worker walked and refused is different: the read answered,
  * and grantsAnything() dropping a near-miss is the answer being read
- * correctly, not a failure to read it. The near-miss it refuses reads as
- * a working list right up until somebody cannot get in - the
+ * correctly, not a failure to read it.
+ *
+ * AND `named` IS WHAT THAT NEAR-MISS STILL MEANS (fix wave 3, review
+ * finding F1). Refusing a near-miss the authority read reads as a
+ * working list right up until somebody cannot get in - the
  * undetectable-wrong-value failure #69 opens with, arriving through the
- * back door.
+ * back door - and since this slice there is a second consequence: the
+ * erase's DELETE matches `COLLATE NOCASE`, so it removes the near-miss
+ * row the authority read cannot see. An account whose only allow-list
+ * entry is spelled in upper case was therefore served as departed and
+ * erased, taking the entry with it.
+ *
+ * So one read answers two questions and both travel. `ids` is who a
+ * row GRANTS something to, unchanged and still lower case only.
+ * `named` is who the table NAMES at all in any spelling the erase
+ * would match, folded to lower case so a caller compares one shape.
+ * Naming is not granting: no caller may spend `named` as authority,
+ * and the two callers that decide anything say which they are asking
+ * for at the call site.
  */
 async function membershipAccountIds(env, role) {
   const ids = new Set();
+  const named = new Set();
   let rows;
   try {
     rows = await env.DB.prepare(
       "SELECT account_id FROM membership WHERE role = ?"
     ).bind(role).all();
   } catch (e) {
-    return { ids: ids, read: false };
+    return { ids: ids, named: named, read: false };
   }
-  if (!rows || !Array.isArray(rows.results)) return { ids: ids, read: false };
+  if (!rows || !Array.isArray(rows.results)) {
+    return { ids: ids, named: named, read: false };
+  }
   for (const row of rows.results) {
     if (grantsAnything(row)) ids.add(row.account_id);
+    if (row && typeof row.account_id === "string" &&
+      ACCOUNT_ID_ANY_CASE.test(row.account_id)) {
+      named.add(row.account_id.toLowerCase());
+    }
   }
-  return { ids: ids, read: true };
+  return { ids: ids, named: named, read: true };
 }
 
 /*
@@ -1641,15 +1699,43 @@ async function claimPayload(env, payloadHash) {
  * Asking costs one call the bypass would have saved and settles the
  * common case; the callers refuse only where the answer would otherwise
  * be acted on against the account.
+ *
+ * `bypassNearMiss` IS THE THIRD FLAG AND THE THIRD KIND OF FACT (fix
+ * wave 3, review finding F1): the list NAMES this account in a spelling
+ * the granting predicate refuses. Granting and naming come apart on
+ * purpose here, and they fail in opposite directions on purpose too. A
+ * near-miss row grants nothing, so this function's own verdict is
+ * unchanged and sign-in refuses such an account exactly as before -
+ * widening who may sign in on the strength of a row nobody can prove
+ * was meant would be a different decision from the one this finding
+ * asks for. But the erase's DELETE matches `COLLATE NOCASE`, so that
+ * same row IS one the erase destroys, and the caller that erases has
+ * to treat "named" as protection. Grants nothing, protects everything.
  */
 async function groupStanding(env, userId) {
   if (idList(env.ALWAYS_ALLOW_TELEGRAM_IDS).includes(String(userId))) {
     return { standing: "member", status: null, bypassed: true };
   }
   const allow = await membershipAccountIds(env, "always_allow");
-  if (allow.ids.has(await accountIdFor(env, userId))) {
+  const mine = await accountIdFor(env, userId);
+  if (allow.ids.has(mine)) {
     return { standing: "member", status: null, bypassed: true };
   }
+  /*
+   * A row that names this account without granting it anything - the
+   * operator's own entry, spelled in the case `wrangler d1 execute`
+   * writes (fix wave 3, review finding F1). It is NOT a bypass and
+   * this function's own answer is unchanged by it: sign-in still
+   * refuses such an account exactly as it did, because a row nobody
+   * can prove was meant is not a reason to let somebody in.
+   *
+   * What it is is a fact the erasing caller has to have, so it travels
+   * beside the answer rather than being folded into it. Naming it here
+   * rather than re-reading the table there is what keeps one read
+   * behind both questions - two reads could disagree, and disagreeing
+   * about this row is the whole finding.
+   */
+  const nearMiss = allow.named.has(mine);
   /*
    * Every answer from here down is an answer reached WITHOUT knowing
    * whether the operator's list holds this account open, so each one
@@ -1657,8 +1743,12 @@ async function groupStanding(env, userId) {
    * flag on each is what keeps a later branch from being added without
    * it - the failure mode this whole finding is an instance of.
    */
-  const answer = (value) =>
-    allow.read ? value : Object.assign({ bypassUnknown: true }, value);
+  const answer = (value) => {
+    const out = Object.assign({}, value);
+    if (!allow.read) out.bypassUnknown = true;
+    if (nearMiss) out.bypassNearMiss = true;
+    return out;
+  };
   if (!env.TELEGRAM_GROUP_CHAT_ID) {
     return answer({ standing: "unknown", status: null });
   }
@@ -4144,9 +4234,17 @@ async function handleRetireField(env, origin, id, caller) {
  * row - and `malformed` holds the rest.
  * A row whose account id is not sixty-four lowercase hex characters -
  * which `wrangler d1 execute` writes without complaint, since it
- * validates nothing - is dropped by every read that decides anything,
- * so listing it beside the rows that grant is the undetectable-wrong-
- * value failure #69 opens with, wearing the interface's own clothes.
+ * validates nothing - grants nobody anything anywhere, so listing it
+ * beside the rows that grant is the undetectable-wrong-value failure
+ * #69 opens with, wearing the interface's own clothes.
+ *
+ * GRANTING IS NOT THE ONLY THING A ROW DOES, though, and this list is
+ * where an operator finds that out (fix wave 3, review finding F1). A
+ * near-miss row still names an account to the departed check, which
+ * refuses to erase an account the list names in any spelling - because
+ * the erase's own DELETE would remove that row. So `malformed` is the
+ * surface that says which spelling to fix, and it is the reason the
+ * erase's refusal can send an admin somewhere real.
  *
  * The split rather than a flag on each row, because the fail-safe
  * direction matters more than the tidier shape: a surface that has
@@ -4343,9 +4441,9 @@ async function handleAddMembership(request, env, origin, caller) {
  * GRANTS AND NOT ROWS, which is the whole of the subquery's shape. A
  * row whose account id is not sixty-four lowercase hex characters
  * grants nobody anything - grantsAnything() above drops it from every
- * read that decides - so counting it here would let one real admin
- * beside one dud read as two, and the last granting row would come off
- * against a count that was never authority. The dual-read is the only
+ * read that decides AUTHORITY - so counting it here would let one real
+ * admin beside one dud read as two, and the last granting row would
+ * come off against a count that was never authority. The dual-read is the only
  * reason that is not a live lockout today: the secret still grants
  * while the flip has not happened. OPERATIONS.md, "Making someone an
  * admin", carries the precondition in the other direction, for whoever
@@ -4473,7 +4571,10 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
  * reached without asking Telegram at all, so a caller that reports it
  * as the group's verdict is speaking for somebody who never spoke; the
  * `allowed` flag below carries that, and `status` stays null with it.
- * Unknown sits outside all three, as its own refusal.
+ * Unknown sits outside all three, as its own refusal. The third answer
+ * covers a row the operator wrote in the wrong letter case too (fix
+ * wave 3, review finding F1) - see the branch itself for why a row
+ * that grants nothing still protects everything.
  *
  * FIVE WAYS TO GET "UNKNOWN", AND UNKNOWN IS NEVER DEPARTED. No
  * directory row; a row whose record will not open; a record written
@@ -4596,8 +4697,26 @@ async function departedVerdict(env, accountId) {
    * `status` STAYS NULL HERE on purpose. Every word this function hands
    * out is a word somebody said; there is nobody to quote for this one,
    * so the callers name the list instead.
+   *
+   * A NEAR-MISS ROW IS THE SAME ANSWER, and that is the fix wave 3
+   * finding (review F1). The erase's membership DELETE matches
+   * `COLLATE NOCASE`, so an entry an operator wrote by hand in
+   * upper-case hex - which is what `wrangler d1 execute` produces - is
+   * a row this route would destroy while the granting predicate above
+   * cannot see it. Serving that account as departed erased the account
+   * AND the entry protecting it, in one request, from two spellings of
+   * "this account's row" disagreeing inside it.
+   *
+   * A row that only has to be FOUND is asked a finding question, not a
+   * granting one: for THIS decision the list holds the account open in
+   * either spelling, which is the same normalization the DELETE's
+   * collation already implies. Nothing about authority moves with it -
+   * sign-in still refuses such an account, and handleReadMembership
+   * still reports the row as malformed so the operator can go and fix
+   * the spelling. The cost is that removing the row is what unlocks
+   * the erase, which is exactly what the reason sentence already says.
    */
-  if (standing.bypassed) {
+  if (standing.bypassed || standing.bypassNearMiss) {
     return { known: true, departed: false, allowed: true, status: null };
   }
 
@@ -4766,6 +4885,16 @@ async function handleReadDeparted(env, origin) {
  * erase that deleted three row classes and then discovered it should
  * not have would have no way back.
  *
+ * AND THAT SENTENCE IS TRUE OF THE READS TOO SINCE FIX WAVE 3 (review
+ * finding F2). It used to hold only while every read on the way
+ * answered: the membership pre-check spent a null or column-less row
+ * as "no problem" and the route went on to answer ok:true having
+ * deleted three of the four row classes, with the statement-level
+ * guard - which protects the membership row alone - quietly keeping
+ * the fourth. A read that does not answer is now a refusal in its own
+ * words, taken before the transaction, so the ordering above is a
+ * property of the route rather than of the database being well.
+ *
  * A CURRENT MEMBER IS REFUSED WITH THE VERDICT QUOTED BACK, because the
  * admin needs to be able to tell "Telegram says they are still here"
  * from "Telegram did not answer" - the two look identical from a
@@ -4809,16 +4938,65 @@ async function handleEraseDeparted(env, origin, accountId, caller) {
    * this read buys is that the ordinary case is a clean refusal that
    * erases nothing, instead of an erase that silently leaves one row
    * behind and reports a count nobody expected.
+   *
+   * IT CARRIES A THIRD COLUMN AND IT IS THE BELT TO THE BRACES (fix
+   * wave 3, review finding F1). `granting` and `holds` are counted
+   * with the granting predicate, which refuses a row spelled in
+   * upper-case hex; the DELETEs below match `COLLATE NOCASE`, which
+   * does not. `nearMiss` counts exactly the rows the two views
+   * disagree about - named by the erase, invisible to the guard - and
+   * any at all refuses the erase. The verdict path already refuses an
+   * `always_allow` row spelled that way; this catches every other
+   * role, and it catches the same class again if a later branch is
+   * added to one view and not the other.
+   *
+   * `COLLATE BINARY` rather than a bare `<>`, so the comparison is
+   * pinned to bytes whatever collation the column is ever declared
+   * with. `wanted` is lower case by ACCOUNT_ID above, so "not equal by
+   * bytes but equal ignoring case" is exactly "spelled some other way".
+   *
+   * AND THE READ ITSELF FAILS CLOSED (review finding F2). A throw here
+   * used to escape to the catch-all 500 - nothing deleted, but nothing
+   * named either - and a null or column-less row skipped the check
+   * entirely, so the route answered ok:true having deleted three of
+   * the four row classes while the statement-level guard, which
+   * protects the membership row alone, silently kept the fourth. Every
+   * shape this read can fail in now refuses BEFORE the transaction, in
+   * the same words, with nothing deleted.
    */
-  const held = await env.DB.prepare(
-    "SELECT (SELECT COUNT(*) FROM membership AS granting" +
-    " WHERE granting.role = 'admin' AND " +
-    grantsAnythingSql("granting.account_id") + ") AS granting," +
-    " (SELECT COUNT(*) FROM membership AS held" +
-    " WHERE held.account_id = ? COLLATE NOCASE AND held.role = 'admin'" +
-    " AND " + grantsAnythingSql("held.account_id") + ") AS holds"
-  ).bind(wanted).first();
-  if (held && held.holds > 0 && held.granting <= 1) {
+  let held;
+  try {
+    held = await env.DB.prepare(
+      "SELECT (SELECT COUNT(*) FROM membership AS granting" +
+      " WHERE granting.role = 'admin' AND " +
+      grantsAnythingSql("granting.account_id") + ") AS granting," +
+      " (SELECT COUNT(*) FROM membership AS held" +
+      " WHERE held.account_id = ? COLLATE NOCASE AND held.role = 'admin'" +
+      " AND " + grantsAnythingSql("held.account_id") + ") AS holds," +
+      " (SELECT COUNT(*) FROM membership AS spelled" +
+      " WHERE spelled.account_id = ? COLLATE NOCASE" +
+      " AND spelled.account_id <> ? COLLATE BINARY) AS nearMiss"
+    ).bind(wanted, wanted, wanted).first();
+  } catch (e) {
+    held = null;
+  }
+  const counted = (value) => typeof value === "number" && value >= 0;
+  if (!held || !counted(held.granting) || !counted(held.holds) ||
+    !counted(held.nearMiss)) {
+    return json({
+      error: "That member's departure could not be confirmed - " +
+        MEMBERSHIP_UNREADABLE + ". Nothing was erased.",
+    }, 409, origin);
+  }
+  if (held.nearMiss > 0) {
+    return json({
+      error: "That account has a membership row written in a different " +
+        "letter case, so this erase and the rows it would remove do not " +
+        "agree about what belongs to it. Fix that row's spelling, or " +
+        "remove it, before erasing this account. Nothing was erased.",
+    }, 409, origin);
+  }
+  if (held.holds > 0 && held.granting <= 1) {
     return json({
       error: "That is the last admin row. Add another admin before " +
         "erasing this account.",

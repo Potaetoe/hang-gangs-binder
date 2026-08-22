@@ -714,14 +714,21 @@ LEDGER = [
                  "cannot reach is the atomicity, since a batch that "
                  "half-applied would leave a member's entries gone and "
                  "their session still opening the site. A call this "
-                 "route refuses erases nothing, and the refusal says "
-                 "which of three things stopped it: the bot's own word "
-                 "quoted back for a member Telegram says is still "
+                 "route refuses erases nothing, and the refusal names "
+                 "whichever of the route's several guards stopped it "
+                 "rather than answering one bare no: the bot's own "
+                 "word quoted back for a member Telegram says is still "
                  "there, the operator's-list sentence for an account "
                  "an always_allow entry holds open - about which the "
-                 "bot is never asked, so nobody is quoted - and the "
-                 "named failure for an account whose standing could "
-                 "not be settled at all",
+                 "bot is never asked, so nobody is quoted - the named "
+                 "failure for an account whose standing could not be "
+                 "settled at all, and the ones that never reach a "
+                 "verdict: a malformed id, the caller's own account, "
+                 "the last granting admin row, a membership pre-check "
+                 "that did not answer, and a membership row spelled in "
+                 "a letter case the guard and the delete disagree "
+                 "about. Counting them is this row's job on any slice "
+                 "that adds one",
         "covers": ["server/worker.js"],
         "status": "never",
     },

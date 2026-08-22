@@ -221,16 +221,42 @@ it, so the cleanup surface reports the list — and says which entry to
 remove — rather than putting words in Telegram's mouth. Never attribute
 to the bot what the bot did not say.
 
+**A row in either letter case holds an account open**, and the reason
+is the erase and not the list. `wrangler d1 execute` writes upper-case
+hex, so an operator's hand-written row is spelled in a case the
+authority read refuses — it grants nothing, and that is right, because
+a row nobody can prove was meant must not admit anybody. But the
+erase's own delete matches without regard to case, so it would remove
+that row: a guard that could not see it erased the account *and* the
+entry protecting it, in one request. **Granting and protecting are
+different questions, and they fail closed in opposite directions.** A
+near-miss row grants nothing and protects everything; it stays on the
+membership surface's malformed list, which is where an operator learns
+which spelling to fix. And before it deletes anything, the erase
+refuses outright whenever its guard's view of a member's rows and its
+delete's view disagree — the general form of the same defect, so a
+later branch added to one view and not the other is refused rather
+than discovered.
+
 **And a read that does not answer is unknown too.** The erasing path
-fails closed on every read it makes, not only on the bot: if the
-directory row, the sealed record or the operator's own list cannot be
-read, the verdict is unknown, the surface names which read failed, and
-the erase refuses. The list is the case worth writing down, because it
-is the one where an empty answer looks exactly like a real one — "not
-on the list" and "the list did not answer" are the same empty set — and
-spending the second as the first erased the rows of an account an
-operator was holding open. So "cannot check" is never "not a member",
-and it is never "not on the list" either. Sign-in carries the same
+fails closed on every read it makes, not only on the bot. Five reads
+stand between an erase request and a deleted row, and every one of them
+refuses when it does not answer — named here so the sentence can be
+checked rather than believed: the **directory row**, the **sealed
+record** it opens, the **operator's allow list**, the **bot**, and the
+erase's own **membership pre-check**, which counts the rows the delete
+would remove. A read that throws, answers nothing, or answers a shape
+without the columns it named is the same fact to all five — the
+question could not be asked — and none of them is ever spent as an
+answer. The refusals say which read failed rather than which is
+nearest, because the next action differs: a record with no usable id is
+fixed by that member signing in, and the other three waits are fixed by
+waiting on different systems. The list is the case worth writing down,
+because it is the one where an empty answer looks exactly like a real
+one — "not on the list" and "the list did not answer" are the same
+empty set — and spending the second as the first erased the rows of an
+account an operator was holding open. So "cannot check" is never "not a
+member", and it is never "not on the list" either. Sign-in carries the same
 fact the other way round: a member the group still confirms signs in
 regardless, because refusing everybody over one unreadable table is a
 worse outage than the one that caused it, while a sign-in that would
