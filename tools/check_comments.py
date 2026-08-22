@@ -2109,6 +2109,11 @@ BUILTIN_CALLS = frozenset({
     "ascii", "startswith", "is_dir", "len", "exit", "strip", "abspath",
     "require", "which", "mix", "TemporaryDirectory", "SystemExit",
     "splitlines",
+    # chr() - surfaced by 0.9-M3-S29 (#449): tools/ship_check.py's own
+    # _REPLACEMENT_CHAR comment explains why the character is built via
+    # chr(0xFFFD) rather than written as a literal in the source - a
+    # builtin, never a repo definition.
+    "chr",
     # Array.prototype.filter() - surfaced by 0.9-M3-S24 (#438), and the
     # way it surfaced is the argument for it being here. This name
     # resolved until that slice only because server/charts-agg.js
