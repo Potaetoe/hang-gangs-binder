@@ -77,6 +77,16 @@ from contextlib import redirect_stdout
 import agent_init
 import reaper
 
+# Encoding-safe stdout/stderr (0.9-M3-S29 fix wave, #449 F2): this
+# suite's own fixtures write invalid-UTF-8 bytes on purpose, and its
+# checks print the results - the same exposure ship_check.py's main()
+# guards against. This file runs at import time (no __main__ guard, by
+# this fleet's own convention - see the module docstring), and nothing
+# imports it, so reconfiguring here is always the real run.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 failures = 0
 performed = 0
 
@@ -109,7 +119,9 @@ def git(repo, *args):
     done = subprocess.run(
         ["git", "-C", repo, "-c", "user.email=suite@example.invalid",
          "-c", "user.name=suite", *args],
-        capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+        stdin=subprocess.DEVNULL,
         timeout=FIXTURE_TIMEOUT,
     )
     return done.returncode, done.stdout + done.stderr
@@ -185,6 +197,7 @@ def make_link(link, target):
     if os.name == "nt":
         done = subprocess.run(["cmd", "/c", "mklink", "/J", link, target],
                               capture_output=True, text=True,
+                              encoding="utf-8", errors="replace",
                               stdin=subprocess.DEVNULL,
                               timeout=FIXTURE_TIMEOUT)
         return done.returncode == 0

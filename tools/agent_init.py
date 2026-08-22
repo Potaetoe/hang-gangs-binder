@@ -380,6 +380,7 @@ def git(repo, *args):
     done = subprocess.run(
         ["git", "-C", repo, *args],
         capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
     )
     return done.returncode, done.stdout, done.stderr
 
@@ -822,11 +823,13 @@ def python_gate_tools_present():
     """
     ruff_ok = subprocess.run(
         [sys.executable, "-m", "ruff", "--version"],
-        capture_output=True, text=True).returncode == 0
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace").returncode == 0
     fonttools_ok = subprocess.run(
         [sys.executable, "-c",
          "from fontTools.ttLib.woff2 import haveBrotli\nassert haveBrotli"],
-        capture_output=True, text=True).returncode == 0
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace").returncode == 0
     return ruff_ok, fonttools_ok
 
 
@@ -863,7 +866,8 @@ def bound_ports(block):
     command = (["netstat", "-ano"] if os.name == "nt"
                else ["netstat", "-ltn"])
     try:
-        done = subprocess.run(command, capture_output=True, text=True)
+        done = subprocess.run(command, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace")
     except (OSError, ValueError):
         return None
     if done.returncode != 0:
@@ -1428,7 +1432,8 @@ def probe_readiness(repo):
                        "against. Fetch and check out the current tip."
                        % PROBE[1][0])
     done = subprocess.run([node, *PROBE[1]], cwd=repo,
-                          capture_output=True, text=True)
+                          capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
     if done.returncode == 0:
         return True, PROBE[0]
     return False, (done.stdout + done.stderr).strip()
@@ -2021,6 +2026,19 @@ def do_park(args):
 
 
 def main(argv=None):
+    # Encoding-safe stdout/stderr (0.9-M3-S29 fix wave, #449 F2 - the
+    # write-side twin ship_check.py's main() already carries): the
+    # read-side UTF-8 fix in this fleet's git()/subprocess calls can now
+    # hand back a real non-ASCII character or a replacement character
+    # (U+FFFD) - this console's own cp1252 stdout cannot re-encode
+    # either one, and printing either crashes print() with
+    # UnicodeEncodeError, which is exactly what this reconfigure block
+    # exists to prevent. Guarded by hasattr() so a caller with no real
+    # stream (a StringIO capture, as some suites use) is untouched.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(
         prog="./run agent-init",
         description="The worktree contract: make a checkout gate-ready "

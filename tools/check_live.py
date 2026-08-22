@@ -2092,7 +2092,8 @@ def changed_since(sha, paths):
         done = subprocess.run(
             ["git", "log", "--format=", "--name-only", "%s..HEAD" % sha,
              "--", *paths],
-            cwd=REPO, capture_output=True, text=True, timeout=30)
+            cwd=REPO, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
     if done.returncode != 0:
@@ -2174,7 +2175,8 @@ def commits_since(sha):
     try:
         done = subprocess.run(
             ["git", "rev-list", "--count", "%s..HEAD" % sha],
-            cwd=REPO, capture_output=True, text=True, timeout=30)
+            cwd=REPO, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
     if done.returncode != 0:
@@ -2338,6 +2340,19 @@ def problems():
 
 
 def main():
+    # Encoding-safe stdout/stderr (0.9-M3-S29 fix wave, #449 F2 - the
+    # write-side twin ship_check.py's main() already carries): the
+    # read-side UTF-8 fix in changed_since()/commits_since() can now
+    # hand back a real non-ASCII character or a replacement character
+    # (U+FFFD) - this console's own cp1252 stdout cannot re-encode
+    # either one, and printing either crashes print() with
+    # UnicodeEncodeError, which is exactly what this reconfigure block
+    # exists to prevent. Guarded by hasattr() so a caller with no real
+    # stream (a StringIO capture, as some suites use) is untouched.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     found = problems()
     for problem in found:
         print("FAIL  %s" % problem)
