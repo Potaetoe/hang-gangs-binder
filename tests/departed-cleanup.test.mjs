@@ -189,6 +189,16 @@ function makeDb(seed) {
   let membership = ((seed && seed.membership) || []).slice();
   let submissions = ((seed && seed.submissions) || []).slice();
   let logSequence = 0;
+  /*
+   * ONE STATEMENT MADE TO FAIL, NAMED BY THE ROLE IT READS (fix wave 2,
+   * review finding F1). A whole D1 taken down proves nothing here: the
+   * route would 500 before any verdict was reached, and the branch on
+   * trial - a verdict formed while one read did not answer - would
+   * never run. So this fails the membership-role read for exactly one
+   * role and answers every other statement normally, which is the shape
+   * a transient D1 error or a malformed `results` really has.
+   */
+  const failRole = seed && seed.failRole;
 
   for (const row of (seed && seed.sessions) || []) {
     sessions.set(row.token_hash, row);
@@ -292,6 +302,10 @@ function makeDb(seed) {
 
     /* -------- membership -------- */
     if (sql.startsWith("SELECT account_id FROM membership WHERE role")) {
+      if (failRole && args[0] === failRole) {
+        throw new Error("D1_ERROR: the membership read for role '" +
+          args[0] + "' did not answer");
+      }
       return { results: membership.filter((row) => row.role === args[0])
         .map((row) => ({ account_id: row.account_id })) };
     }
@@ -525,8 +539,11 @@ function sessionRow(token, accountId, fields) {
  * anything to the wrong account, or forgot a clause, moves one of
  * STAYS's rows, and the byte comparison below sees it.
  */
-async function fixture() {
+async function fixture(options) {
   return makeDb({
+    /* Nothing fails unless an arm asks for it by role, so every
+       scenario above this one is untouched by the hook's existence. */
+    failRole: (options && options.failRole) || null,
     submissions: [
       { id: 11, account_id: GONE, ciphertext: "gone-one",
         received_at: "2025-01-01T00:00:00.000Z", supersedes: null },
@@ -1099,6 +1116,89 @@ for (const [who, headers] of [
 }
 
 /*
+ * A FAILED READ OF THE OPERATOR'S LIST IS "UNKNOWN", NEVER DEPARTED
+ * (fix wave 2, review finding F1).
+ *
+ * THE MIRROR OF F3, AND THE ONE PERMISSIVE FAILURE ON THIS PATH. F3 was
+ * the bypass being reported as the group's verdict; this is the bypass
+ * silently ceasing to exist. membershipAccountIds() answered a thrown
+ * query with the empty set, which is the right direction for the admin
+ * gate above it - a failed read means "not an admin", so nobody gets in
+ * - and the WRONG one here, where the empty set means "not on the
+ * operator's list" and this slice made that an ERASING decision. One
+ * transient D1 error turned a protected account into a departed one:
+ * the list served it as departed, the bot was asked about it, the erase
+ * went through, and the rows were gone.
+ *
+ * THE RULE THIS PINS: any read that does not answer on the way to a
+ * verdict makes that verdict unknown, with the failure named - never
+ * departed, and the erase refuses. DESIGN.md's bot-failure stance is
+ * "cannot check is never treated as not a member"; this is that same
+ * sentence one level down, because "cannot read the allow list" was
+ * being treated as "not on the allow list".
+ *
+ * THE FIXTURE HOLDS THE ACCOUNT OPEN THROUGH THE TABLE ARM ONLY, with
+ * no ALWAYS_ALLOW_TELEGRAM_IDS set, so the failing read is the only
+ * thing standing between it and the erase - and the bot says "left"
+ * for everybody, so nothing but the operator's list can keep it off
+ * the departed list. A leaver rides in the same answer, so the checks
+ * below are a discrimination and not a list that is empty for
+ * everybody.
+ */
+{
+  const db = await fixture({ failRole: "always_allow" });
+  db.membership().push({ account_id: BYPASSED, role: "always_allow",
+    label: "on-the-bypass", added_at: OLD, added_by: ADMIN });
+  db.directory.set(BYPASSED, await directoryRow(BYPASSED, BYPASSED_ID, OLD));
+  const env = envFor(db);
+  const before = belongingTo(db, BYPASSED);
+
+  const { value: list } = await withBot(botSaying("left"), () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+  const body = list.body || {};
+
+  check("with the operator's-list read failing, the account it holds " +
+    "open is NOT reported departed - one failed read may not decide an " +
+    "erase", !((body.departed) || [])
+      .some((row) => row.accountId === BYPASSED));
+  check("...in an answer that DOES carry the leaver, so the check " +
+    "above is the failure being handled and not an empty list",
+    ((body.departed) || []).some((row) => row.accountId === GONE));
+  check("it is not dropped either, and not filed as allowed - the " +
+    "list cannot be read, so whether it allows this account is exactly " +
+    "what is unknown",
+    ((body.unknown) || []).some((row) => row.accountId === BYPASSED) &&
+    !((body.allowed) || []).some((row) => row.accountId === BYPASSED));
+  check("and the reason names THE READ THAT FAILED - neither a next " +
+    "sign-in nor waiting on Telegram fixes an unreadable membership " +
+    "table, so borrowing either wording sends an admin to the wrong act",
+    ((body.unknown) || []).some((row) => row.accountId === BYPASSED &&
+      row.reason ===
+        "the operator's allow list could not be read, so try again shortly"));
+
+  const { value: erase } = await withBot(botSaying("left"), () =>
+    call(env, "DELETE", "/admin-departed/" + BYPASSED,
+      { headers: ADMIN_BEARER }));
+  const refusal = String((erase.body || {}).error);
+  check("the erase REFUSES rather than destroying the account's rows " +
+    "on a verdict formed while a read did not answer", erase.status === 409);
+  check("and the refusal carries the same named failure the row did",
+    /the operator's allow list could not be read/.test(refusal));
+  /* The string's PRESENCE is half of this check on purpose. An erase
+     that went through carries no error at all, and a wording assertion
+     over a missing string passes while proving nothing - the vacuous
+     arm AGENTS.md names as the most-repeated defect of 0.9-M2. */
+  check("the refusal speaks for nobody: it names neither Telegram nor " +
+    "the bot, because the bot is not what failed and its answer is not " +
+    "what is being acted on",
+    typeof (erase.body || {}).error === "string" &&
+    !/telegram|\bbot\b/i.test(refusal));
+  check("nothing of that account moved on the refusal - the whole " +
+    "point of the fail-closed direction",
+    belongingTo(db, BYPASSED) === before);
+}
+
+/*
  * TELEGRAM FAILING DURING THE LIST READ IS "UNKNOWN", AND SAYS SO
  * (review finding F4).
  *
@@ -1228,9 +1328,15 @@ for (const [who, headers] of [
   const { value: erase } = await withBot(botSaying("left"), () =>
     call(env, "DELETE", "/admin-departed/" + STALE_NO_ID,
       { headers: ADMIN_BEARER }));
+  /* The lead sentence is the same for all three unknowns and names
+     nobody, because the bot IS asked on one of the three (the failed
+     allow-list read, fix wave 2 finding F1) and a lead that said the
+     bot could not speak would be false there - the same
+     never-attribute-to-the-bot rule F3 settled, applied to the
+     refusal's first clause rather than to its reason. */
   check("erasing a row with no sealed id is refused - unknown is never " +
     "departed", erase.status === 409 &&
-    /could not say/.test(JSON.stringify(erase.body || {})));
+    /could not be confirmed/.test(JSON.stringify(erase.body || {})));
   check("that refusal moved none of its rows",
     belongingTo(db, STALE_NO_ID) === before);
 }
@@ -1384,7 +1490,7 @@ for (const [who, headers] of [
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 107;
+const EXPECTED = 115;
 if (failures) {
   console.log("\nfailing checks:");
   for (const label of failed) console.log("  - " + label);

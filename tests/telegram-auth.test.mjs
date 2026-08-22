@@ -209,6 +209,15 @@ function makeDb(seed) {
       return { meta: { changes: row ? 1 : 0 } };
     }
     if (sql.startsWith("SELECT account_id FROM membership")) {
+      /* One read made to fail, named by the role it asks for
+         (0.9-M3-S15 fix wave 2, review finding F1). Failing the whole
+         stub would 500 the request before the branch on trial ran; what
+         is on trial is a sign-in decided while THIS read did not
+         answer. */
+      if (seed && seed.failRole && args[0] === seed.failRole) {
+        throw new Error("D1_ERROR: the membership read for role '" +
+          args[0] + "' did not answer");
+      }
       return {
         results: membership
           .filter((row) => row.role === args[0])
@@ -849,6 +858,64 @@ check("and it is that constant the group check is bounded by",
     JSON.stringify(left.body) === JSON.stringify(unknown.body));
 }
 
+/*
+ * A SIGN-IN NEVER SAYS "NOT ALLOWED" OVER AN UNREADABLE ALLOW LIST
+ * (0.9-M3-S15 fix wave 2, review finding F1).
+ *
+ * ALWAYS_ALLOW is checked before the bot, so the answer to "may this
+ * person in regardless of the group" is decided by a read of the
+ * `membership` table. That read used to answer a thrown query with the
+ * empty set, which reads as "not on the list" - so one D1 error could
+ * refuse somebody an operator had explicitly allowed, and tell them
+ * they are not a member of the group. That is a claim the Worker was
+ * not entitled to make.
+ *
+ * TWO PROPERTIES, AND THEY PULL IN OPPOSITE DIRECTIONS, which is why
+ * both are pinned here. A failed list read must not lock out members
+ * the GROUP still confirms - refusing every sign-in during a partial
+ * D1 problem would be a worse outage than the one that caused it. And
+ * a failed list read must not be spent as a refusal, because the
+ * unread list may have been holding this person open. So: the bot's
+ * "member" still signs in, and anything else answers as this Worker
+ * answers any error rather than as a verdict about membership.
+ *
+ * AND NOTHING IS REVOKED on that answer. Ending sessions is the other
+ * irreversible act this path can take, and a departure the operator's
+ * list may have overridden is not grounds for it.
+ */
+{
+  const { status, body, bot } = await signIn({
+    seed: { failRole: "always_allow" }, bot: memberAnswer });
+  check("with the always_allow read failing, a member the GROUP still " +
+    "confirms signs in normally - an unreadable list is not an outage " +
+    "for everybody", status === 200 && body && body.ok === true &&
+    bot.calls.length === 1);
+}
+
+{
+  const { status, body } = await signIn({
+    seed: { failRole: "always_allow" }, bot: leftAnswer });
+  check("with that read failing, a sign-in the bot would refuse is NOT " +
+    "told it is not a member - the list that might have allowed it is " +
+    "exactly what could not be read", status !== 403 &&
+    !/members of the group only/.test(String((body || {}).error)));
+  check("it answers as this Worker answers any error instead, so the " +
+    "page shows a failure rather than a verdict",
+    status === 500 && body && body.error === "Something went wrong.");
+}
+
+{
+  const token = "canary-allow-list-token-belonging-to-nobody";
+  const soon = new Date(Date.now() + 3600 * 1000).toISOString();
+  const db = makeDb({ failRole: "always_allow", sessions: [{
+    token_hash: sha256hex(token), account_id: ACCOUNT_ID, is_admin: 0,
+    is_dev: 0, created_at: new Date().toISOString(), expires_at: soon,
+  }] });
+  await signIn({ db: db, bot: leftAnswer });
+  check("and it revokes NOTHING - a departure the unread list may have " +
+    "overridden is not grounds for ending sessions", db.sessions.size === 1);
+}
+
 /* ------------------------------------------------------------------ */
 /* 7. The 401/403 contract OPERATIONS.md's check table pins.           */
 
@@ -1297,7 +1364,7 @@ async function mutant(label, from, to) {
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 108;
+const EXPECTED = 112;
 console.log(failures
   ? `\ntelegram-auth FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
