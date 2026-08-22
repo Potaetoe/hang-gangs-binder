@@ -423,6 +423,63 @@ check("fieldView marks a choicesFrom field's values as living outside " +
     return view.outside === true && view.values.length === 0;
   })());
 
+/* -- Departed (0.9-M3-S34, #458 - the page half of S15's Worker, #420;  */
+/* #385 rule 4, #454 items 8-10/13/20). -- */
+
+check("departedName reads the membership label where GET /admin-departed " +
+  "sent one (item 13)",
+  Admin.departedName({ accountId: "a".repeat(64), label: "Prime" }) ===
+  "Prime");
+check("departedName falls back to the short id when there is no label - " +
+  "never a handle, never a numeric id (#385 rule 1): the Worker never " +
+  "sends either, and this function reads only accountId and label",
+  Admin.departedName({ accountId: "a".repeat(64), label: null }) ===
+  "a".repeat(12) + "…" &&
+  Admin.departedName({ accountId: "a".repeat(64), label: "   " }) ===
+  "a".repeat(12) + "…");
+
+check("eraseDepartedSentence names the real label and ends in a question " +
+  "(#454 item 9), and - since the landed Worker offers no dry-run count " +
+  "for this route - names the four row classes the erase actually " +
+  "deletes instead of inventing a number",
+  Admin.eraseDepartedSentence("Prime").includes("Prime") &&
+  Admin.eraseDepartedSentence("Prime").trim().endsWith("?") &&
+  /submissions/.test(Admin.eraseDepartedSentence("Prime")) &&
+  /directory/.test(Admin.eraseDepartedSentence("Prime")) &&
+  /membership/.test(Admin.eraseDepartedSentence("Prime")) &&
+  /sessions/.test(Admin.eraseDepartedSentence("Prime")));
+
+check("DEPARTED_PAGE_SIZE is 20, the ticket's own number (item 13)",
+  Admin.DEPARTED_PAGE_SIZE === 20);
+
+const DEPARTED_FIXTURE = {
+  departed: [{ accountId: "a1", label: "One" }, { accountId: "a2" }],
+  unknown: [{ accountId: "u1", reason: "unknown until next sign-in" }],
+  allowed: [{ accountId: "l1", reason: "allowed by the operator's list" }],
+};
+check("departedSections keeps the ticket's own order - departed, then " +
+  "unknown, then allowed - reordering nothing the Worker sent",
+  Admin.departedSections(DEPARTED_FIXTURE, 20).sections
+    .map((s) => s.key).join(",") === "departed,unknown,allowed");
+check("departedSections windows to ONE list of `revealed` rows total, " +
+  "not per section (item 13 describes one list, not three)",
+  (() => {
+    const view = Admin.departedSections(DEPARTED_FIXTURE, 3);
+    return view.shown === 3 && view.total === 4 && view.hasMore === true &&
+      view.sections[0].rows.length === 2 &&
+      view.sections[1].rows.length === 1 &&
+      view.sections[2].rows.length === 0;
+  })());
+check("departedSections reports no more once every row is shown",
+  Admin.departedSections(DEPARTED_FIXTURE, 20).hasMore === false);
+check("departedSections copes with a malformed answer - a missing list " +
+  "reads as empty rather than throwing",
+  (() => {
+    const view = Admin.departedSections({}, 20);
+    return view.total === 0 && view.hasMore === false &&
+      view.sections.every((s) => s.rows.length === 0);
+  })());
+
 /* -- The idle timer, unchanged in shape from every other signed-in page -- */
 
 check("idleVerdict is active well before the warning window",
@@ -508,8 +565,9 @@ const PAGE_HTML = adminHtml;
 const IDS = [...PAGE_HTML.matchAll(/\bid="([\w-]+)"/g)].map((m) => m[1]);
 const NEEDED = ["tool", "closed", "surface-mark", "admin-intro",
   "idle-warning", "idle-countdown", "idle-stay",
-  "tab-settings", "tab-roles", "tab-fields", "tab-log",
+  "tab-settings", "tab-roles", "tab-fields", "tab-log", "tab-departed",
   "settings-card", "roles-card", "fields-card", "log-card",
+  "departed-card",
   "settings-floor", "settings-floor-notice", "settings-floor-save",
   "settings-locked-unit", "settings-locked-unit-save",
   "settings-group-name", "settings-group-name-save",
@@ -522,7 +580,7 @@ const NEEDED = ["tool", "closed", "surface-mark", "admin-intro",
   "roles-other-body",
   "fields-status", "fields-new-id", "fields-new-label", "fields-new-values",
   "fields-new-add", "fields-list",
-  "log-status", "log-list", "toast"];
+  "log-status", "log-list", "departed-status", "departed-list", "toast"];
 check("every element this suite drives is really in apps/web/admin.html",
   NEEDED.every((id) => IDS.includes(id)));
 check("dist/admin.html carries the same ids - the mirror is not stale",
@@ -537,7 +595,7 @@ check("dist/admin.html carries the same ids - the mirror is not stale",
 const STATIC_HIDDEN = ["idle-warning", "closed", "tool", "settings-status",
   "roles-status", "roles-secret-only-ids", "roles-malformed", "roles-other",
   "fields-status", "log-status", "roles-card", "fields-card", "log-card",
-  "toast"];
+  "departed-status", "departed-card", "toast"];
 // settings-card is deliberately NOT here - it is the default tab, the
 // one panel of the four that ships visible (#385 item (b), #454 item
 // 20).
@@ -584,7 +642,7 @@ function buildDom() {
   for (const id of ["settings-floor-save", "settings-locked-unit-save",
     "settings-group-name-save", "settings-welcome-text-save",
     "settings-default-theme-save", "idle-stay", "fields-new-add",
-    "tab-settings", "tab-roles", "tab-fields", "tab-log"]) {
+    "tab-settings", "tab-roles", "tab-fields", "tab-log", "tab-departed"]) {
     byId.get(id).tag = "button";
   }
   const reason = node("p");
@@ -752,12 +810,20 @@ const SPEC_FIXTURE = {
   ],
 };
 
+// GET /admin-departed's real envelope (S15's completion on #420):
+// {ok, departed: [{accountId, label, lastSeenAt, status}], unknown:
+// [{...reason}], allowed: [{...reason}]} - empty by default so every
+// existing test above keeps its own unrelated assertions unaffected by
+// this ticket's own route.
+const DEPARTED_EMPTY = { ok: true, departed: [], unknown: [], allowed: [] };
+
 const BASE_ROUTES = {
   "GET /content": () => ok({ ok: true, content: CONTENT }),
   "GET /membership": () => ok(MEMBERSHIP),
   "GET /me": () => ok({ ok: true, adminVia: "flag" }),
   "GET /admin-log": () => ok(LOG),
   "GET /admin-fields": () => ok({ ok: true, spec: SPEC_FIXTURE }),
+  "GET /admin-departed": () => ok(DEPARTED_EMPTY),
 };
 
 {
@@ -774,10 +840,11 @@ const BASE_ROUTES = {
   check("Settings is the tab that ships selected and visible",
     byId.get("tab-settings").getAttribute("aria-selected") === "true" &&
     byId.get("settings-card").hidden === false);
-  check("the other three panels ship hidden",
+  check("the other four panels ship hidden",
     byId.get("roles-card").hidden === true &&
     byId.get("fields-card").hidden === true &&
-    byId.get("log-card").hidden === true);
+    byId.get("log-card").hidden === true &&
+    byId.get("departed-card").hidden === true);
 
   byId.get("tab-fields").dispatch("click");
   check("clicking a tab shows its own panel and hides every other one, " +
@@ -786,6 +853,7 @@ const BASE_ROUTES = {
     byId.get("settings-card").hidden === true &&
     byId.get("roles-card").hidden === true &&
     byId.get("log-card").hidden === true &&
+    byId.get("departed-card").hidden === true &&
     byId.get("tab-fields").getAttribute("aria-selected") === "true" &&
     byId.get("tab-settings").getAttribute("aria-selected") === "false");
 
@@ -795,6 +863,17 @@ const BASE_ROUTES = {
     byId.get("fields-card").hidden === true &&
     byId.get("tab-log").getAttribute("aria-selected") === "true" &&
     byId.get("tab-fields").getAttribute("aria-selected") === "false");
+
+  byId.get("tab-departed").dispatch("click");
+  check("the fifth tab, Departed, shows its own panel and hides the rest " +
+    "(#385 item (b), #454 item 20 - a fifth tab, not a stacked card)",
+    byId.get("departed-card").hidden === false &&
+    byId.get("log-card").hidden === true &&
+    byId.get("settings-card").hidden === true &&
+    byId.get("roles-card").hidden === true &&
+    byId.get("fields-card").hidden === true &&
+    byId.get("tab-departed").getAttribute("aria-selected") === "true" &&
+    byId.get("tab-log").getAttribute("aria-selected") === "false");
 }
 
 /* -- Settings: load, per-field validation, per-field save -- */
@@ -1856,6 +1935,276 @@ check("Fields never fetches per-member counts - no /charts-data call " +
     /No changes yet/.test(byId.get("log-list").textContent));
 }
 
+/* -- Departed: three sections in order, the empty state, confirm IN     */
+/* PLACE, refusals rendered as the Worker states them, the re-read after */
+/* a result, 20-then-more, and no handle/no numeric id anywhere (#420;   */
+/* #385 rule 4; #454 items 8-10/13/20). -- */
+
+// Finds the row-block whose display name matches - not a fixed child
+// index, the same reason the Fields card's own confirm tests already
+// use buttonByText/findAll: dangerousAction() nests a second
+// "stack-tight" (the hidden confirm) inside the row's own "stack-tight",
+// and a bare index would be brittle and hard to read either way. The
+// predicate on `children[0].children[0]` is what tells the two apart -
+// the confirm block's own first child is a <p>, with no children of its
+// own under this stub, so it never matches.
+function departedRowByLabel(list, label) {
+  return findAll(list, (n) => n.className === "stack-tight" &&
+    n.children[0] && n.children[0].children &&
+    n.children[0].children[0] &&
+    n.children[0].children[0].textContent === label)[0];
+}
+
+{
+  const DEPARTED_LIST = { ok: true,
+    departed: [{ accountId: "d1", label: "Departed One",
+      lastSeenAt: "2026-07-01T00:00:00.000Z", status: "left" }],
+    unknown: [{ accountId: "u1", label: null,
+      lastSeenAt: "2026-07-02T00:00:00.000Z",
+      reason: "unknown until next sign-in" }],
+    allowed: [{ accountId: "l1", label: "Allowed One",
+      lastSeenAt: "2026-07-03T00:00:00.000Z",
+      reason: "allowed by the operator's list - remove it there first" }] };
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok(DEPARTED_LIST),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const list = byId.get("departed-list");
+  check("the three sections render in the ticket's own order - departed, " +
+    "then unknown, then allowed - as headings this card writes itself",
+    list.children[0].tag === "h2" && list.children[0].textContent ===
+      "Departed" &&
+    list.children[2].tag === "h2" && list.children[2].textContent ===
+      "Unknown" &&
+    list.children[4].tag === "h2" && list.children[4].textContent ===
+      "Allowed");
+  check("a departed row shows the membership label and last seen (item " +
+    "13)",
+    list.children[1].children[0].children[0].textContent ===
+      "Departed One" &&
+    /last seen 2026-07-01/.test(
+      list.children[1].children[0].children[1].textContent));
+  check("an unknown row with no label falls back to the short id, and " +
+    "states its own reason in the Worker's own words",
+    list.children[3].children[0].children[0].textContent === "u1…" &&
+    /unknown until next sign-in/.test(
+      list.children[3].children[0].children[1].textContent));
+  check("an allowed row states the operator's-list sentence exactly as " +
+    "the Worker sent it",
+    list.children[5].children[0].children[0].textContent ===
+      "Allowed One" &&
+    /allowed by the operator's list - remove it there first/.test(
+      list.children[5].children[0].children[1].textContent));
+  check("every row carries wrap-row/wrap-row-value (#433 F1's " +
+    "convention, named in this ticket's own scope) - the display name " +
+    "is the unbounded run",
+    list.children[1].children[0].className === "row wrap-row" &&
+    list.children[1].children[0].children[0].className ===
+      "wrap-row-value");
+}
+
+{
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok(DEPARTED_EMPTY),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  check("the empty state says so in the ticket's own words (item 10), " +
+    "nothing else drawn",
+    byId.get("departed-list").textContent ===
+      "Nobody has left - nothing to clean up.");
+}
+
+{
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true,
+      departed: [{ accountId: "d1", label: null,
+        lastSeenAt: "2026-07-01T00:00:00.000Z",
+        // A stub carrying both a handle and a numeric id - #385 rule 1
+        // says the page must render neither, so this proves it from the
+        // answer side rather than only from the Worker's own contract.
+        handle: "@realname", telegramId: "123456789" }],
+      unknown: [], allowed: [] }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  check("a stub carrying a handle and a numeric id renders neither " +
+    "(#385 rule 1) - departedName/departedRow read only accountId, " +
+    "label, lastSeenAt and reason",
+    !/@realname/.test(byId.get("departed-list").textContent) &&
+    !/123456789/.test(byId.get("departed-list").textContent));
+}
+
+{
+  // 20-then-more (item 13) over ONE list - 25 departed rows, no
+  // unknown/allowed, so this is the plainest arm of the pagination.
+  const many = Array.from({ length: 25 }, (_unused, i) => ({
+    accountId: "d" + i, label: "Member " + i,
+    lastSeenAt: "2026-07-01T00:00:00.000Z" }));
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true, departed: many,
+      unknown: [], allowed: [] }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const list = byId.get("departed-list");
+  check("the newest 20 render with a More button when there are more " +
+    "(item 13) - one heading, 20 rows, one More button",
+    list.children.length === 22 &&
+    list.children[0].tag === "h2" &&
+    buttonByText(list, "More") !== undefined);
+  buttonByText(list, "More").dispatch("click");
+  check("More reveals every remaining row, and the button is gone once " +
+    "everything shows",
+    list.children.length === 26 && buttonByText(list, "More") === undefined);
+}
+
+{
+  // Confirm IN PLACE (item 9): Remove reveals the sentence, Cancel sends
+  // nothing, and a DELETE goes out only after Yes - never before it.
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true,
+      departed: [{ accountId: "d1", label: "Rejoined",
+        lastSeenAt: "2026-07-01T00:00:00.000Z" }],
+      unknown: [], allowed: [] }),
+    "DELETE /admin-departed/d1": () => ok({ ok: true,
+      removed: { submissions: 1, directory: 1, membership: 0,
+        sessions: 1 } }),
+  });
+  const { byId, calls } = await driven(routes, { isAdmin: true });
+  const row = departedRowByLabel(byId.get("departed-list"), "Rejoined");
+  const remove = buttonByText(row, "Remove");
+  check("the confirm sentence is hidden until Remove is pressed",
+    row.children[2].hidden === true);
+  remove.dispatch("click");
+  check("pressing Remove reveals the real sentence - naming the four row " +
+    "classes, since the landed Worker route offers no dry-run count " +
+    "(item 9's own fallback)",
+    row.children[2].hidden === false &&
+    row.children[2].textContent.includes(
+      Admin.eraseDepartedSentence("Rejoined")));
+  check("no DELETE is sent before Yes is pressed",
+    calls.filter((c) => c.method === "DELETE").length === 0);
+  buttonByText(row.children[2], "Cancel").dispatch("click");
+  check("Cancel hides the confirm and sends nothing",
+    row.children[2].hidden === true &&
+    calls.filter((c) => c.method === "DELETE").length === 0);
+
+  remove.dispatch("click");
+  buttonByText(row.children[2], "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("Yes, and only Yes, sends the DELETE - exactly once, for the " +
+    "right account",
+    calls.filter((c) => c.method === "DELETE" &&
+      c.path === "/admin-departed/d1").length === 1);
+  check("a genuine erase toasts Removed.",
+    byId.get("toast").textContent === "Removed.");
+}
+
+{
+  // Each refusal rendered exactly as the Worker states it - current
+  // member (its own re-check at erase time, never this stale list),
+  // unknown, and allowed - the three DELETE refusal shapes S15's own
+  // completion on #420 documents.
+  const CURRENT_MEMBER_MSG = "Telegram says that account is still in the " +
+    "group (“left”), so nothing was erased.";
+  const UNKNOWN_MSG = "That member's departure could not be confirmed - " +
+    "unknown until next sign-in. Nothing was erased.";
+  const ALLOWED_MSG = "That account is allowed by the operator's list - " +
+    "remove it there first. Telegram was never asked about it, so " +
+    "nothing was erased.";
+  let getCalls = 0;
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => {
+      getCalls += 1;
+      return ok({ ok: true,
+        departed: [{ accountId: "d1", label: "Rejoined",
+          lastSeenAt: "2026-07-01T00:00:00.000Z" }],
+        unknown: [{ accountId: "u1", label: "Quiet",
+          lastSeenAt: "2026-07-02T00:00:00.000Z",
+          reason: "unknown until next sign-in" }],
+        allowed: [{ accountId: "l1", label: "Kept",
+          lastSeenAt: "2026-07-03T00:00:00.000Z",
+          reason: "allowed by the operator's list - remove it there " +
+            "first" }] });
+    },
+    "DELETE /admin-departed/d1": () =>
+      refused(409, { error: CURRENT_MEMBER_MSG }),
+    "DELETE /admin-departed/u1": () => refused(409, { error: UNKNOWN_MSG }),
+    "DELETE /admin-departed/l1": () => refused(409, { error: ALLOWED_MSG }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+
+  const d1 = departedRowByLabel(byId.get("departed-list"), "Rejoined");
+  buttonByText(d1, "Remove").dispatch("click");
+  buttonByText(d1.children[2], "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("a current-member refusal shows the Worker's exact words, " +
+    "verbatim - never rewrapped with the other cards' own \"Nothing " +
+    "changed\" tail",
+    byId.get("toast").textContent === CURRENT_MEMBER_MSG);
+  check("the list re-reads after a refusal too, not only after success",
+    getCalls === 2);
+
+  const u1 = departedRowByLabel(byId.get("departed-list"), "Quiet");
+  buttonByText(u1, "Remove").dispatch("click");
+  buttonByText(u1.children[2], "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("an unknown-reason refusal shows the Worker's own reason",
+    byId.get("toast").textContent === UNKNOWN_MSG);
+
+  const l1 = departedRowByLabel(byId.get("departed-list"), "Kept");
+  buttonByText(l1, "Remove").dispatch("click");
+  buttonByText(l1.children[2], "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("an allowed-by-the-operator's-list refusal shows the Worker's " +
+    "own sentence, exactly",
+    byId.get("toast").textContent === ALLOWED_MSG);
+  check("three refusals, three re-reads",
+    getCalls === 4);
+}
+
+{
+  // A mutating stub (the same shape this file's own Fields section uses
+  // for "the read is real, not remembered") - proves the re-read is a
+  // REAL read reflecting the erase, not a call count alone.
+  let remaining = [{ accountId: "gone", label: "Gone Soon",
+    lastSeenAt: "2026-07-01T00:00:00.000Z" }];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true, departed: remaining,
+      unknown: [], allowed: [] }),
+    "DELETE /admin-departed/gone": () => {
+      remaining = [];
+      return ok({ ok: true, removed: { submissions: 1, directory: 1,
+        membership: 0, sessions: 1 } });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  check("before erasing: the row is there",
+    /Gone Soon/.test(byId.get("departed-list").textContent));
+  const row = departedRowByLabel(byId.get("departed-list"), "Gone Soon");
+  buttonByText(row, "Remove").dispatch("click");
+  buttonByText(row.children[2], "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("the re-read reflects the erase - the row is gone and the empty " +
+    "state shows",
+    byId.get("departed-list").textContent ===
+      "Nobody has left - nothing to clean up.");
+}
+
+{
+  const HOSTILE = "<img src=x onerror=alert(1)>";
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true,
+      departed: [{ accountId: "h1", label: HOSTILE,
+        lastSeenAt: "2026-07-01T00:00:00.000Z" }],
+      unknown: [], allowed: [] }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const nameSpan = byId.get("departed-list").children[1].children[0]
+    .children[0];
+  check("a hostile membership label renders as literal text on the " +
+    "Departed card too - textContent, never innerHTML",
+    nameSpan.textContent === HOSTILE && nameSpan._text.includes("<img"));
+}
+
 /* -- Render-only: a hostile string lands as inert text everywhere this  */
 /* page draws server-authored content. -- */
 
@@ -1919,7 +2268,7 @@ check("no download/export id survives in the real shipped markup - the " +
 // tests/charts-page.test.mjs and dev/xlsx.test.mjs both hold to: the
 // checks that ran are the whole claim this file makes, and a reader
 // loop that silently ran fewer of them would still print "OK".
-const EXPECTED = 171;
+const EXPECTED = 203;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
