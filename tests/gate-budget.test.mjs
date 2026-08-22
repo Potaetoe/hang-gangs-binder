@@ -240,8 +240,12 @@ let pool1Wall;
         + "the one that failed",
         order.every((index) => index >= 0)
           && order[0] < order[1] && order[1] < order[2]);
-  check("beta's own FAILED report names its exit code",
-        /tests\/beta\.test\.mjs\s+FAILED\s+exit 1/.test(result.output));
+  check("beta's own result line says FAILED, not ok",
+        /tests\/beta\.test\.mjs\s+FAILED\s+[\d.]+s/.test(result.output));
+  check("the spilled block below it names beta's own exit code - a "
+        + "SEPARATE line from the result line above, report() and "
+        + "spill() being two different prints in tests/run.mjs",
+        /--- tests\/beta\.test\.mjs, exit 1 -+/.test(result.output));
   check("beta's own printed line survives into the spilled output - "
         + "captured whole, not dropped for the arm that failed",
         result.output.includes("beta NOT OK"));
@@ -261,7 +265,7 @@ let pool1Wall;
 /* ------------------------------------------------------------------ */
 for (const root of roots) await rm(root, { recursive: true, force: true });
 
-const EXPECTED = 24;
+const EXPECTED = 25;
 console.log(failures
   ? `\ngate-budget FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
