@@ -96,10 +96,17 @@ performed = 0
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all. 221 before 0.9-M3-S35 (#460); the four added there
 # prove the mainline-resolution cache in tools/reaper.py never survives
-# past the plan() call that made it - the suite's own count is not
-# permitted to drop below 221 by that slice's own floor, and this is
-# the direction it moved instead.
-EXPECTED = 225
+# past the plan() call that made it. F2 fix wave 1 (#460, review comment
+# 5379811881) added three more: the original four could not tell a
+# per-call cache from a permanent one (they moved a mainline's TIP,
+# which ancestry() always resolves live regardless of caching), so this
+# wave adds the scenario that actually can - a mainline CREATED between
+# two calls - proven both at head (correct) and under a simulated
+# permanent module-level cache (wrong, but still safe: see the check
+# text). 221, then 225, then 228 - the suite's own count is not
+# permitted to drop, only to grow, and this is the direction it kept
+# moving.
+EXPECTED = 228
 
 
 def check(label, condition):
@@ -1734,10 +1741,20 @@ try:
     # later section of this suite makes about the shared machine's
     # mainline tip. reaper.plan()'s mainline resolution is now cached
     # for the DURATION of one call (resolved_mainlines(), tools/
-    # reaper.py) rather than asked fresh per candidate - this is the arm
-    # that a second, SEPARATE call still sees a tip that moved between
-    # the two, which is the property the caching was only safe to add
-    # once this was proven.
+    # reaper.py) rather than asked fresh per candidate.
+    #
+    # F2 fix wave 1 (#460, review comment 5379811881): this scenario -
+    # `accounts` already exists and only its TIP moves between the two
+    # calls - passes IDENTICALLY under a real per-call cache and under a
+    # PERMANENT one, because ancestry() hands git the mainline's LABEL,
+    # not the sha `resolved` cached beside it, and git re-resolves a
+    # label to its current tip on every call regardless of when
+    # `resolved_mainlines()` itself last ran (see ancestry()'s own
+    # docstring). It is kept below because it is still a real, true
+    # property - a moved tip is always caught - but it does NOT prove
+    # the cache is per-call. The section further down, "the SET OF
+    # MAINLINES a call can see", is the one built to actually
+    # distinguish the two.
     cache_root = os.path.join(root, "mainline-cache-check")
     os.makedirs(cache_root)
     git(cache_root, "init", "-b", "accounts")
@@ -1784,6 +1801,108 @@ try:
           after is not None
           and any("is an ancestor of accounts" in proof.said
                   for proof in after["proofs"]))
+
+    print("\n--- F2 fix wave 1 (#460, review comment 5379811881): "
+          "the SET OF MAINLINES a call can see is what makes the cache "
+          "per-call, not the tip of one that already existed ---")
+
+    # The scenario above cannot tell a per-call cache from a permanent
+    # one, because `accounts` exists at BOTH calls and ancestry() asks
+    # git about it live either way (see resolved_mainlines()'s own
+    # docstring, amended in this fix wave). What a permanent cache WOULD
+    # get wrong is a mainline that does not exist yet at the first call -
+    # its label is simply absent from `resolved`, so ancestry() never
+    # even tries it, no matter how fresh a SECOND call's own `resolved`
+    # would have been. This reproduces the reviewer's own probe-verified
+    # scenario: start with NO `accounts` branch at all, prove the branch
+    # is reported, THEN create `accounts` for the first time at the
+    # branch's own tip (a landing that makes this branch the new
+    # accounts, the simplest way a mainline someone is watching becomes
+    # ancestor-eligible), and prove a fresh call reaps it.
+    scope_count = [0]
+
+    def mainline_creation_scenario():
+        """(verdict before accounts exists, verdict after it is created)
+        for a branch merged into a mainline that did not exist at the
+        first plan() call - the property a PERMANENT cache cannot see,
+        because its first call's resolution never had that label to
+        offer a later ancestry test."""
+        scope_root = os.path.join(root, "mainline-scope-check-%d"
+                                  % scope_count[0])
+        scope_count[0] += 1
+        os.makedirs(scope_root)
+        git(scope_root, "init", "-b", "main")
+        write(os.path.join(scope_root, "one.txt"), "one\n")
+        git(scope_root, "add", "-A")
+        git(scope_root, "commit", "-m", "first")
+
+        git(scope_root, "checkout", "-b", "not-yet-landed")
+        write(os.path.join(scope_root, "two.txt"), "two\n")
+        git(scope_root, "add", "-A")
+        git(scope_root, "commit", "-m", "unlanded work")
+        tip = sha(scope_root, "not-yet-landed")
+        git(scope_root, "checkout", "main")
+
+        scope_state = os.path.join(scope_root, "state-unused")
+        scope_roots = [os.path.join(scope_root, "no-worktrees-here")]
+
+        before_item = find(reaper.plan(scope_root, scope_state,
+                                       scope_roots),
+                          "merged branch", "not-yet-landed")
+
+        # `accounts` is created here for the FIRST TIME, at the branch's
+        # own tip - there was no "accounts" entry for a permanent cache
+        # to have carried forward from the first call, because there was
+        # no "accounts" at all when that call ran.
+        git(scope_root, "branch", "accounts", tip)
+
+        after_item = find(reaper.plan(scope_root, scope_state,
+                                      scope_roots),
+                         "merged branch", "not-yet-landed")
+        return verdict(before_item), verdict(after_item)
+
+    before_live, after_live = mainline_creation_scenario()
+    check("AT HEAD (real per-call resolution): before accounts exists "
+          "at all, the branch is reported, not reaped",
+          before_live == "report")
+    check("AT HEAD: a FRESH plan() call resolves mainlines again and "
+          "sees the brand-new accounts branch - the same branch is now "
+          "reap-eligible", after_live == "reap")
+
+    # The differential half. `reaper.resolved_mainlines` is replaced with
+    # a PERMANENT, process-lifetime memo keyed by repo path - exactly the
+    # module-level cache Prime's ruling forbids ("never cached across
+    # calls or processes... no module-level state") - and the SAME
+    # scenario is run again. A real per-call cache and this mutation must
+    # now disagree, or this arm proves nothing about which one shipped.
+    real_resolved_mainlines = reaper.resolved_mainlines
+    permanent_memo = {}
+
+    def permanently_cached(repo):
+        if repo not in permanent_memo:
+            permanent_memo[repo] = real_resolved_mainlines(repo)
+        return permanent_memo[repo]
+
+    reaper.resolved_mainlines = permanently_cached
+    try:
+        before_mutated, after_mutated = mainline_creation_scenario()
+    finally:
+        reaper.resolved_mainlines = real_resolved_mainlines
+
+    check("MUTATION: under a PERMANENT module-level cache, the first "
+          "call's resolution (no accounts label at all) is frozen and "
+          "reused - the newly created accounts branch stays invisible "
+          "to the second call, so the branch is reported forever, never "
+          "reaped, which is WRONG (it should be reap-eligible the "
+          "moment accounts exists) but SAFE (report is the direction "
+          "that never deletes anything - 'stale never reaps' holds "
+          "either way)",
+          before_mutated == "report" and after_mutated == "report")
+    print("    at head (per-call, correct):        before=%s after=%s"
+          % (before_live, after_live))
+    print("    under a permanent module-level cache (the regression "
+          "this arm exists to catch): before=%s after=%s"
+          % (before_mutated, after_mutated))
 
 finally:
     agent_init.rmtree_hard(root)

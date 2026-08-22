@@ -577,6 +577,25 @@ def resolved_mainlines(repo):
     repository has" that followed was this filter, not a real absence.
     Splitting each label on its last slash reads the bare name back out
     of either shape.
+
+    WHAT IS ACTUALLY CACHED, PLAINLY STATED (F2 fix wave 1, #460, review
+    comment 5379811881): the pair this returns is `[(label, sha), ...]`,
+    and `ancestry()` (below) discards the `sha` half - it iterates the
+    LABELS and asks git to check ancestry against each label live, every
+    time, because git resolves a label ref to whatever it currently
+    points at. So the cached `sha` reaches no delete decision anywhere in
+    this file; grep confirms every reader of a `(label, sha)` pair either
+    iterates `label` alone (`ancestry()`) or prints `sha` for a human
+    (`render()`'s display line) and nothing in between. What the cache
+    DOES decide is the SET of labels a candidate is even tested against -
+    whether `accounts` exists as a mainline AT ALL for this call, which a
+    fresh `mainlines()` call could answer differently from the LAST call
+    if a mainline was created or deleted meanwhile. That is exactly the
+    per-call boundary this cache has to respect, and it is what
+    tools/reaper_suite.py's "the SET OF MAINLINES a call can see"
+    section (added in the same fix wave) actually arms - not a moved
+    TIP, which `ancestry()`'s live label resolution already handles
+    correctly however this cache behaves.
     """
     debris = mainlines(repo, DEBRIS_MAINLINES)
     slice_names = set(SLICE_MAINLINES)
@@ -600,6 +619,16 @@ def ancestry(repo, sha, names, resolved=None):
     here exactly as it always did - every caller that wants a live
     answer (act()'s own re-verification chief among them) keeps that by
     simply not passing one.
+
+    THE `sha` HALF OF `resolved`'S PAIRS IS NEVER READ HERE (F2 fix wave
+    1, #460) - `is_ancestor()` is asked about `label`, a ref name git
+    re-resolves to its CURRENT tip on every call, never about a
+    remembered sha. So a mainline's tip moving between two calls is
+    always caught correctly, cache or no cache - this is the "stale
+    never reaps" property, and it holds regardless of how long `resolved`
+    survives. What a stale `resolved` CAN get wrong is only whether
+    `label` is offered as a candidate to test AT ALL - see
+    `resolved_mainlines()`'s own docstring.
     """
     found = resolved if resolved is not None else mainlines(repo, names)
     for label, _ in found:
