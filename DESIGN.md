@@ -184,10 +184,15 @@ record's ruled property that a raw dump reveals nothing, because a
 clear-text roster is the oracle by a shorter route than any hash of a
 handle would be.
 
-**The numeric id is stored in exactly one place: inside the sealed
-directory record** (owner ruling, 2026-08-21, at the departed-member
-cleanup slice). This narrows a rule that used to read as "the numeric
-id is stored nowhere", and it was put to the owner as a decision rather
+**The numeric id is stored in exactly one place in this database:
+inside the sealed directory record** (owner ruling, 2026-08-21, at the
+departed-member cleanup slice). "In this database" is the whole of the
+scope and is not a hedge: `ADMIN_TELEGRAM_IDS` and
+`ALWAYS_ALLOW_TELEGRAM_IDS` are deployment secrets that hold numeric
+ids and always have, and a rule that read wider than the tables would
+be false the day anybody checked it. This narrows a rule that used to
+read as "the numeric id is stored nowhere", and it was put to the owner
+as a decision rather
 than taken as an implementation detail, because the two sides of it are
 both real. What forced it: admins may erase a **departed** member's
 rows, only the bot may say who is departed, and `getChatMember` takes a

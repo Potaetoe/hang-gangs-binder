@@ -1288,16 +1288,18 @@ async function membershipAccountIds(env, role) {
  *
  * `status` IS THE GROUP ROLE FROM THIS SIGN-IN and never a stored one.
  * It is null everywhere except inside handleTelegramAuth, which is the
- * only place a numeric id is in hand DURING A REQUEST - see
- * groupStanding(). So the 'telegram' arm is unreachable on any later
- * request, which is exactly why sessionFor() has to read that one from
- * the session row.
+ * only place a numeric id REACHES THIS DECISION - see groupStanding().
+ * So the 'telegram' arm is unreachable on any later request, which is
+ * exactly why sessionFor() has to read that one from the session row.
  *
- * A sealed numeric id does exist in the directory record since
- * 0.9-M3-S15 (#420), and it does not reach this function: unsealing it
- * per request to re-ask the group role is the per-request re-check the
- * design has declined twice, and departedVerdict() is the one reader
- * the owner's ruling attached to that field.
+ * Reaching this decision is a narrower claim than being in hand, and
+ * the difference is deliberate: since 0.9-M3-S15 (#420) a sealed
+ * numeric id exists in the directory record, and departedVerdict()
+ * holds one during a request on both /admin-departed routes. Neither
+ * reaches this function. Unsealing that id per request to re-ask the
+ * group role is the per-request re-check the design has declined twice,
+ * and departedVerdict() is the one reader the owner's ruling attached
+ * to that field.
  */
 async function adminVia(env, accountId, status) {
   if (typeof status === "string" && GROUP_ADMIN_STATUSES.includes(status)) {
@@ -2191,7 +2193,9 @@ async function handleTelegramAuth(request, env, origin) {
         .join(" "),
       role: isAdmin ? "admin" : "member",
       // The numeric id, sealed and never stored beside the row. It is
-      // written HERE because this is the only place it exists at all -
+      // written HERE because a verified sign-in is the only place it
+      // arrives from outside this Worker; after this it exists only
+      // inside the sealed record, where departedVerdict() unseals it -
       // see syncDirectoryEntry's own comment for what it is for and
       // what may read it.
       telegramId: String(user.id),
@@ -4898,6 +4902,15 @@ async function route(request, env, url, allowed, admitted) {
  * for everywhere else in this repository, applied here for the first
  * time because this is the first piece of server/worker.js's own logic
  * simple enough to have one.
+ *
+ * eraseAccount IS IRREVERSIBLE and is exported anyway (0.9-M3-S15,
+ * #420), so the reason it is safe is written here rather than assumed:
+ * the runtime reaches this module only through the default export's
+ * fetch(), which never calls a named export, and nothing else in the
+ * deployed Worker imports this file at all. What the export buys is a
+ * proof that could not otherwise be real - the two-member byte-identity
+ * arm aims at the transaction itself, because a route-level proof can
+ * always be hollowed out by a refusal that fires before the erase.
  */
 export { isApiPath, API_SEGMENTS, rowIdentity, syncDirectoryEntry,
          DIRECTORY_SLOT, eraseAccount };
