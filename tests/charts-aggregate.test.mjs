@@ -72,6 +72,15 @@
  *      raised floor LOCKS the answer to one system, so no group is ever
  *      sliced two ways while suppression is doing work. No data-derived
  *      edge anywhere; no-store.
+ *
+ * COMBINED FILTERS (section 10, 0.9-M3-S24, #438) are the chips the
+ * owner ruled at #384, and they add no seventh mandate. They are armed
+ * as the same six over fewer people: the population is an intersection,
+ * mandate 5's echo becomes a list of the caller's own predicates and
+ * still enumerates nothing, and mandate 4's one-shape rule does the work
+ * it was written for - above a floor of 0, a combination matching ONE
+ * member and a combination matching nobody come back as the same
+ * document, so the response cannot say which value made the view narrow.
  */
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
@@ -557,8 +566,7 @@ check("floor 0: the empty answer carries no count anywhere - the floor " +
   everyNumber(emptyView)[0] === SHIPPED_FLOOR);
 check("floor 0: an empty corpus answers the same document",
   JSON.stringify(atShippedFloor([], "measure=weight")) ===
-    JSON.stringify(Object.assign({}, emptyView,
-      { filter: { field: null, value: null } })));
+    JSON.stringify(Object.assign({}, emptyView, { filters: [] })));
 
 /* A measure nobody in the view answered is the other honest nothing: a
    BMI needs a height, so a corpus of weights alone draws no BMI. */
@@ -1339,15 +1347,18 @@ check("floor 5: a sub-floor answer carries no count anywhere in it - " +
   everyNumber(belowFloor)[0] === RAISED);
 
 /* Mandate 4: a filter nobody holds and a filter too few hold are one
-   shape. The echoed value is the caller's own and is the one field
-   allowed to differ, so it is blanked for the comparison. */
+   shape. The echoed predicates are the caller's own and are the one
+   field allowed to differ, so they are blanked for the comparison.
+   Section 10d runs this same instrument over combined filters, where
+   the two cases are an intersection of one and an intersection of
+   nobody. */
 const holders = evenGroup(RAISED - 1);
 const nobody = atRaisedFloor(holders,
   "measure=weight&filter=country&value=JP");
 const tooFew = atRaisedFloor(holders,
   "measure=weight&filter=country&value=US");
 const blanked = (answer) =>
-  JSON.stringify(Object.assign({}, answer, { filter: null }));
+  JSON.stringify(Object.assign({}, answer, { filters: null }));
 check("floor 5: a filter value nobody holds and a filter value too few " +
   "hold answer the same document (mandate 4)",
   blanked(nobody) === blanked(tooFew) && nobody.enough === false);
@@ -1735,15 +1746,33 @@ function makeDb(content) {
           })),
       };
     }
-    /* The charts settings, read from `site_content` since 0.9-M3-S8
-       (#414): the floor and the locked unit are two rows an admin sets
-       rather than a frozen constant in server/worker.js. A database
-       built with no rows runs at the shipped floor of 0, which is the
-       state section 9 was written against; section 10e builds one
-       holding a real `chart.floor` row. tests/admin-identity.test.mjs
-       drives the same route with rows really set too. */
+    /*
+     * `site_content`, and TWO different statements read it - which is
+     * the whole reason this branch discriminates rather than answering
+     * both (0.9-M3-S24 hit it: a stub handing every site_content read
+     * the same rows fed `chart.floor` to the field-spec reader, which
+     * correctly threw on a name outside its namespace and turned every
+     * arm below into a 500).
+     *
+     *   name LIKE ?     the effective spec's field overlay
+     *                   (FIELD_ROWS_SQL), whose reader REFUSES a row
+     *                   outside the `FIELD.` namespace.
+     *   name IN (?, ?)  the charts settings since 0.9-M3-S8 (#414) -
+     *                   the floor and the locked unit, two rows an
+     *                   admin sets rather than a frozen constant.
+     *
+     * Modelled by the namespace rather than by which statement asked,
+     * so the split here is D1's own answer and not a guess about call
+     * order. A database built with no rows runs at the shipped floor of
+     * 0 with the shipped spec, which is the state section 9 was written
+     * against; section 10e builds one holding a real `chart.floor` row.
+     */
     if (/FROM site_content/i.test(sql)) {
-      return { results: (content || []).map((one) => Object.assign({}, one)) };
+      const held = (content || []).map((one) => Object.assign({}, one));
+      const fieldRow = (one) => one.name.toLowerCase().startsWith("field.");
+      return { results: /LIKE/i.test(sql)
+        ? held.filter(fieldRow)
+        : held.filter((one) => !fieldRow(one)) };
     }
     throw new Error("unmodelled all(): " + sql);
   }
@@ -1912,8 +1941,9 @@ const echoed = await call("GET",
   { token: TOKENS[0] });
 check("route: the filter echoes back exactly the caller's own value " +
   "(mandate 5)",
-  echoed.status === 200 && echoed.body.filter.field === "country" &&
-  echoed.body.filter.value === "JP");
+  echoed.status === 200 && echoed.body.filters.length === 1 &&
+  echoed.body.filters[0].field === "country" &&
+  echoed.body.filters[0].value === "JP");
 check("route: a filter value nobody holds answers the honest empty " +
   "document (ruling 7)",
   echoed.body.enough === false && echoed.body.distribution === null &&
@@ -1923,11 +1953,14 @@ check("route: that empty answer names no value the group actually " +
 /* The echo's SHAPE is the enumeration guard, because the leak this
    mandate names would arrive as a helpful third field - the values on
    offer, the values in the group - rather than as a wrong value in the
-   two that belong. Exactly two keys, so anything added is a red. */
+   two that belong. Exactly two keys per predicate, so anything added is
+   a red, and the guard is asked of EVERY entry rather than of the first
+   (#438: the list is where a per-entry extra would now hide). */
 check("route: the filter echo carries the caller's own field and value " +
   "and nothing beside them (mandate 5)",
-  JSON.stringify(Object.keys(echoed.body.filter)) ===
-    JSON.stringify(["field", "value"]));
+  echoed.body.filters.every((one) =>
+    JSON.stringify(Object.keys(one)) ===
+      JSON.stringify(["field", "value"])));
 
 const badValue = await call("GET",
   "/charts-data?measure=weight&filter=country&value=not-a-country",
@@ -2573,7 +2606,7 @@ check("route: that suppressed answer still echoes the caller's own two " +
     .join(",") === String(RAISED));
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 189;
+const EXPECTED = 237;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
