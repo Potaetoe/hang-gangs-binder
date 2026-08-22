@@ -79,7 +79,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 146
+EXPECTED = 166
 
 
 def check(label, condition):
@@ -553,6 +553,25 @@ try:
           taken is None)
     check("and it names the holders and the remedy",
           others[0] in why and "agent-park" in why)
+
+    # F1, F5 (#448 review of #441, comment 5377511579): #441 scope item 2
+    # names worktree, BRANCH and leased_at as the three facts the
+    # refusal must print - the shipped message printed only two of the
+    # three, and the only arm behind it (the one just above) only ever
+    # asked about the worktree and the remedy, so a mutation dropping
+    # leased_at (or branch, which was never printed at all) passed the
+    # suite. others[0] was leased with branch "slice-1" (the first
+    # worktree of the "others" loop above, on PORT_BLOCKS[1]); its real
+    # leased_at is read back off disk rather than guessed, so this arm
+    # fails if the two strings ever drift apart.
+    others0_lease = agent_init.read_json(
+        agent_init.lease_path(agent_init.PORT_BLOCKS[1], lease_state))
+    check("and it names the branch too - the third fact item 2 promised "
+          "(F1, #448 review of #441)",
+          "slice-1" in why)
+    check("and it names the real leased_at time, not just the fact that "
+          "one exists (F5, #448 review of #441)",
+          others0_lease["leased_at"] in why)
 
     shutil.rmtree(others[0])
     taken, why = agent_init.take_lease(full, "slice-late", lease_state)
@@ -1274,6 +1293,237 @@ try:
           "lands on the next one instead, rather than crashing the "
           "whole allocation",
           raised is None and block == agent_init.PORT_BLOCKS[1])
+
+    # ------------------------------------------------------------------
+    # K. Follow-ups from #441's own review (comment 5377511579, #448):
+    # F2 - a PERSISTENT PermissionError on the create is reported as a
+    # denial, never invented as a hold; F3 - the same Windows delete
+    # race is closed at release_lease and hand_over, not just at the
+    # create; F4 - the first six blocks and PRIMARY_BLOCK are pinned so
+    # they cannot drift silently; F6 - the create's catch is specific,
+    # never a blanket except Exception:.
+    # ------------------------------------------------------------------
+    print("\n--- F2 (#448 review of #441, comment 5377511579): a "
+          "PERSISTENT PermissionError on the exclusive create is "
+          "reported as a denial, never invented as a hold ---")
+    f2_state = os.path.join(base, "f2-persistent-denial")
+    f2_repo = os.path.join(base, "f2-asker")
+    os.makedirs(f2_repo, exist_ok=True)
+    real_open_f2 = os.open
+    f2_calls = {"n": 0}
+
+    def always_denied_open(target, flags, *a, **kw):
+        if agent_init.leases_dir(f2_state) in target:
+            f2_calls["n"] += 1
+            raise PermissionError(5, "Access is denied (injected, F2, "
+                                     "#448)")
+        return real_open_f2(target, flags, *a, **kw)
+
+    os.open = always_denied_open
+    try:
+        taken_f2, why_f2 = agent_init.take_lease(f2_repo, "slice-f2",
+                                                  f2_state)
+    finally:
+        os.open = real_open_f2
+    check("a full pool of persistent denials is still a refusal, not a "
+          "crash (F2, #448 review of #441)",
+          taken_f2 is None)
+    check("the exclusive create was tried once per block, not looped - "
+          "bounded",
+          f2_calls["n"] == len(agent_init.PORT_BLOCKS))
+    check("and NO block is reported as held by an invented holder",
+          "unnamed worktree" not in why_f2)
+    check("it is reported as a filesystem denial, naming the real "
+          "count and the injected error itself",
+          ("refused the create %d time(s)" % len(agent_init.PORT_BLOCKS))
+          in why_f2 and "injected, F2, #448" in why_f2)
+
+    print("\n--- F3 (#448 review of #441, comment 5377511579): the same "
+          "Windows delete race is closed at release_lease's and "
+          "hand_over's os.remove, not just take_lease's create ---")
+    check("agent_init exposes remove_lease_file and its retry bound",
+          hasattr(agent_init, "remove_lease_file")
+          and hasattr(agent_init, "LEASE_DELETE_ATTEMPTS"))
+
+    f3_state = os.path.join(base, "f3-delete-race")
+    f3_block = agent_init.PORT_BLOCKS[0]
+    f3_repo = os.path.join(base, "f3-holder")
+    os.makedirs(f3_repo, exist_ok=True)
+    f3_path = agent_init.lease_path(f3_block, f3_state)
+    agent_init.write_lease(f3_path, os.path.abspath(f3_repo), "slice-f3",
+                           f3_block)
+
+    real_remove = os.remove
+    transient_calls = {"n": 0}
+
+    def flaky_remove(target, *a, **kw):
+        if target == f3_path and transient_calls["n"] < 2:
+            transient_calls["n"] += 1
+            raise PermissionError(32, "used by another process "
+                                      "(injected, F3, #448)")
+        return real_remove(target, *a, **kw)
+
+    os.remove = flaky_remove
+    try:
+        agent_init.remove_lease_file(f3_path)
+        transient_ok = True
+    except Exception:
+        transient_ok = False
+    finally:
+        os.remove = real_remove
+    check("a transient PermissionError on the delete is retried rather "
+          "than propagated (F3, #448 review of #441)",
+          transient_ok and transient_calls["n"] == 2)
+    check("and the file really is gone once the retry lands",
+          not os.path.isfile(f3_path))
+    check("removing an already-gone lease file is idempotent success, "
+          "not an error",
+          agent_init.remove_lease_file(f3_path) is None)
+
+    agent_init.write_lease(f3_path, os.path.abspath(f3_repo), "slice-f3",
+                           f3_block)
+    persistent_calls = {"n": 0}
+
+    def always_denied_remove(target, *a, **kw):
+        if target == f3_path:
+            persistent_calls["n"] += 1
+            raise PermissionError(32, "used by another process "
+                                      "(injected, F3, #448, persistent)")
+        return real_remove(target, *a, **kw)
+
+    os.remove = always_denied_remove
+    raised_f3 = None
+    try:
+        agent_init.remove_lease_file(f3_path)
+    except PermissionError as exc:
+        raised_f3 = exc
+    finally:
+        os.remove = real_remove
+    check("a PERSISTENT PermissionError on the delete is raised loudly "
+          "after the bound, never swallowed as success (F3, #448 "
+          "review of #441)",
+          raised_f3 is not None)
+    check("bounded, not an infinite retry loop",
+          persistent_calls["n"] == agent_init.LEASE_DELETE_ATTEMPTS)
+    if os.path.isfile(f3_path):
+        os.remove(f3_path)
+
+    # The park path, end to end: release_lease's own denial reaching
+    # do_park through run_verb, proving it is reported as agent-init's
+    # own clean refusal rather than left as a raw traceback that would
+    # leave HEAD detached with no explanation and the lease still held.
+    f3_park_primary = build_repo(os.path.join(base, "f3-park-primary"))
+    f3_park_linked = os.path.join(base, "f3-park-linked")
+    git(f3_park_primary, "worktree", "add", "-q", "-b", "f3-park-branch",
+        f3_park_linked)
+    f3_park_state = os.path.join(base, "f3-park-state")
+    run_verb(["init", "--repo", f3_park_linked, "--state", f3_park_state,
+              "--no-install"])
+    f3_park_block = agent_init.current_lease(f3_park_linked, f3_park_state)
+    f3_park_path = agent_init.lease_path(f3_park_block, f3_park_state)
+
+    def always_denied_park(target, *a, **kw):
+        if target == f3_park_path:
+            raise PermissionError(32, "used by another process "
+                                      "(injected, F3, #448, park path)")
+        return real_remove(target, *a, **kw)
+
+    os.remove = always_denied_park
+    try:
+        code, out = run_verb(["park", "--repo", f3_park_linked, "--state",
+                              f3_park_state])
+    finally:
+        os.remove = real_remove
+    check("agent-park reports a persistent delete denial as its own "
+          "clean refusal, not a raw traceback (F3, #448 review of "
+          "#441)",
+          code == 1 and "refused to delete" in out)
+    check("and it says HEAD is already detached, since that already "
+          "happened before the failed release",
+          "already detached" in out)
+    check("and the lease file itself is still there - nothing "
+          "pretended a release that did not happen",
+          os.path.isfile(f3_park_path))
+
+    # The hand_over path, end to end: a worktree moving from one block
+    # to another (`--ports`) releases the block it is leaving, through
+    # the same remove_lease_file - proven separately from the park path
+    # above because it is a different call site (F3's own item 3).
+    f3_move_primary = build_repo(os.path.join(base, "f3-move-primary"))
+    f3_move_linked = os.path.join(base, "f3-move-linked")
+    git(f3_move_primary, "worktree", "add", "-q", "-b", "f3-move-branch",
+        f3_move_linked)
+    f3_move_state = os.path.join(base, "f3-move-state")
+    run_verb(["init", "--repo", f3_move_linked, "--state", f3_move_state,
+              "--no-install"])
+    f3_first_block = agent_init.current_lease(f3_move_linked, f3_move_state)
+    f3_first_path = agent_init.lease_path(f3_first_block, f3_move_state)
+    f3_target_block = (agent_init.PORT_BLOCKS[1]
+                       if f3_first_block != agent_init.PORT_BLOCKS[1]
+                       else agent_init.PORT_BLOCKS[2])
+
+    def always_denied_move(target, *a, **kw):
+        if target == f3_first_path:
+            raise PermissionError(32, "used by another process "
+                                      "(injected, F3, #448, hand_over "
+                                      "path)")
+        return real_remove(target, *a, **kw)
+
+    os.remove = always_denied_move
+    try:
+        code, out = run_verb(
+            ["init", "--repo", f3_move_linked, "--state", f3_move_state,
+             "--ports", str(f3_target_block[0]), "--no-install"])
+    finally:
+        os.remove = real_remove
+    check("agent-init reports a persistent delete denial on "
+          "hand_over's own release as a clean refusal too (F3, #448 "
+          "review of #441)",
+          code == 1 and "refused to release" in out)
+    check("and the worktree's original block is still leased to it - "
+          "nothing pretended a release that did not happen",
+          agent_init.current_lease(f3_move_linked, f3_move_state)
+          == f3_first_block)
+
+    print("\n--- F4 (#448 review of #441, comment 5377511579): the "
+          "first six blocks and PRIMARY_BLOCK are pinned, not just "
+          "proven by reading the diff ---")
+    check("the first six blocks are unchanged",
+          agent_init.PORT_BLOCKS[:6] == [(8130, 8135), (8140, 8145),
+                                         (8150, 8155), (8160, 8165),
+                                         (8170, 8175), (8180, 8185)])
+    check("PRIMARY_BLOCK is untouched - dev/demo-server.mjs's "
+          "committed DEFAULT_PORT = 8126 depends on it",
+          agent_init.PRIMARY_BLOCK == (8124, 8126))
+
+    print("\n--- F6 (#448 review of #441, comment 5377511579): the "
+          "exclusive create's catch is specific, never widened to a "
+          "blanket except Exception: ---")
+    f6_state = os.path.join(base, "f6-specific-catch")
+    f6_repo = os.path.join(base, "f6-asker")
+    os.makedirs(f6_repo, exist_ok=True)
+    f6_target = agent_init.lease_path(agent_init.PORT_BLOCKS[0], f6_state)
+    real_open_f6 = os.open
+
+    def raise_value_error(target, flags, *a, **kw):
+        if target == f6_target:
+            raise ValueError("not a filesystem contention error "
+                             "(injected, F6, #448)")
+        return real_open_f6(target, flags, *a, **kw)
+
+    os.open = raise_value_error
+    raised_f6 = None
+    try:
+        agent_init.take_lease(f6_repo, "slice-f6", f6_state)
+    except Exception as exc:
+        raised_f6 = exc
+    finally:
+        os.open = real_open_f6
+    check("a non-OSError exception on the exclusive create propagates "
+          "rather than being swallowed as contention - the catch is "
+          "(FileExistsError, PermissionError), never a blanket except "
+          "Exception:",
+          isinstance(raised_f6, ValueError))
 
 finally:
     # No ignore_errors. Swallowing a teardown failure is what left one
