@@ -206,13 +206,19 @@ function makeDb() {
   const superseded = (row) => submissions.some((other) =>
     other.supersedes === row.id && other.account_id === row.account_id);
 
-  /* Every statement this database is handed, in order.
+  /* Every statement this database is handed, in order, WITH THE
+     ARGUMENTS IT WAS BOUND TO.
      Section 10 reads it to ask a question no response body can answer:
      whether the admin read asks the database for the SAME rows the
      member read asks for. A comment claiming the two statements agree
-     is a claim nothing falsifies; the two strings, compared, is not. */
+     is a claim nothing falsifies; the two strings, compared, is not.
+     The arguments are recorded beside the text because the text alone
+     cannot answer it (0.9-M3-S25 fix wave 1, #440 review F1): both
+     field reads write their window as a `?`, so a read widened at the
+     parameter leaves two byte-identical statements behind and only the
+     bound pattern says what rows were really asked for. */
   function answer(sql, args) {
-    statements.push(sql);
+    statements.push({ sql: sql, args: args });
 
     /* -------- auth_replay -------- */
     if (sql.startsWith("INSERT INTO auth_replay")) {
@@ -514,11 +520,40 @@ const retiredFieldsIn = (spec) =>
   (spec.fields || []).filter((one) => one.retired === true)
     .map((one) => one.name);
 
+/* THE ADMIN READ SPELLS A VALUE `id`, the way PUT /admin-fields/<id>
+   reads one, so that a page hands the read's own bytes back to the
+   write with no rename in between (0.9-M3-S25 fix wave 1, #440 review
+   F2). These two are valuesIn and its retired half in that spelling,
+   and the fact that this suite needs a second pair at all IS the
+   difference between the two reads - the only one. */
+const adminValuesIn = (spec, name) => {
+  const one = fieldIn(spec, name);
+  return one && one.choices ? one.choices.map((c) => c.id) : [];
+};
+
 const retiredValuesIn = (spec, name) => {
   const one = fieldIn(spec, name);
   return (one && one.choices ? one.choices : [])
     .filter((choice) => choice.retired === true)
-    .map((choice) => choice.value);
+    .map((choice) => choice.id);
+};
+
+/* The member spec, renamed the way the admin read serves it: `value`
+   becomes `id` on every choice and NOTHING else moves. Written out here
+   rather than reached for inside server/worker.js, so that this arm
+   states the whole of the difference independently and a change to
+   asWriteShape() there has something to disagree with. */
+const writeShapeOf = (spec) => {
+  const copy = JSON.parse(JSON.stringify(spec));
+  for (const field of copy.fields || []) {
+    if (!Array.isArray(field.choices)) continue;
+    field.choices = field.choices.map((one) => {
+      const made = { id: one.value, label: one.label };
+      if (one.retired === true) made.retired = true;
+      return made;
+    });
+  }
+  return copy;
 };
 
 /* ================================================================== */
@@ -1316,8 +1351,16 @@ const retiredValuesIn = (spec, name) => {
 /* then asks what each route says about it.                            */
 
 /* 10a. The identity. With nothing retired, the admin read is the same
-   document /spec serves - one shape for the page, so the Fields card
-   renders from either without a second reader. */
+   document /spec serves, value for value - one composition, so the
+   Fields card renders from either without a second reader.
+
+   THE ONE DIFFERENCE IS HOW A VALUE'S OWN KEY IS SPELLED, and it is
+   deliberate (0.9-M3-S25 fix wave 1, #440 review F2). /spec spells it
+   `value`, which is what a form draws and what a member's stored row
+   carries; the admin read spells it `id`, which is what
+   PUT /admin-fields/<id> reads - so the page that offers to un-retire
+   hands this read's own bytes to that write with nothing renamed in
+   between. Section 10e drives that echo. */
 
 {
   const { env, adminToken, memberToken } = await freshWorld();
@@ -1326,23 +1369,47 @@ const retiredValuesIn = (spec, name) => {
     { headers: bearer(adminToken) });
   check("GET /admin-fields answers an admin session",
     admin.status === 200 && admin.body.ok === true);
-  check("no admin edits: GET /admin-fields is the shipped spec BYTE " +
-    "FOR BYTE, exactly as GET /spec is",
-    JSON.stringify(admin.body.spec) === JSON.stringify(SITE));
+  check("no admin edits: GET /admin-fields is the SHIPPED spec, every " +
+    "value spelled the way the write route reads one - nothing added, " +
+    "nothing dropped, nothing reordered",
+    JSON.stringify(admin.body.spec) === JSON.stringify(writeShapeOf(SITE)));
   check("no admin edits: the admin read and the member read are the " +
-    "same bytes - the markers are what is added, never a second shape",
+    "same document field for field and value for value - the markers " +
+    "are what is added, never a second composition",
     JSON.stringify(admin.body.spec) ===
-      JSON.stringify(await specOf(env, memberToken)));
+      JSON.stringify(writeShapeOf(await specOf(env, memberToken))));
+
+  /* THE SPELLING ITSELF, asserted rather than left to the comparison
+     above: two documents that agreed on the WRONG key would satisfy it
+     just as well. The write's shape has no `value` in it and the
+     member's has no `id`, and a page that mixed them would be handing
+     mergeValues() an item it reads as a value the field never had. */
+  const adminChoices = (spec) => (spec.fields || [])
+    .reduce((all, one) => all.concat(one.choices || []), []);
+  const offered = await specOf(env, memberToken);
+  check("the admin read's values carry `id` and NEVER `value` - the " +
+    "write route's own spelling, so an echo is not a translation",
+    adminChoices(admin.body.spec).length > 0 &&
+    adminChoices(admin.body.spec).every((one) =>
+      typeof one.id === "string" && one.value === undefined));
+  check("and GET /spec is untouched: its values carry `value` and " +
+    "never `id`, because that is the key every page and every stored " +
+    "row already uses",
+    adminChoices(offered).length > 0 &&
+    adminChoices(offered).every((one) =>
+      typeof one.value === "string" && one.id === undefined));
+
   check("GET /admin-fields is answered private and uncached - a shared " +
     "cache holding one binder's retired set would serve it onward",
     /no-store/.test(admin.headers.get("Cache-Control") || ""));
 
-  /* An edit that retires NOTHING leaves the two reads identical too, so
-     the markers are the difference and not the composition. */
+  /* An edit that retires NOTHING leaves the two reads the same document
+     too, so the markers are the difference and not the composition. */
   await putField(env, adminToken, "gender", { label: "Gender, edited" });
-  check("an edit that retires nothing keeps the two reads identical",
+  check("an edit that retires nothing keeps the two reads the same " +
+    "document, spelling aside",
     JSON.stringify(await adminSpecOf(env, adminToken)) ===
-      JSON.stringify(await specOf(env, memberToken)));
+      JSON.stringify(writeShapeOf(await specOf(env, memberToken))));
 }
 
 /* 10b. The gate. Forced against a table that really holds a retired
@@ -1400,7 +1467,14 @@ const retiredValuesIn = (spec, name) => {
      key and would then be the check passing for the wrong reason; read
      before the retires, because a field taken out of this read takes
      its own keys with it and would widen nothing while looking as
-     though it had. */
+     though it had.
+
+     THE VALUE HALF IS THE EXCEPTION AND IS WRITTEN OUT (0.9-M3-S25 fix
+     wave 1, #440 review F2): a value's key is exactly where the two
+     reads are meant to differ, so deriving the admin read's permitted
+     keys from the member read is the one derivation that would pass
+     whichever spelling the Worker chose. `choiceKeys` stays as the
+     vacuity guard that the member read really does say `value`. */
   const offeredKeys = new Set();
   const choiceKeys = new Set();
   for (const one of (await specOf(env, adminToken)).fields) {
@@ -1440,11 +1514,11 @@ const retiredValuesIn = (spec, name) => {
     "remembers it exists",
     fieldIn(view, "mood") !== null &&
     fieldIn(view, "mood").retired === true &&
-    JSON.stringify(valuesIn(view, "mood")) ===
+    JSON.stringify(adminValuesIn(view, "mood")) ===
       JSON.stringify(["great", "grim"]));
   check("a retired field keeps every value it had, which is what an " +
     "un-retire has to bring back",
-    JSON.stringify(valuesIn(view, "roles")) ===
+    JSON.stringify(adminValuesIn(view, "roles")) ===
       JSON.stringify(["feeder", "feedee", "gainer", "admirer"]));
   check("a retired VALUE is in the admin read, marked, on a field that " +
     "is not retired itself",
@@ -1456,7 +1530,7 @@ const retiredValuesIn = (spec, name) => {
     "marker is the difference a page reads, so a marker on everything " +
     "would say nothing",
     (fieldOr(view, "gender").choices || [])
-      .filter((one) => one.value !== "other")
+      .filter((one) => one.id !== "other")
       .every((one) => one.retired === undefined) &&
     JSON.stringify(retiredFieldsIn(view)) ===
       JSON.stringify(["roles", "mood"]));
@@ -1474,17 +1548,20 @@ const retiredValuesIn = (spec, name) => {
 
   check("NO MEMBER DATA AND NO COUNTS: every key on every field is one " +
     "the offered spec already uses, or one of the two markers - a " +
-    "count, a member or an id would be a word this vocabulary has no " +
-    "room for",
+    "count, a member or an account would be a word this vocabulary has " +
+    "no room for",
     (view.fields || []).length === SITE.fields.length + 1 &&
     view.fields.every((one) => Object.keys(one).every((key) =>
       offeredKeys.has(key) || key === "retired" || key === "retiredAt")));
-  check("and the same of every value: the offered shape plus the one " +
-    "marker, so a retired value is a value and not a record about one",
-    choiceKeys.size > 0 &&
+  check("and the same of every value, in the WRITE ROUTE'S vocabulary: " +
+    "`id` where the offered spec says `value`, the same label, and the " +
+    "one marker - so a retired value is a value the write route can " +
+    "read back and not a record about one",
+    choiceKeys.has("value") && choiceKeys.has("label") &&
+    view.fields.some((one) => (one.choices || []).length > 0) &&
     view.fields.every((one) => (one.choices || []).every((choice) =>
       Object.keys(choice).every((key) =>
-        choiceKeys.has(key) || key === "retired"))));
+        key === "id" || key === "label" || key === "retired"))));
 }
 
 /* 10d. The fence, both ways. */
@@ -1508,6 +1585,26 @@ const retiredValuesIn = (spec, name) => {
     /"retired":true/.test(db.content.get("field.roles").value) &&
     /"id":"other","label":"Other","retired":true/.test(
       db.content.get("field.gender").value.replace(/\s+/g, "")));
+
+  /* AND A ROW OUTSIDE THE NAMESPACE, in the table while both field
+     reads run (0.9-M3-S25 fix wave 1, #440 review F1). Without one, a
+     read whose window was widened past `field.%` gets back exactly the
+     rows a narrow one gets, and no response body, no composed spec and
+     no statement comparison below can tell the two apart - the fixture
+     was what made the widening invisible, not the checks.
+
+     `site.groupName` is a real binder's own row rather than an invented
+     one, and `site.` sorts after `field.` in the BINARY order both
+     statements use, so a widened window reaches it. GET /config is
+     allowed to serve this name and does; the two field reads are not. */
+  const settingRow = await call(env, "POST", "/content",
+    { headers: bearer(adminToken),
+      body: { name: "site.groupName", value: "ZZNotAFieldRowQqq" } });
+  check("a row outside the field namespace really is in the table while " +
+    "these reads run - a window widened past `field.%` has something " +
+    "to reach",
+    settingRow.status === 200 &&
+    db.content.get("site.groupName").value === "ZZNotAFieldRowQqq");
 
   /* THE ONE ROUTE THAT OPENS. */
   const view = await adminSpecOf(env, adminToken);
@@ -1552,28 +1649,56 @@ const retiredValuesIn = (spec, name) => {
     "the charts read the effective spec, never this one",
     charts.status === 400 && !/retiredAt/.test(charts.text));
 
-  /* THE STATEMENT, not the answer. The admin read asks the database for
-     the same rows the member read asks for, one column wider - so the
-     credential buys a marker and never a wider window on the table. */
-  db.statements.length = 0;
-  await specOf(env, memberToken);
-  const memberSql = db.statements.filter((sql) =>
-    /FROM site_content WHERE name LIKE/.test(sql))[0] || null;
+  /* THE STATEMENT AND THE PATTERN IT BINDS, not the answer. The admin
+     read asks the database for the same rows the member read asks for,
+     one column wider - so the credential buys a marker and never a
+     wider window on the table.
+
+     BOTH HALVES, because neither is enough alone (#440 review, F1). The
+     two statements write their window as a `?`, so a read widened at
+     the parameter leaves the texts byte-identical; and a pattern read
+     off one statement says nothing about whether the other issued the
+     same one. */
+  const NO_READ = { sql: null, args: [] };
+  const fieldRead = () => db.statements.filter((one) =>
+    /FROM site_content WHERE name LIKE/.test(one.sql))[0] || NO_READ;
 
   db.statements.length = 0;
-  await adminSpecOf(env, adminToken);
-  const adminSql = db.statements.filter((sql) =>
-    /FROM site_content WHERE name LIKE/.test(sql))[0] || null;
+  const memberAnswer = await call(env, "GET", "/spec",
+    { headers: bearer(memberToken) });
+  const memberRead = fieldRead();
+
+  db.statements.length = 0;
+  const adminAnswer = await call(env, "GET", "/admin-fields",
+    { headers: bearer(adminToken) });
+  const adminRead = fieldRead();
 
   const tailOf = (sql) => String(sql).replace(/^SELECT .*? FROM /, "FROM ");
   check("both reads really issued a field-namespace statement",
-    memberSql !== null && adminSql !== null);
+    memberRead.sql !== null && adminRead.sql !== null);
   check("the admin read's statement is the member read's, one column " +
     "wider - same table, same LIKE, same order, so a credential buys a " +
     "marker rather than a wider window",
-    adminSql !== memberSql && tailOf(adminSql) === tailOf(memberSql) &&
-    /^SELECT name, value, updated_at FROM /.test(adminSql) &&
-    /^SELECT name, value FROM /.test(memberSql));
+    adminRead.sql !== memberRead.sql &&
+    tailOf(adminRead.sql) === tailOf(memberRead.sql) &&
+    /^SELECT name, value, updated_at FROM /.test(adminRead.sql) &&
+    /^SELECT name, value FROM /.test(memberRead.sql));
+  check("and BOTH BIND `field.%` - the window is the bound pattern " +
+    "rather than anything the statement says, and this literal is " +
+    "written out on purpose so the check does not read the namespace " +
+    "off the same file it is guarding",
+    memberRead.args[0] === "field.%" && adminRead.args[0] === "field.%");
+  check("both reads still ANSWERED over a table holding a row outside " +
+    "the namespace - a widened window reaches that row and fieldDocs " +
+    "refuses a name it should never have been handed, so a widening is " +
+    "a 500 on this route rather than a wider answer",
+    memberAnswer.status === 200 && adminAnswer.status === 200);
+  check("and neither composed it: a row outside `field.` is not a " +
+    "field however it reached the table",
+    !/ZZNotAFieldRowQqq/.test(memberAnswer.text) &&
+    !/ZZNotAFieldRowQqq/.test(adminAnswer.text) &&
+    fieldIn((memberAnswer.body || {}).spec || {}, "groupName") === null &&
+    fieldIn((adminAnswer.body || {}).spec || {}, "groupName") === null);
 }
 
 /* 10e. THE CROSS-SESSION ROUND TRIP - the whole point of the slice.    */
@@ -1616,6 +1741,34 @@ const retiredValuesIn = (spec, name) => {
     JSON.stringify(retiredValuesIn(view, "gender")) ===
       JSON.stringify(["other"]));
 
+  /* THE NAIVE ECHO FIRST: this read's `choices` handed straight back as
+     the write's `values`, byte for byte, with nothing renamed in
+     between - which is what a page does and what the round trip below
+     rests on (0.9-M3-S25 fix wave 1, #440 review F2).
+
+     BEFORE THE FIX THE READ SPELLED A VALUE `value` AND THE WRITE READS
+     `id`, so mergeValues() saw four items with no id, minted a fresh id
+     for each and carried every original over retired: three offered
+     values became six, every word members were being offered went out
+     of their reach, and the request answered 200. A page cannot be the
+     only thing standing between an admin and that, so the shapes agree
+     and this check is what says they still do. */
+  const beforeEcho = fieldOr(view, "gender").choices || [];
+  const echo = await putField(env, token2, "gender",
+    { values: JSON.parse(JSON.stringify(beforeEcho)) });
+  const afterEcho = fieldOr(await adminSpecOf(env, token2), "gender")
+    .choices || [];
+  check("the admin read's own `choices`, echoed into the write as " +
+    "`values` with no rename step, are accepted",
+    beforeEcho.length === 4 && echo.status === 200);
+  check("AND CHANGE NOTHING: same count, same ids, same retired set - " +
+    "an echo that minted anything would be four values becoming eight " +
+    "and every offered word retired, from a request that said ok",
+    JSON.stringify(afterEcho) === JSON.stringify(beforeEcho));
+  check("and the member's offered list is untouched by the echo",
+    JSON.stringify(valuesIn(await specOf(env, memberToken), "gender")) ===
+      JSON.stringify(["male", "female", "nonbinary"]));
+
   /* THE REQUESTS ARE COMPOSED FROM THE READ, never from this arm's
      memory of what session one did - which is the property S13's
      builder found missing and the reason this route exists. */
@@ -1625,9 +1778,15 @@ const retiredValuesIn = (spec, name) => {
     check("un-retiring " + name + " through the existing write route is " +
       "accepted", back.status === 200);
   }
+  /* ONE BIT FLIPPED ON THE READ'S OWN BYTES, and not one key renamed:
+     the marker comes off the value being brought back and everything
+     else goes back exactly as it arrived. */
   const genderBack = await putField(env, token2, "gender", {
-    values: (fieldOr(view, "gender").choices || [])
-      .map((one) => ({ id: one.value, label: one.label })),
+    values: (fieldOr(view, "gender").choices || []).map((one) => {
+      const back = Object.assign({}, one);
+      delete back.retired;
+      return back;
+    }),
   });
   check("un-retiring the value through the existing write route is " +
     "accepted", genderBack.status === 200);
@@ -1655,8 +1814,9 @@ const retiredValuesIn = (spec, name) => {
     JSON.stringify(retiredFieldsIn(settled)) === JSON.stringify([]) &&
     JSON.stringify(retiredValuesIn(settled, "gender")) ===
       JSON.stringify([]));
-  check("and the two reads agree again, byte for byte",
-    JSON.stringify(settled) === JSON.stringify(offered));
+  check("and the two reads agree again, value for value - the same " +
+    "document, one of them in the write route's spelling",
+    JSON.stringify(settled) === JSON.stringify(writeShapeOf(offered)));
 }
 
 /* ------------------------------------------------------------------ */

@@ -3309,6 +3309,11 @@ function readFieldDoc(text) {
  * carries the VALUE - so the stable id a relabel needs is the string
  * members' rows have always held. Nothing stored is rewritten and
  * nothing has to be, which is why there is no migration step to run.
+ *
+ * THE ADMIN READ RENAMES IT BACK, in asWriteShape() below and nowhere
+ * here: this function serves the member spec as well, and a spelling
+ * that changed with the caller is what F2 of this slice's review found
+ * costing a page its whole offered list.
  */
 function offeredValues(doc, retiredToo) {
   const out = [];
@@ -3499,6 +3504,47 @@ function applyOverlay(site, id, doc, retiredToo, at) {
 }
 
 /*
+ * The composed spec IN THE WRITE ROUTE'S OWN SPELLING, for the one read
+ * whose answer is meant to be handed straight back.
+ *
+ * ONE SHAPE FOR THE READ AND THE WRITE (0.9-M3-S25 fix wave 1, #440,
+ * review finding F2). GET /spec spells a value `{value, label}`,
+ * because there it is a box on a form and the string a member's stored
+ * row carries. PUT /admin-fields/<id> spells the same string `id`,
+ * because there it is a claim that the value already exists - an item
+ * WITHOUT an id is a new value and mintId() gives it one. So a page
+ * that echoed the admin read's `choices` into the write's `values` got
+ * a 200 that minted a second id for every value it sent and carried
+ * every original over retired: three values became six and every word
+ * members were being offered went out of their reach, from one request
+ * that answered ok.
+ *
+ * THE READ IS THE HALF THAT MOVES. The write's spelling is what decides
+ * whether a value is an existing one or a new one, and changing it
+ * would make a stale admin pane invent options; the member read's
+ * spelling is what every page and every stored row already uses.
+ *
+ * THE RENAME IS HERE, ON THE WAY OUT, RATHER THAN IN offeredValues():
+ * a shipped field with no overlay row never reaches that function at
+ * all - its choices come from apps/web/site.config.js untouched - so a
+ * rename there would hand back half a spec in each spelling, which is
+ * worse for a page than either spelling alone. The price is that the
+ * admin read is no longer the member read's bytes, and effectiveSpec()
+ * below says so.
+ */
+function asWriteShape(site) {
+  for (const field of site.fields) {
+    if (!Array.isArray(field.choices)) continue;
+    field.choices = field.choices.map((one) => {
+      const made = { id: one.value, label: one.label };
+      if (one.retired === true) made.retired = true;
+      return made;
+    });
+  }
+  return site;
+}
+
+/*
  * THE EFFECTIVE SPEC: the shipped spec overlaid by what admins have
  * edited, composed in this one place.
  *
@@ -3513,9 +3559,13 @@ function applyOverlay(site, id, doc, retiredToo, at) {
  * the property the static file's whole role rests on: it is the
  * fallback, the fork's starting point and the thing a release review
  * reads, so a composed answer that differed from it by so much as a key
- * order would make all three claims approximate. It holds for BOTH
- * readings below: with nothing retired there is nothing to mark, so the
- * admin read is the same bytes rather than a similar document.
+ * order would make all three claims approximate. It is a claim about
+ * the MEMBER reading, and only that one: the admin reading is the same
+ * document with every value spelled the way the write route reads one,
+ * for the reason asWriteShape() above carries. The two agree field for
+ * field and value for value with nothing retired; they do not agree
+ * byte for byte, and a page that wants the member spelling asks the
+ * member route for it.
  *
  * `retiredToo` IS A SECOND READING, NOT A SECOND COMPOSER (0.9-M3-S25,
  * #440). GET /admin-fields has to show what is retired so an admin can
@@ -3531,7 +3581,7 @@ async function effectiveSpec(env, retiredToo) {
   for (const [id, doc] of docs) {
     applyOverlay(site, id, doc, retiredToo, stamps.get(id) || null);
   }
-  return site;
+  return retiredToo === true ? asWriteShape(site) : site;
 }
 
 /*
@@ -3585,6 +3635,13 @@ async function handleReadSpec(env, origin) {
  * and a reload lost the list for good. PUT /admin-fields/<id> has
  * accepted an un-retire since 0.9-M3-S11 (#419); this is the read that
  * makes it reachable.
+ *
+ * ITS ANSWER IS THE WRITE ROUTE'S OWN INPUT, value for value: a page
+ * hands this read's `choices` back as that write's `values` with no
+ * rename in between, which is what asWriteShape() above is for and what
+ * tests/fields-overlay.test.mjs section 10e drives end to end. The
+ * un-retire is one bit flipped on bytes that came off the wire, so
+ * there is no place for a pane to translate a value wrongly.
  *
  * THE ONLY CREDENTIAL-BEARING READ OF A RETIRED ROW, and the fence it
  * stands inside is unchanged in every other direction: GET /content

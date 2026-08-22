@@ -665,8 +665,11 @@ LEDGER = [
         "surface": "route",
         "claim": "an admin on a real deployment reads what is retired "
                  "in a session that did not retire it, and un-retires "
-                 "it from that read alone - a whole field and a single "
-                 "value, both offered again on the next member load. "
+                 "it from that read's own bytes - handed back to PUT "
+                 "/admin-fields/<id> with no rename step, because this "
+                 "read spells a value the way that write reads one - a "
+                 "whole field and a single value, both offered again on "
+                 "the next member load. "
                  "The half a stub cannot reach is `retiredAt`: it is "
                  "the row's own `updated_at`, written by D1 rather than "
                  "by a fixture, so whether the string a page renders is "
