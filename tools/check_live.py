@@ -679,7 +679,8 @@ LEDGER = [
         "covers": ["server/worker.js"],
         "status": "never",
     },
-    # The form builder added at 0.9-M3-S11 (#419). The three rows below
+    # The form builder added at 0.9-M3-S11 (#419) and the admin read of
+    # its retired set added at 0.9-M3-S25 (#440). The four rows below
     # are owed rather than performed because the pages that drive them
     # are parallel slices, and each claim is written against what a
     # sitting will actually be able to see once they land.
@@ -691,6 +692,29 @@ LEDGER = [
                  "real table rather than a stub's empty result - and a "
                  "caller with no session gets 401 while rows exist to "
                  "withhold",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
+    {
+        "id": "GET /admin-fields",
+        "surface": "route",
+        "claim": "an admin on a real deployment reads what is retired "
+                 "in a session that did not retire it, and un-retires "
+                 "it from that read's own bytes - handed back to PUT "
+                 "/admin-fields/<id> with no rename step, because this "
+                 "read spells a value the way that write reads one - a "
+                 "whole field and a single value, both offered again on "
+                 "the next member load. "
+                 "The half a stub cannot reach is `retiredAt`: it is "
+                 "the row's own `updated_at`, written by D1 rather than "
+                 "by a fixture, so whether the string a page renders is "
+                 "the ISO instant this Worker bound is a claim about "
+                 "the column and not about the composer. And the fence "
+                 "wants a real table under it - the same deployment's "
+                 "GET /spec, GET /content, GET /config and GET "
+                 "/charts-data carrying no retired field, no retired "
+                 "value and no marker while rows holding all three sit "
+                 "in `site_content`",
         "covers": ["server/worker.js"],
         "status": "never",
     },

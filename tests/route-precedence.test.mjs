@@ -30,7 +30,10 @@
  *    amount of correct code in worker.js would matter. The sync check
  *    below derives both sets from their own file and asserts equality
  *    - the guard the wrangler.toml and worker.js comments both point
- *    at as living here.
+ *    at as living here. Equality of SEGMENTS is not the whole of it,
+ *    because `/x` and `/x/*` are one segment and two different rules at
+ *    the edge: which spelling each segment needs is derived from the
+ *    router's own dispatch lines beside it.
  * 4. AND NEITHER SET MAY NAME A PAGE (0.9-M2-S8, #365). The assets
  *    layer's html_handling answers /x.html with a redirect to /x, so an
  *    API segment sharing a page's basename makes that page unreachable
@@ -215,12 +218,59 @@ check("wrangler.toml's run_worker_first names exactly the segments " +
   configSegments.size === API_SEGMENTS.size &&
   [...API_SEGMENTS].every((s) => configSegments.has(s)));
 
-check("every API segment with a sub-resource (content, membership, " +
-  "auth, submission) carries a /* pattern, not only a bare one - a " +
-  "bare pattern alone would leave /content/matrix reachable as an " +
-  "asset even though /content is guarded",
-  ["content", "membership", "auth", "submission"].every((seg) =>
+/* WHICH SPELLING A SEGMENT NEEDS IS THE ROUTER'S OWN ANSWER, and the
+   sync check above cannot ask it: `/x` and `/x/*` reduce to the same
+   segment, so a list carrying only one of the two passes it. The two
+   are not interchangeable at the edge - `/x/*` does not cover `/x` and
+   `/x` does not cover `/x/y`, which is why /content and /membership
+   each carry both - so both halves are read off server/worker.js's own
+   dispatch lines: a path literal of one segment wants the bare pattern,
+   a path literal of more and every bound route pattern want the `/*`
+   one. Derived rather than listed here for the reason the page
+   basenames below are: a list written down is what let the /charts
+   collision arrive with nobody noticing. */
+const bareSegments = new Set();
+const subSegments = new Set();
+for (const found of workerSrc.matchAll(/path === "\/([^"]*)"/g)) {
+  const parts = found[1].split("/").filter((part) => part !== "");
+  if (parts.length === 1) bareSegments.add(parts[0]);
+  if (parts.length > 1) subSegments.add(parts[0]);
+}
+for (const found of workerSrc.matchAll(/\^\\\/([a-z-]+)\\\//g)) {
+  subSegments.add(found[1]);
+}
+
+check("the router's own dispatch lines really were read - a derivation " +
+  "that found nothing would make both checks below vacuous",
+  bareSegments.size > 5 && subSegments.size > 2 &&
+  bareSegments.has("spec") && bareSegments.has("content") &&
+  subSegments.has("auth") && subSegments.has("submission"));
+
+check("every segment this router answers at a BARE path carries a bare " +
+  "run_worker_first pattern - a `/*` pattern alone would leave a file " +
+  "of that name in dist/ answering at the edge before this Worker saw " +
+  "the request",
+  [...bareSegments].every((seg) =>
+    (topAssets?.runWorkerFirst || []).includes("/" + seg)));
+
+check("and every segment it answers under a sub-resource carries a /* " +
+  "pattern, not only a bare one - a bare pattern alone would leave " +
+  "/content/matrix reachable as an asset even though /content is " +
+  "guarded",
+  [...subSegments].every((seg) =>
     (topAssets?.runWorkerFirst || []).includes("/" + seg + "/*")));
+
+/* mutation: the BARE pattern dropped for a segment answered bare. The
+   sync check above stays green through it, which is the whole reason
+   these two exist beside it. */
+const patternsMissingBare = (topAssets?.runWorkerFirst || [])
+  .filter((p) => p !== "/admin-fields");
+check("mutation: a run_worker_first list missing the bare pattern for " +
+  "a segment answered at a bare path is caught here and is INVISIBLE " +
+  "to the segment sync check",
+  ![...bareSegments].every((seg) =>
+    patternsMissingBare.includes("/" + seg)) &&
+  segmentsFromPatterns(patternsMissingBare).size === API_SEGMENTS.size);
 
 /* mutation: a run_worker_first pattern list missing one segment       */
 const patternsMissingSubmit = (topAssets?.runWorkerFirst || [])
@@ -463,7 +513,7 @@ check("mutation: a dropped Referrer-Policy line is caught",
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 43;
+const EXPECTED = 46;
 console.log(failures
   ? `\nroute-precedence FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
