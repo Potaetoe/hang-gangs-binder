@@ -1019,9 +1019,12 @@ const SPEC_WITH_RETIRED_FIELD = Object.assign({}, SPEC_FIXTURE, {
   buttonByText(values.children[2], "Bring back").dispatch("click");
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
   check("bringing it back PUTs the value under the SAME id the read " +
-    "carried - never invented, never re-minted",
+    "carried - never invented, never re-minted - and in the read's own " +
+    "place, third of three, not appended past a shorter actives list " +
+    "(F1, 0.9-M3-S30 fix wave 1, #452)",
     puts.length === 1 && JSON.stringify(puts[0].values) === JSON.stringify([
-      { id: "male", label: "Male" }, { id: "female", label: "Female" },
+      { id: "male", label: "Male", retired: false },
+      { id: "female", label: "Female", retired: false },
       { id: "nonbinary", label: "Non-binary", retired: false },
     ]));
 }
@@ -1135,11 +1138,16 @@ const SPEC_WITH_RETIRED_FIELD = Object.assign({}, SPEC_FIXTURE, {
   buttonByText(femaleBlock, "Retire").dispatch("click");
   buttonByText(confirmBlock, "Yes").dispatch("click");
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-  check("Yes PUTs the offered list with it OMITTED - omission retires " +
-    "(server/worker.js's own mergeValues), never a `retired: true` row " +
-    "this page invented",
-    puts.length === 1 && JSON.stringify(puts[0].values) ===
-      JSON.stringify([{ id: "male", label: "Male" }]));
+  check("Yes PUTs the WHOLE list, female marked `retired: true` IN " +
+    "PLACE rather than left out - F1 (0.9-M3-S30 fix wave 1, #452): " +
+    "omitting it would have handed server/worker.js's own mergeValues() " +
+    "a request with a hole, and the omitted-value-is-retired rule that " +
+    "fills that hole appends past everything the request DID list, " +
+    "which is exactly the place bring-back could not get her back from",
+    puts.length === 1 && JSON.stringify(puts[0].values) === JSON.stringify([
+      { id: "male", label: "Male", retired: false },
+      { id: "female", label: "Female", retired: true },
+    ]));
 }
 
 {
@@ -1192,11 +1200,107 @@ const SPEC_WITH_RETIRED_FIELD = Object.assign({}, SPEC_FIXTURE, {
     "watched it retire under - never a freshly minted one",
     puts.length === 2 &&
     JSON.stringify(puts[1].values) === JSON.stringify([
-      { id: "male", label: "Male" },
+      { id: "male", label: "Male", retired: false },
       { id: "female", label: "Female", retired: false },
     ]));
   check("the toast says Restored. for the un-retire",
     byId.get("toast").textContent === "Restored.");
+}
+
+/* -- THE PLACE IT HELD (F1, 0.9-M3-S30 fix wave 1, #452, review        */
+/* comment 5379370482): a value retired from the second of FOUR comes   */
+/* back second, not fourth - the reviewer's own measurement. The        */
+/* two-value gender fixture above cannot arm this: retiring or          */
+/* restoring the second of two values lands at the end either way, so   */
+/* nothing there could tell the fix from the bug. Driven through the    */
+/* page's real retireValue()/unretireValue(), against the same Worker-  */
+/* mirroring stub the round trip above uses (request order wins for     */
+/* everything listed; anything left out is carried over retired, past   */
+/* everything the request DID list - server/worker.js's own             */
+/* mergeValues). -- */
+
+{
+  const SPEC_FOR_POSITION = Object.assign({}, SPEC_FIXTURE, {
+    fields: SPEC_FIXTURE.fields.map((f) => f.name !== "gender" ? f :
+      Object.assign({}, f, { choices: [
+        { id: "male", label: "Male" },
+        { id: "female", label: "Female" },
+        { id: "nb", label: "Non-binary" },
+        { id: "other", label: "Other" },
+      ] })),
+  });
+  let spec = SPEC_FOR_POSITION;
+  const puts = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-fields": () => ok({ ok: true, spec: spec }),
+    "PUT /admin-fields/gender": ({ body }) => {
+      const parsed = JSON.parse(body);
+      puts.push(parsed);
+      const current = spec.fields.find((f) => f.name === "gender").choices;
+      const seen = new Set(parsed.values.filter((v) => v.id)
+        .map((v) => v.id));
+      const merged = parsed.values.map((v) => v.id ? v :
+        Object.assign({}, v, { id: v.label.toLowerCase() }));
+      for (const c of current) {
+        if (!seen.has(c.id)) merged.push({ id: c.id, label: c.label,
+          retired: true });
+      }
+      spec = Object.assign({}, spec, { fields: spec.fields.map((f) =>
+        f.name === "gender" ? Object.assign({}, f, { choices: merged })
+          : f) });
+      return ok({ ok: true });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  let genderBlock = byId.get("fields-list").children[2];
+  let femaleBlock = genderBlock.children[1].children[1];
+  check("female starts second of four, active",
+    genderBlock.children[1].children.length === 4 &&
+    femaleBlock.children[0].children[0].textContent === "Female");
+
+  buttonByText(femaleBlock, "Retire").dispatch("click");
+  buttonByText(femaleBlock.children[3], "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+
+  check("retiring the second of four sends the WHOLE list, only " +
+    "female's marker changed - the request itself reorders nothing",
+    puts.length === 1 && JSON.stringify(puts[0].values) === JSON.stringify([
+      { id: "male", label: "Male", retired: false },
+      { id: "female", label: "Female", retired: true },
+      { id: "nb", label: "Non-binary", retired: false },
+      { id: "other", label: "Other", retired: false },
+    ]));
+
+  genderBlock = byId.get("fields-list").children[2];
+  check("retired, the value's own block is STILL second - not pushed " +
+    "past the values that stayed active",
+    genderBlock.children[1].children.length === 4 &&
+    genderBlock.children[1].children[0].children[0].children[0]
+      .textContent === "Male" &&
+    genderBlock.children[1].children[1].children[0].children[0]
+      .textContent === "Female (retired)" &&
+    genderBlock.children[1].children[2].children[0].children[0]
+      .textContent === "Non-binary");
+
+  femaleBlock = genderBlock.children[1].children[1];
+  buttonByText(femaleBlock, "Bring back").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+
+  check("F1: bringing it back restores the place it held - second, " +
+    "not appended past the other three",
+    puts.length === 2 && JSON.stringify(puts[1].values) === JSON.stringify([
+      { id: "male", label: "Male", retired: false },
+      { id: "female", label: "Female", retired: false },
+      { id: "nb", label: "Non-binary", retired: false },
+      { id: "other", label: "Other", retired: false },
+    ]));
+
+  genderBlock = byId.get("fields-list").children[2];
+  check("the re-rendered card shows Female active again, still second " +
+    "- the reviewer's own measurement, satisfied",
+    genderBlock.children[1].children.length === 4 &&
+    genderBlock.children[1].children[1].children[0].children[0]
+      .textContent === "Female");
 }
 
 {
