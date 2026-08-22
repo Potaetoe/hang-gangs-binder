@@ -40,6 +40,22 @@
  * proven two ways: a static sweep for innerHTML anywhere in admin.js
  * (section 1), and a hostile string driven end to end through the
  * Roles and Change log cards (section 3) landing as inert text.
+ *
+ * 0.9-M3-S30 (#452) REBUILDS THE FIELDS CARD, against 0.9-M3-S25's
+ * landed GET /admin-fields (#440): tabs replace four stacked cards
+ * (#385 item (b), #454 item 20 - section 3's "-- Tabs --" block); a
+ * rename is one button sending mode "relabel" always, never a choice
+ * between two (RENAME_MODE/RENAME_CONSEQUENCE replace the retired
+ * RENAME_CHOICES); retiring a field or a value confirms IN PLACE, a
+ * sentence plus Yes/Cancel, never a same-button double-press (#454
+ * item 9); and bring-back works for anything retired, from any
+ * session, because the read itself now carries the retired set marked
+ * (fieldView() replaces the retired mergeFieldsRoster/
+ * fieldsRosterView session memory - see admin.js's own comment on
+ * fieldView() for the shape). The container-key translation
+ * (`choices` on the read, `values` on the write) is armed in the
+ * "-- The choices-to-values translation --" block, per F7 of
+ * 0.9-M3-S25's own review on #440 (comment 5377697322).
  */
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -334,69 +350,78 @@ check("FIELD_READ_ONLY_REASON and VALUES_OUTSIDE_REASON are each a " +
   Admin.FIELD_READ_ONLY_REASON.length > 0 &&
   Admin.VALUES_OUTSIDE_REASON.length > 0);
 
-check("RENAME_CHOICES names exactly relabel and replace, each with its " +
-  "own one-sentence consequence (#385 §8)",
-  Admin.RENAME_CHOICES.length === 2 &&
-  Admin.RENAME_CHOICES.map((c) => c.mode).sort().join(",") ===
-    "relabel,replace" &&
-  Admin.RENAME_CHOICES.every((c) => c.consequence.length > 0));
+check("RENAME_MODE is relabel - the one and only string this page " +
+  "sends (#385 item (b), #454 item 20: one button, the smarter " +
+  "default)",
+  Admin.RENAME_MODE === "relabel");
+check("RENAME_CONSEQUENCE is a real, non-empty sentence",
+  typeof Admin.RENAME_CONSEQUENCE === "string" &&
+  Admin.RENAME_CONSEQUENCE.length > 0);
 
-check("mergeFieldsRoster remembers a value even after a later read " +
-  "stops offering it - the whole of what makes un-retire possible " +
-  "(the judgment call in the completion on #433)",
-  (() => {
-    const withValue = { fields: [{ name: "gender", kind: "choice",
-      label: "Gender", choices: [{ value: "female", label: "Female" }] }] };
-    const withoutValue = { fields: [{ name: "gender", kind: "choice",
-      label: "Gender", choices: [] }] };
-    const known1 = Admin.mergeFieldsRoster(new Map(), withValue);
-    const known2 = Admin.mergeFieldsRoster(known1, withoutValue);
-    return known2.get("gender").values.get("female") === "Female";
-  })());
+check("retireValueSentence and retireFieldSentence each name the real " +
+  "label and end in a question - the in-place confirm's own sentence " +
+  "(#454 item 9)",
+  Admin.retireValueSentence("Female").includes("Female") &&
+  Admin.retireValueSentence("Female").trim().endsWith("?") &&
+  Admin.retireFieldSentence("Gender").includes("Gender") &&
+  Admin.retireFieldSentence("Gender").trim().endsWith("?") &&
+  Admin.retireValueSentence("Female") !== Admin.retireFieldSentence("Female"));
 
-check("mergeFieldsRoster never forgets a field once it is retired out " +
-  "of the spec entirely",
-  (() => {
-    const present = { fields: [{ name: "gender", kind: "choice",
-      label: "Gender", choices: [] }] };
-    const gone = { fields: [] };
-    const known1 = Admin.mergeFieldsRoster(new Map(), present);
-    const known2 = Admin.mergeFieldsRoster(known1, gone);
-    return known2.has("gender") && known2.get("gender").label === "Gender";
-  })());
+check("shortDate renders a real timestamp as a plain date, and an " +
+  "unparseable one honestly",
+  Admin.shortDate("2026-08-21T12:34:56.000Z") === "2026-08-21" &&
+  Admin.shortDate("not a date") === "an unknown date");
 
-check("fieldsRosterView marks an offered value active and a known-but-" +
-  "no-longer-offered value retired, offered ones first",
+/* -- fieldView: the read reshaped for the card - bring back, from any  */
+/* session (0.9-M3-S30, #452, replacing mergeFieldsRoster/               */
+/* fieldsRosterView, #433's session-scoped roster) -- */
+
+check("fieldView marks an active field's offered and retired values " +
+  "both, straight off the read - no prior session needed",
   (() => {
-    const known = new Map([["gender",
-      { label: "Gender", values: new Map([["male", "Male"],
-        ["female", "Female"]]) }]]);
-    const spec = { fields: [{ name: "gender", kind: "choice",
-      label: "Gender", choices: [{ value: "male", label: "Male" }] }] };
-    const view = Admin.fieldsRosterView(known, spec)[0];
-    return view.active === true && view.values.length === 2 &&
+    const view = Admin.fieldView({ name: "gender", kind: "choice",
+      label: "Gender", choices: [
+        { id: "male", label: "Male" },
+        { id: "female", label: "Female", retired: true },
+      ] });
+    return view.id === "gender" && view.label === "Gender" &&
+      view.active === true && view.retiredAt === null &&
+      view.values.length === 2 &&
       view.values[0].id === "male" && view.values[0].retired === false &&
       view.values[1].id === "female" && view.values[1].retired === true;
   })());
 
-check("fieldsRosterView marks a whole field retired when the roster " +
-  "knows it but the spec offers it nowhere any more",
+check("fieldView marks a whole retired field inactive and carries its " +
+  "retiredAt - the field-level date this card shows (F3, 0.9-M3-S25's " +
+  "review on #440)",
   (() => {
-    const known = new Map([["gender",
-      { label: "Gender", values: new Map([["male", "Male"]]) }]]);
-    const spec = { fields: [] };
-    const view = Admin.fieldsRosterView(known, spec)[0];
-    return view.active === false && view.values.length === 1 &&
-      view.values[0].retired === true;
+    const view = Admin.fieldView({ name: "gender", kind: "choice",
+      label: "Gender", retired: true, retiredAt: "2026-08-20T00:00:00.000Z",
+      choices: [{ id: "male", label: "Male", retired: true }] });
+    return view.active === false &&
+      view.retiredAt === "2026-08-20T00:00:00.000Z";
   })());
 
-check("fieldsRosterView marks a choicesFrom field's values as living " +
-  "outside the spec, and copes with no `choices` array at all - the " +
-  "real shape a choicesFrom field ships in apps/web/site.config.js",
+check("fieldView reads retiredAt as null when the row could not say - " +
+  "server/worker.js's own markRetired() ships that key null rather " +
+  "than omitting it, and this never invents a date it was not given",
+  Admin.fieldView({ name: "gender", kind: "choice", label: "Gender",
+    retired: true, retiredAt: null, choices: [] }).retiredAt === null);
+
+check("fieldView carries no retiredAt for an ACTIVE field even when " +
+  "one of its values is retired - the stored row has one stamp, and " +
+  "the Worker only ever puts it on a field the read marks retired " +
+  "whole (server/worker.js's applyOverlay/offeredValues)",
+  Admin.fieldView({ name: "gender", kind: "choice", label: "Gender",
+    choices: [{ id: "male", label: "Male", retired: true }] })
+    .retiredAt === null);
+
+check("fieldView marks a choicesFrom field's values as living outside " +
+  "the spec, and copes with no `choices` array at all - the real " +
+  "shape a choicesFrom field ships in apps/web/site.config.js",
   (() => {
-    const spec = { fields: [{ name: "country", kind: "choice",
-      label: "Country", choicesFrom: "countries" }] };
-    const view = Admin.fieldsRosterView(new Map(), spec)[0];
+    const view = Admin.fieldView({ name: "country", kind: "choice",
+      label: "Country", choicesFrom: "countries" });
     return view.outside === true && view.values.length === 0;
   })());
 
@@ -462,10 +487,31 @@ function node(tag) {
   return el;
 }
 
+// A button found by its own visible text, walked from a container - the
+// Fields card's rewritten blocks (one-button rename, the in-place
+// confirm) nest buttons a fixed child index would make brittle and
+// hard to read; this queries the same way a person reading the card
+// would. Used only by the Fields-card tests below; every other card's
+// tests keep the fixed-index style already proven against this suite's
+// own history.
+function findAll(el, predicate) {
+  const out = [];
+  (function walk(node) {
+    if (predicate(node)) out.push(node);
+    for (const child of node.children || []) walk(child);
+  })(el);
+  return out;
+}
+function buttonByText(el, text) {
+  return findAll(el, (n) => n.tag === "button" && n.textContent === text)[0];
+}
+
 const PAGE_HTML = adminHtml;
 const IDS = [...PAGE_HTML.matchAll(/\bid="([\w-]+)"/g)].map((m) => m[1]);
 const NEEDED = ["tool", "closed", "surface-mark", "admin-intro",
   "idle-warning", "idle-countdown", "idle-stay",
+  "tab-settings", "tab-roles", "tab-fields", "tab-log",
+  "settings-card", "roles-card", "fields-card", "log-card",
   "settings-floor", "settings-floor-notice", "settings-floor-save",
   "settings-locked-unit", "settings-locked-unit-save",
   "settings-group-name", "settings-group-name-save",
@@ -478,7 +524,7 @@ const NEEDED = ["tool", "closed", "surface-mark", "admin-intro",
   "roles-other-body",
   "fields-status", "fields-new-id", "fields-new-label", "fields-new-values",
   "fields-new-add", "fields-list",
-  "log-status", "log-list"];
+  "log-status", "log-list", "toast"];
 check("every element this suite drives is really in apps/web/admin.html",
   NEEDED.every((id) => IDS.includes(id)));
 check("dist/admin.html carries the same ids - the mirror is not stale",
@@ -492,7 +538,11 @@ check("dist/admin.html carries the same ids - the mirror is not stale",
 // every element to visible, which is wrong for exactly these ids.
 const STATIC_HIDDEN = ["idle-warning", "closed", "tool", "settings-status",
   "roles-status", "roles-secret-only-ids", "roles-malformed", "roles-other",
-  "fields-status", "log-status"];
+  "fields-status", "log-status", "roles-card", "fields-card", "log-card",
+  "toast"];
+// settings-card is deliberately NOT here - it is the default tab, the
+// one panel of the four that ships visible (#385 item (b), #454 item
+// 20).
 check("every id this suite starts hidden really ships the hidden " +
   "attribute in apps/web/admin.html",
   STATIC_HIDDEN.every((id) => new RegExp(
@@ -515,13 +565,16 @@ check("VALUES_OUTSIDE_REASON no longer promises a label editor this " +
   "there and catches a stale mirror)",
   !/label/i.test(Admin.VALUES_OUTSIDE_REASON) &&
   !/Its label (still )?is\.?/.test(distJs));
-check("the Fields card states the session-scoped un-retire limit in " +
-  "its own visible prose, not only in a source comment - F6, #433 fix " +
-  "wave (an admin reads the card, never admin.js's block comment)",
-  /retired here this session/.test(adminHtml) &&
-  /new id/.test(adminHtml) &&
-  /retired here this session/.test(distHtml) &&
-  /new id/.test(distHtml));
+check("the session-scoped un-retire limit sentence (0.9-M3-S13, #433, " +
+  "F6) is GONE from the shipped page - 0.9-M3-S25's GET /admin-fields " +
+  "(#440) removed the limit itself, and this ticket removes the " +
+  "sentence with it (#452's own scope, item 3)",
+  !/retired here this session/.test(adminHtml) &&
+  !/retired here this session/.test(distHtml));
+check("the new-id-on-retype hazard sentence stays - it is real " +
+  "regardless of which session retired the value (#452's own scope, " +
+  "item 3)",
+  /new id/.test(adminHtml) && /new id/.test(distHtml));
 
 function buildDom() {
   const byId = new Map();
@@ -532,7 +585,8 @@ function buildDom() {
   byId.get("member-add").tag = "button";
   for (const id of ["settings-floor-save", "settings-locked-unit-save",
     "settings-group-name-save", "settings-welcome-text-save",
-    "settings-default-theme-save", "idle-stay", "fields-new-add"]) {
+    "settings-default-theme-save", "idle-stay", "fields-new-add",
+    "tab-settings", "tab-roles", "tab-fields", "tab-log"]) {
     byId.get(id).tag = "button";
   }
   const reason = node("p");
@@ -671,15 +725,17 @@ const LOG = { ok: true, log: [
     action: "membership.add", name: "b".repeat(64),
     summary: "flagged an admin" },
 ] };
-// The effective spec (0.9-M3-S11's landed GET /spec shape, #419): two
-// non-choice kinds (a consent, a measure) beside two choice fields, one
-// of which (country) has `choicesFrom` and so ships with NO `choices`
-// array at all - the real shape apps/web/site.config.js's own country
-// row has. Every DOM test below relies on fields-list's resulting
-// order being deterministic: categoricalFields() and fieldsRosterView()
-// both preserve the spec's own field order, so with a fresh roster (no
-// prior session state) the render is [over18, weight, gender, country]
-// - documented once here rather than re-derived at every call site.
+// GET /admin-fields' own shape (0.9-M3-S25, #440): two non-choice kinds
+// (a consent, a measure) beside two choice fields, one of which
+// (country) has `choicesFrom` and so ships with NO `choices` array at
+// all - the real shape apps/web/site.config.js's own country row has.
+// Every value here is already spelled {id, label, retired?} - the
+// write's own shape, per 0.9-M3-S25's fix wave 1 (F2 of that slice's
+// review, #440 comment 5377697322) - not GET /spec's {value, label}.
+// Every DOM test below relies on fields-list's resulting order being
+// deterministic: categoricalFields() preserves the spec's own field
+// order, so the render is [over18, weight, gender, country] -
+// documented once here rather than re-derived at every call site.
 const SPEC_FIXTURE = {
   group: { name: "Hang Gang", binder: "Binder" },
   fields: [
@@ -690,8 +746,8 @@ const SPEC_FIXTURE = {
     { name: "gender", kind: "choice", label: "Gender", term: "gender",
       chart: true,
       choices: [
-        { value: "male", label: "Male" },
-        { value: "female", label: "Female" },
+        { id: "male", label: "Male" },
+        { id: "female", label: "Female" },
       ] },
     { name: "country", kind: "choice", label: "Country", term: "country",
       chart: true, choicesFrom: "countries" },
@@ -703,13 +759,44 @@ const BASE_ROUTES = {
   "GET /membership": () => ok(MEMBERSHIP),
   "GET /me": () => ok({ ok: true, adminVia: "flag" }),
   "GET /admin-log": () => ok(LOG),
-  "GET /spec": () => ok({ ok: true, spec: SPEC_FIXTURE }),
+  "GET /admin-fields": () => ok({ ok: true, spec: SPEC_FIXTURE }),
 };
 
 {
   const { byId } = await driven({}, { isAdmin: true });
   check("an admin session opens the tool and hides the Unavailable card",
     byId.get("tool").hidden === false && byId.get("closed").hidden === true);
+}
+
+/* -- Tabs (#385 item (b), #454 item 20): one area on screen at a time,  */
+/* Settings showing first. -- */
+
+{
+  const { byId } = await driven(BASE_ROUTES, { isAdmin: true });
+  check("Settings is the tab that ships selected and visible",
+    byId.get("tab-settings").getAttribute("aria-selected") === "true" &&
+    byId.get("settings-card").hidden === false);
+  check("the other three panels ship hidden",
+    byId.get("roles-card").hidden === true &&
+    byId.get("fields-card").hidden === true &&
+    byId.get("log-card").hidden === true);
+
+  byId.get("tab-fields").dispatch("click");
+  check("clicking a tab shows its own panel and hides every other one, " +
+    "and moves aria-selected off Settings and onto Fields",
+    byId.get("fields-card").hidden === false &&
+    byId.get("settings-card").hidden === true &&
+    byId.get("roles-card").hidden === true &&
+    byId.get("log-card").hidden === true &&
+    byId.get("tab-fields").getAttribute("aria-selected") === "true" &&
+    byId.get("tab-settings").getAttribute("aria-selected") === "false");
+
+  byId.get("tab-log").dispatch("click");
+  check("switching again shows exactly the new panel",
+    byId.get("log-card").hidden === false &&
+    byId.get("fields-card").hidden === true &&
+    byId.get("tab-log").getAttribute("aria-selected") === "true" &&
+    byId.get("tab-fields").getAttribute("aria-selected") === "false");
 }
 
 /* -- Settings: load, per-field validation, per-field save -- */
@@ -853,15 +940,19 @@ const BASE_ROUTES = {
     removed === "/membership/admin/a1");
 }
 
-/* -- Fields: render, add/retire/un-retire a value, rename both modes,  */
+/* -- Fields: render, add/retire/un-retire a value, one-button rename,  */
 /* reorder, retire/un-retire a field, add a field, numeric read-only,   */
-/* choicesFrom read-only, refused writes, no member data (#433).        */
+/* choicesFrom read-only, refused writes, no member data, the in-place  */
+/* confirm and the toast (#433; the bring-back rebuild is 0.9-M3-S30,   */
+/* #452, against 0.9-M3-S25's GET /admin-fields on #440).               */
 /*                                                                       */
 /* fields-list's own order is documented once here rather than          */
-/* re-derived at every call site: categoricalFields() and                */
-/* fieldsRosterView() both preserve the spec's own field order, so with  */
-/* SPEC_FIXTURE and a fresh session roster the render is                 */
-/* [over18, weight, gender, country]. -- */
+/* re-derived at every call site: categoricalFields() preserves the     */
+/* spec's own field order, so with SPEC_FIXTURE the render is           */
+/* [over18, weight, gender, country]. A gender field block's own        */
+/* children are [header, valuesSection, addRow, buttons, confirmBlock]  */
+/* - an active value's own children are [labelRow, buttons, form,       */
+/* confirmBlock]; a retired one is just [labelRow, buttons]. -- */
 
 {
   const { byId } = await driven(BASE_ROUTES, { isAdmin: true });
@@ -888,6 +979,105 @@ const BASE_ROUTES = {
       .textContent));
 }
 
+/* -- Bring back, from any session (0.9-M3-S30, #452): both fixtures    */
+/* below carry a retired item from the FIRST read, never through a      */
+/* click this test made - the whole point the session-scoped roster     */
+/* (#433) could not honor. -- */
+
+const SPEC_WITH_RETIRED_VALUE = Object.assign({}, SPEC_FIXTURE, {
+  fields: SPEC_FIXTURE.fields.map((f) => f.name !== "gender" ? f :
+    Object.assign({}, f, { choices: f.choices.concat([
+      { id: "nonbinary", label: "Non-binary", retired: true },
+    ]) })),
+});
+
+const SPEC_WITH_RETIRED_FIELD = Object.assign({}, SPEC_FIXTURE, {
+  fields: SPEC_FIXTURE.fields.concat([
+    { name: "pronouns", kind: "choice", label: "Pronouns", retired: true,
+      retiredAt: "2026-08-15T00:00:00.000Z",
+      choices: [{ id: "they", label: "They/them", retired: true }] },
+  ]),
+});
+
+{
+  const puts = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-fields": () => ok({ ok: true, spec: SPEC_WITH_RETIRED_VALUE }),
+    "PUT /admin-fields/gender": ({ body }) => {
+      puts.push(JSON.parse(body));
+      return ok({ ok: true });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[2];
+  const values = genderBlock.children[1];
+  check("a value retired before this page ever opened still appears, " +
+    "marked, with exactly one button - never a session limit",
+    values.children.length === 3 &&
+    /Non-binary \(retired\)/.test(values.children[2].textContent) &&
+    values.children[2].children[1].children.length === 1 &&
+    /Bring back/.test(values.children[2].children[1].children[0]
+      .textContent));
+  buttonByText(values.children[2], "Bring back").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("bringing it back PUTs the value under the SAME id the read " +
+    "carried - never invented, never re-minted - and in the read's own " +
+    "place, third of three, not appended past a shorter actives list " +
+    "(F1, 0.9-M3-S30 fix wave 1, #452)",
+    puts.length === 1 && JSON.stringify(puts[0].values) === JSON.stringify([
+      { id: "male", label: "Male", retired: false },
+      { id: "female", label: "Female", retired: false },
+      { id: "nonbinary", label: "Non-binary", retired: false },
+    ]));
+}
+
+{
+  const puts = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-fields": () => ok({ ok: true, spec: SPEC_WITH_RETIRED_FIELD }),
+    "PUT /admin-fields/pronouns": ({ body }) => {
+      puts.push(JSON.parse(body));
+      return ok({ ok: true });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const list = byId.get("fields-list");
+  const pronounsBlock = list.children[4];
+  check("a field retired before this page ever opened appears too, " +
+    "named and marked retired",
+    list.children.length === 5 &&
+    /Pronouns \(retired\)/.test(pronounsBlock.children[0].textContent));
+  check("its own last-changed date shows, from the read's own " +
+    "retiredAt (F3, 0.9-M3-S25's review on #440) - \"last changed\", " +
+    "never \"retired on\"",
+    /Last changed 2026-08-15/.test(pronounsBlock.children[1].textContent));
+  check("a retired field offers exactly one button - Bring back",
+    pronounsBlock.children[2].children.length === 1 &&
+    /Bring back/.test(pronounsBlock.children[2].children[0].textContent));
+  buttonByText(pronounsBlock, "Bring back").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("un-retiring a field PUTs retired: false and sends no `values` " +
+    "at all - the Worker keeps what the field held when it retired " +
+    "(server/worker.js's own currentValues/handleRetireField)",
+    puts.length === 1 && puts[0].retired === false &&
+    !("values" in puts[0]));
+}
+
+{
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-fields": () => ok({ ok: true, spec: {
+      fields: [{ name: "pronouns", kind: "choice", label: "Pronouns",
+        retired: true, retiredAt: null, choices: [] }] } }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const block = byId.get("fields-list").children[0];
+  check("a retired field with no readable retiredAt (server/worker.js's " +
+    "markRetired ships the key null when the row could not say) shows " +
+    "no date line rather than inventing one - just header then buttons",
+    block.children.length === 2 &&
+    !/Last changed/.test(block.textContent));
+}
+
 {
   const puts = [];
   const routes = Object.assign({}, BASE_ROUTES, {
@@ -911,7 +1101,18 @@ const BASE_ROUTES = {
   check("adding a value clears the input on success (F2/F3, #433 fix " +
     "wave - the paired refusal arm below asserts the opposite)",
     addRow.children[0].value === "");
+  check("the toast names the write - feedback after an action is a " +
+    "brief toast, not an inline status line (#454 item 8)",
+    byId.get("toast").hidden === false &&
+    byId.get("toast").textContent === "Added.");
+  check("the inline status line is cleared, not left holding the " +
+    "success message the toast now carries",
+    byId.get("fields-status").textContent === "");
 }
+
+/* -- Retiring a value confirms IN PLACE (#454 item 9): the button      */
+/* becomes a sentence with the real consequence, plus Yes and Cancel -  */
+/* never a same-button double-press. -- */
 
 {
   const puts = [];
@@ -924,31 +1125,60 @@ const BASE_ROUTES = {
   const { byId } = await driven(routes, { isAdmin: true });
   const genderBlock = byId.get("fields-list").children[2];
   const femaleBlock = genderBlock.children[1].children[1];
-  const retireButton = femaleBlock.children[1].children[3];
-  retireButton.dispatch("click");
+  const confirmBlock = femaleBlock.children[3];
+  check("the confirm sentence is hidden until Retire is pressed",
+    confirmBlock.hidden === true);
+  buttonByText(femaleBlock, "Retire").dispatch("click");
+  check("pressing Retire reveals the real sentence rather than arming " +
+    "the same button a second press would fire",
+    confirmBlock.hidden === false &&
+    confirmBlock.textContent.includes(Admin.retireValueSentence("Female")));
+  buttonByText(confirmBlock, "Cancel").dispatch("click");
+  check("Cancel hides the confirm and sends nothing",
+    confirmBlock.hidden === true && puts.length === 0);
+
+  buttonByText(femaleBlock, "Retire").dispatch("click");
+  buttonByText(confirmBlock, "Yes").dispatch("click");
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-  check("retiring a value PUTs the offered list with it OMITTED - " +
-    "omission retires (server/worker.js's own mergeValues), never a " +
-    "`retired: true` row this page invented",
-    puts.length === 1 && JSON.stringify(puts[0].values) ===
-      JSON.stringify([{ id: "male", label: "Male" }]));
+  check("Yes PUTs the WHOLE list, female marked `retired: true` IN " +
+    "PLACE rather than left out - F1 (0.9-M3-S30 fix wave 1, #452): " +
+    "omitting it would have handed server/worker.js's own mergeValues() " +
+    "a request with a hole, and the omitted-value-is-retired rule that " +
+    "fills that hole appends past everything the request DID list, " +
+    "which is exactly the place bring-back could not get her back from",
+    puts.length === 1 && JSON.stringify(puts[0].values) === JSON.stringify([
+      { id: "male", label: "Male", retired: false },
+      { id: "female", label: "Female", retired: true },
+    ]));
 }
 
 {
-  // Un-retire: retire female, then bring her back in the same session -
-  // the judgment call's own arm. The stub's /spec answer changes after
-  // the retire PUT, and the card is proven to follow it (ticket item 4).
+  // Un-retire in the same session works exactly like any-session
+  // bring-back does, since both read the one live document - the
+  // stub's /admin-fields answer changes after the retire PUT, and the
+  // card is proven to follow it (ticket item 4). The stub models
+  // server/worker.js's own mergeValues: a value OMITTED from the
+  // request stays, carried over retired, rather than simply vanishing -
+  // the fact this whole "bring back from any session" rebuild depends
+  // on the read actually reflecting.
   let spec = SPEC_FIXTURE;
   const puts = [];
   const routes = Object.assign({}, BASE_ROUTES, {
-    "GET /spec": () => ok({ ok: true, spec: spec }),
+    "GET /admin-fields": () => ok({ ok: true, spec: spec }),
     "PUT /admin-fields/gender": ({ body }) => {
       const parsed = JSON.parse(body);
       puts.push(parsed);
-      spec = Object.assign({}, SPEC_FIXTURE, { fields:
-        SPEC_FIXTURE.fields.map((f) => f.name === "gender"
-          ? Object.assign({}, f, { choices: parsed.values.map((v) =>
-              ({ value: v.id, label: v.label })) })
+      const current = spec.fields.find((f) => f.name === "gender").choices;
+      const seen = new Set(parsed.values.filter((v) => v.id)
+        .map((v) => v.id));
+      const merged = parsed.values.map((v) => v.id ? v :
+        Object.assign({}, v, { id: v.label.toLowerCase() }));
+      for (const c of current) {
+        if (!seen.has(c.id)) merged.push({ id: c.id, label: c.label,
+          retired: true });
+      }
+      spec = Object.assign({}, spec, { fields: spec.fields.map((f) =>
+        f.name === "gender" ? Object.assign({}, f, { choices: merged })
           : f) });
       return ok({ ok: true });
     },
@@ -956,8 +1186,9 @@ const BASE_ROUTES = {
   const { byId } = await driven(routes, { isAdmin: true });
   let genderBlock = byId.get("fields-list").children[2];
   let femaleBlock = genderBlock.children[1].children[1];
-  femaleBlock.children[1].children[3].dispatch("click"); // Retire
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  buttonByText(femaleBlock, "Retire").dispatch("click");
+  buttonByText(femaleBlock.children[3], "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
 
   genderBlock = byId.get("fields-list").children[2];
   femaleBlock = genderBlock.children[1].children[1];
@@ -965,36 +1196,146 @@ const BASE_ROUTES = {
     "rather than simply gone from the card",
     genderBlock.children[1].children.length === 2 &&
     /Female \(retired\)/.test(femaleBlock.textContent));
-  check("the retired row offers exactly one button - Bring back",
-    femaleBlock.children[1].children.length === 1 &&
-    /Bring back/.test(femaleBlock.children[1].children[0].textContent));
-  femaleBlock.children[1].children[0].dispatch("click");
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  buttonByText(femaleBlock, "Bring back").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
   check("un-retiring PUTs the value back with the SAME id this page " +
     "watched it retire under - never a freshly minted one",
     puts.length === 2 &&
     JSON.stringify(puts[1].values) === JSON.stringify([
-      { id: "male", label: "Male" },
+      { id: "male", label: "Male", retired: false },
       { id: "female", label: "Female", retired: false },
     ]));
+  check("the toast says Restored. for the un-retire",
+    byId.get("toast").textContent === "Restored.");
+}
+
+/* -- THE PLACE IT HELD (F1, 0.9-M3-S30 fix wave 1, #452, review        */
+/* comment 5379370482): a value retired from the second of FOUR comes   */
+/* back second, not fourth - the reviewer's own measurement. The        */
+/* two-value gender fixture above cannot arm this: retiring or          */
+/* restoring the second of two values lands at the end either way, so   */
+/* nothing there could tell the fix from the bug. Driven through the    */
+/* page's real retireValue()/unretireValue(), against the same Worker-  */
+/* mirroring stub the round trip above uses (request order wins for     */
+/* everything listed; anything left out is carried over retired, past   */
+/* everything the request DID list - server/worker.js's own             */
+/* mergeValues). "other" starts ALREADY retired, so the arm also checks */
+/* that fixing female's own marker never touches anyone else's - a fix  */
+/* that quietly reported every OTHER value active regardless of its own */
+/* read would pass every check above and un-retire "other" by accident. */
+/* -- */
+
+{
+  const SPEC_FOR_POSITION = Object.assign({}, SPEC_FIXTURE, {
+    fields: SPEC_FIXTURE.fields.map((f) => f.name !== "gender" ? f :
+      Object.assign({}, f, { choices: [
+        { id: "male", label: "Male" },
+        { id: "female", label: "Female" },
+        { id: "nb", label: "Non-binary" },
+        { id: "other", label: "Other", retired: true },
+      ] })),
+  });
+  let spec = SPEC_FOR_POSITION;
+  const puts = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-fields": () => ok({ ok: true, spec: spec }),
+    "PUT /admin-fields/gender": ({ body }) => {
+      const parsed = JSON.parse(body);
+      puts.push(parsed);
+      const current = spec.fields.find((f) => f.name === "gender").choices;
+      const seen = new Set(parsed.values.filter((v) => v.id)
+        .map((v) => v.id));
+      const merged = parsed.values.map((v) => v.id ? v :
+        Object.assign({}, v, { id: v.label.toLowerCase() }));
+      for (const c of current) {
+        if (!seen.has(c.id)) merged.push({ id: c.id, label: c.label,
+          retired: true });
+      }
+      spec = Object.assign({}, spec, { fields: spec.fields.map((f) =>
+        f.name === "gender" ? Object.assign({}, f, { choices: merged })
+          : f) });
+      return ok({ ok: true });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  let genderBlock = byId.get("fields-list").children[2];
+  let femaleBlock = genderBlock.children[1].children[1];
+  check("female starts second of four, active; other starts fourth, " +
+    "already retired",
+    genderBlock.children[1].children.length === 4 &&
+    femaleBlock.children[0].children[0].textContent === "Female" &&
+    genderBlock.children[1].children[3].children[0].children[0]
+      .textContent === "Other (retired)");
+
+  buttonByText(femaleBlock, "Retire").dispatch("click");
+  buttonByText(femaleBlock.children[3], "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+
+  check("retiring the second of four sends the WHOLE list, only " +
+    "female's marker changed - other's own already-retired marker " +
+    "carries through untouched, the request itself reorders nothing",
+    puts.length === 1 && JSON.stringify(puts[0].values) === JSON.stringify([
+      { id: "male", label: "Male", retired: false },
+      { id: "female", label: "Female", retired: true },
+      { id: "nb", label: "Non-binary", retired: false },
+      { id: "other", label: "Other", retired: true },
+    ]));
+
+  genderBlock = byId.get("fields-list").children[2];
+  check("retired, the value's own block is STILL second - not pushed " +
+    "past the values that stayed active - and other is still fourth " +
+    "and still retired, not silently brought back",
+    genderBlock.children[1].children.length === 4 &&
+    genderBlock.children[1].children[0].children[0].children[0]
+      .textContent === "Male" &&
+    genderBlock.children[1].children[1].children[0].children[0]
+      .textContent === "Female (retired)" &&
+    genderBlock.children[1].children[2].children[0].children[0]
+      .textContent === "Non-binary" &&
+    genderBlock.children[1].children[3].children[0].children[0]
+      .textContent === "Other (retired)");
+
+  femaleBlock = genderBlock.children[1].children[1];
+  buttonByText(femaleBlock, "Bring back").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+
+  check("F1: bringing it back restores the place it held - second, " +
+    "not appended past the other three - and other, never touched, " +
+    "is still sent retired",
+    puts.length === 2 && JSON.stringify(puts[1].values) === JSON.stringify([
+      { id: "male", label: "Male", retired: false },
+      { id: "female", label: "Female", retired: false },
+      { id: "nb", label: "Non-binary", retired: false },
+      { id: "other", label: "Other", retired: true },
+    ]));
+
+  genderBlock = byId.get("fields-list").children[2];
+  check("the re-rendered card shows Female active again, still second " +
+    "- the reviewer's own measurement, satisfied - and Other still " +
+    "fourth and still retired",
+    genderBlock.children[1].children.length === 4 &&
+    genderBlock.children[1].children[1].children[0].children[0]
+      .textContent === "Female" &&
+    genderBlock.children[1].children[3].children[0].children[0]
+      .textContent === "Other (retired)");
 }
 
 {
-  // F4 (#433 fix wave): the PUT answers 200, the GET /spec that
+  // F4 (#433 fix wave): the PUT answers 200, the GET /admin-fields that
   // follows it (loadFields's own re-read, ticket item 4) answers 500.
   // Before the fix, sendFieldWrite always printed "Added." after
   // `await loadFields()` no matter how the re-read went, so a real
   // failure sat silently under the write's own success message and the
   // card kept showing pre-write data with nothing saying so.
-  let specCalls = 0;
+  let reads = 0;
   const routes = Object.assign({}, BASE_ROUTES, {
-    "GET /spec": () => {
-      specCalls += 1;
+    "GET /admin-fields": () => {
+      reads += 1;
       // First call is this test's own boot-time read (driven() always
       // loads the card once before any click) - it has to succeed or
       // there is no gender field to add a value to. The SECOND call is
       // the re-read sendFieldWrite triggers after the PUT below.
-      return specCalls === 1
+      return reads === 1
         ? ok({ ok: true, spec: SPEC_FIXTURE })
         : refused(500, {});
     },
@@ -1008,44 +1349,17 @@ const BASE_ROUTES = {
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
   const shown = byId.get("fields-status").textContent;
   check("a write that succeeds but whose re-read then fails does not " +
-    "print the write's own success message over the read's failure",
-    shown !== "Added.");
+    "print the write's own success message over the read's failure - " +
+    "no toast fires either, since sendFieldWrite only shows one on the " +
+    "\"ok\" re-read leg",
+    shown !== "Added." && byId.get("toast").hidden === true);
   check("...and says plainly that what is shown may now be stale, " +
     "since the card still holds whatever the LAST successful read drew",
     /stale|out of date/i.test(shown));
 }
 
-{
-  const puts = [];
-  const routes = Object.assign({}, BASE_ROUTES, {
-    "PUT /admin-fields/gender": ({ body }) => {
-      puts.push(JSON.parse(body));
-      return ok({ ok: true });
-    },
-  });
-  const { byId } = await driven(routes, { isAdmin: true });
-  const genderBlock = byId.get("fields-list").children[2];
-  const maleBlock = genderBlock.children[1].children[0];
-  const form = maleBlock.children[2];
-  check("the rename form is hidden until Rename is pressed",
-    form.hidden === true);
-  maleBlock.children[1].children[2].dispatch("click"); // Rename
-  check("pressing Rename reveals the form, pre-filled with the " +
-    "current label",
-    form.hidden === false && form.children[0].value === "Male");
-  form.children[0].value = "Man";
-  // form children: [input, relabel consequence, relabel button, replace
-  // consequence, replace button, cancel].
-  form.children[2].dispatch("click");
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-  check("choosing \"same thing, new word\" sends mode: relabel with " +
-    "the id kept and the label changed - the choice IS the send (#385 " +
-    "§8)",
-    puts.length === 1 && puts[0].mode === "relabel" &&
-    JSON.stringify(puts[0].values) === JSON.stringify([
-      { id: "male", label: "Man" }, { id: "female", label: "Female" },
-    ]));
-}
+/* -- One button, the smarter default (#385 item (b), #454 item 20):    */
+/* a rename asks for the new word and sends - no mode to choose. -- */
 
 {
   const puts = [];
@@ -1058,18 +1372,28 @@ const BASE_ROUTES = {
   const { byId } = await driven(routes, { isAdmin: true });
   const genderBlock = byId.get("fields-list").children[2];
   const maleBlock = genderBlock.children[1].children[0];
-  maleBlock.children[1].children[2].dispatch("click"); // Rename
   const form = maleBlock.children[2];
-  form.children[0].value = "Guy";
-  form.children[4].dispatch("click"); // "A different thing"
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-  check("choosing \"a different thing\" sends mode: replace with the " +
-    "same request shape - the Worker decides the retire-and-mint, this " +
-    "page only names which word means what",
-    puts.length === 1 && puts[0].mode === "replace" &&
+  check("the rename form is hidden until Rename is pressed, and offers " +
+    "exactly one send button plus Cancel - no mode to pick between",
+    form.hidden === true && form.children.length === 4 &&
+    form.children[2].textContent === "Rename" &&
+    form.children[3].textContent === "Cancel");
+  buttonByText(maleBlock, "Rename").dispatch("click");
+  check("pressing Rename reveals the form, pre-filled with the " +
+    "current label, and states the one consequence this page sends",
+    form.hidden === false && form.children[0].value === "Male" &&
+    form.children[1].textContent === Admin.RENAME_CONSEQUENCE);
+  form.children[0].value = "Man";
+  form.children[2].dispatch("click"); // Rename (send)
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("the send always carries mode: relabel - the smarter default, " +
+    "with the id kept and the label changed",
+    puts.length === 1 && puts[0].mode === "relabel" &&
     JSON.stringify(puts[0].values) === JSON.stringify([
-      { id: "male", label: "Guy" }, { id: "female", label: "Female" },
+      { id: "male", label: "Man" }, { id: "female", label: "Female" },
     ]));
+  check("the toast says Renamed.",
+    byId.get("toast").textContent === "Renamed.");
 }
 
 {
@@ -1077,8 +1401,8 @@ const BASE_ROUTES = {
   const genderBlock = byId.get("fields-list").children[2];
   const maleBlock = genderBlock.children[1].children[0];
   const form = maleBlock.children[2];
-  maleBlock.children[1].children[2].dispatch("click"); // open
-  form.children[5].dispatch("click"); // Cancel
+  buttonByText(maleBlock, "Rename").dispatch("click");
+  buttonByText(form, "Cancel").dispatch("click");
   check("Cancel hides the rename form without sending anything",
     form.hidden === true);
 }
@@ -1096,10 +1420,10 @@ const BASE_ROUTES = {
   const maleBlock = genderBlock.children[1].children[0];
   const femaleBlock = genderBlock.children[1].children[1];
   check("the first value's Move up is disabled - nowhere to move it",
-    maleBlock.children[1].children[0].disabled === true);
+    buttonByText(maleBlock, "Move up").disabled === true);
   check("the last value's Move down is disabled the same way",
-    femaleBlock.children[1].children[1].disabled === true);
-  maleBlock.children[1].children[1].dispatch("click"); // Move down
+    buttonByText(femaleBlock, "Move down").disabled === true);
+  buttonByText(maleBlock, "Move down").dispatch("click");
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
   check("Move down PUTs the two values swapped, ids and labels " +
     "unchanged - a reorder is not a rename",
@@ -1107,6 +1431,8 @@ const BASE_ROUTES = {
       { id: "female", label: "Female" }, { id: "male", label: "Male" },
     ]));
 }
+
+/* -- Retiring a field confirms IN PLACE too (#454 item 9). -- */
 
 {
   const calls = [];
@@ -1118,60 +1444,24 @@ const BASE_ROUTES = {
   });
   const { byId } = await driven(routes, { isAdmin: true });
   const genderBlock = byId.get("fields-list").children[2];
-  const retireField = genderBlock.children[3].children[0];
-  retireField.dispatch("click");
-  check("Retire field arms on the first press rather than sending",
-    calls.length === 0 && /Confirm retiring/.test(retireField.textContent));
-  retireField.dispatch("click");
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-  check("the second press DELETEs the field",
+  const confirmBlock = genderBlock.children[4];
+  check("the confirm sentence is hidden until Retire field is pressed",
+    confirmBlock.hidden === true);
+  buttonByText(genderBlock, "Retire field").dispatch("click");
+  check("pressing it reveals the real sentence, not a same-button arm",
+    confirmBlock.hidden === false &&
+    confirmBlock.textContent.includes(Admin.retireFieldSentence("Gender")));
+  buttonByText(confirmBlock, "Cancel").dispatch("click");
+  check("Cancel hides it and sends nothing",
+    confirmBlock.hidden === true && calls.length === 0);
+
+  buttonByText(genderBlock, "Retire field").dispatch("click");
+  buttonByText(confirmBlock, "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("Yes DELETEs the field",
     calls.length === 1);
-}
-
-{
-  // Bring a whole field back, the same shape as the value-level arm:
-  // retire it, then use the roster's own memory to un-retire.
-  let spec = SPEC_FIXTURE;
-  const puts = [];
-  const routes = Object.assign({}, BASE_ROUTES, {
-    "GET /spec": () => ok({ ok: true, spec: spec }),
-    "DELETE /admin-fields/gender": () => {
-      spec = Object.assign({}, SPEC_FIXTURE, { fields:
-        SPEC_FIXTURE.fields.filter((f) => f.name !== "gender") });
-      return { ok: true, status: 200, async json() { return {}; } };
-    },
-    "PUT /admin-fields/gender": ({ body }) => {
-      puts.push(JSON.parse(body));
-      spec = SPEC_FIXTURE;
-      return ok({ ok: true });
-    },
-  });
-  const { byId } = await driven(routes, { isAdmin: true });
-  const retireField = byId.get("fields-list").children[2].children[3]
-    .children[0];
-  retireField.dispatch("click");
-  retireField.dispatch("click");
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-
-  // gender dropped out of the active choice list, so fieldsRosterView
-  // now renders [country (active)] before [gender (retired-as-known)] -
-  // fields-list becomes [over18, weight, country, gender].
-  check("a retired field is drawn after the fields still active, not " +
-    "simply gone from the card",
-    byId.get("fields-list").children.length === 4 &&
-    /Gender \(retired\)/.test(byId.get("fields-list").children[3]
-      .textContent));
-  const retiredBlock = byId.get("fields-list").children[3];
-  check("a retired field offers exactly one button - Bring back",
-    retiredBlock.children[1].children.length === 1 &&
-    /Bring back/.test(retiredBlock.children[1].children[0].textContent));
-  retiredBlock.children[1].children[0].dispatch("click");
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-  check("un-retiring a field PUTs retired: false and sends no `values` " +
-    "at all - the Worker keeps what the field held when it retired " +
-    "(server/worker.js's own currentValues/handleRetireField)",
-    puts.length === 1 && puts[0].retired === false &&
-    !("values" in puts[0]));
+  check("the toast says Retired. for the field-level retire too",
+    byId.get("toast").textContent === "Retired.");
 }
 
 {
@@ -1276,13 +1566,42 @@ const BASE_ROUTES = {
   addRow.children[1].dispatch("click");
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
   check("a write the Worker refuses shows the Worker's own words, on " +
-    "this card's own status line",
-    /choices live elsewhere/.test(byId.get("fields-status").textContent));
+    "this card's own status line - and no toast fires, since the " +
+    "write never reached its success leg",
+    /choices live elsewhere/.test(byId.get("fields-status").textContent) &&
+    byId.get("toast").hidden === true);
   check("a refused add value keeps what the admin typed - F2 (#433 fix " +
     "wave): the page's own Roles card precedent, not lost text over a " +
     "Worker's reason, and the button is enabled again",
     addRow.children[0].value === "Enby" &&
     addRow.children[1].disabled === false);
+}
+
+{
+  // The MAX_FIELD_VALUES ceiling now counts a retired value too (an
+  // incidental fix this ticket's own read makes possible - the old
+  // /spec-sourced liveChoices() could never see a retired value to
+  // count it, and the card's own visible sentence always said "retired
+  // ones counted"). One active value plus 99 retired ones is at the
+  // Worker's own ceiling; the client-side courtesy refuses before a
+  // round trip, the same way every other bound on this page already
+  // does.
+  const AT_CEILING = { fields: [{ name: "gender", kind: "choice",
+    label: "Gender", choices: [{ id: "male", label: "Male" }].concat(
+      Array.from({ length: 99 }, (_, i) =>
+        ({ id: "r" + i, label: "R" + i, retired: true }))) }] };
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-fields": () => ok({ ok: true, spec: AT_CEILING }),
+  });
+  const { byId, calls } = await driven(routes, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[0];
+  const addRow = genderBlock.children[2];
+  addRow.children[0].value = "One more";
+  addRow.children[1].dispatch("click");
+  check("adding past the ceiling - retired values counted - is " +
+    "refused before a request is sent",
+    calls.filter((c) => c.method === "PUT").length === 0 &&
+    /retired ones counted/.test(byId.get("fields-status").textContent));
 }
 
 check("Fields never fetches per-member counts - no /charts-data call " +
@@ -1293,17 +1612,79 @@ check("Fields never fetches per-member counts - no /charts-data call " +
 {
   const HOSTILE = "<img src=x onerror=alert(1)>";
   const routes = Object.assign({}, BASE_ROUTES, {
-    "GET /spec": () => ok({ ok: true, spec: { fields: [
+    "GET /admin-fields": () => ok({ ok: true, spec: { fields: [
       { name: "gender", kind: "choice", label: HOSTILE,
-        choices: [{ value: "x", label: HOSTILE }] },
+        choices: [{ id: "x", label: HOSTILE }] },
     ] } }),
   });
   const { byId } = await driven(routes, { isAdmin: true });
   const block = byId.get("fields-list").children[0];
-  check("a hostile field or value label from GET /spec renders as " +
-    "literal text, not markup",
+  check("a hostile field or value label from GET /admin-fields renders " +
+    "as literal text, not markup",
     block.children[0].children[0].textContent === HOSTILE &&
     block.children[0].children[0]._text.includes("<img"));
+}
+
+/* -- The choices-to-values translation (F7, 0.9-M3-S25's review on     */
+/* #440, comment 5377697322; ruled into this ticket's scope by Prime's  */
+/* ruling comment 5378228358 on #440). -- */
+
+{
+  // The round trip: read -> translate -> write changes the spec. Every
+  // PUT body this page ever sends carries `values`, and this asserts it
+  // structurally rather than trusting the fixture round-trips above:
+  // JSON.stringify would print `choices` too if it were there.
+  const puts = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "PUT /admin-fields/gender": ({ body }) => {
+      puts.push(JSON.parse(body));
+      return ok({ ok: true });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[2];
+  const addRow = genderBlock.children[2];
+  addRow.children[0].value = "Non-binary";
+  addRow.children[1].dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("read -> translate -> write changes the spec, and the body " +
+    "carries `values`, never `choices` - the container-key rename",
+    puts.length === 1 && "values" in puts[0] && !("choices" in puts[0]));
+}
+
+{
+  // The hazard the translation avoids, driven rather than asserted: a
+  // Worker-shaped model of the real contract (server/worker.js's own
+  // handleWriteField only ever reads `payload.values` - an unknown key
+  // is silently ignored, per F7's own driven proof on #440) fed the
+  // UNTRANSLATED echo - the read's whole field object, `choices` and
+  // all, sent back exactly as GET /admin-fields answered it. It
+  // answers 200 and changes nothing, exactly like the real Worker.
+  const fieldFromRead = { name: "gender", kind: "choice", label: "Gender",
+    choices: [{ id: "male", label: "Male" },
+      { id: "female", label: "Female" }] };
+  let stored = fieldFromRead.choices;
+  function modelWorkerPut(body) {
+    const parsed = JSON.parse(body);
+    if (Array.isArray(parsed.values)) stored = parsed.values;
+    // An unrecognized key (`choices`) is ignored, never read as
+    // `values` - the same forgiveness server/worker.js's
+    // handleWriteField shows any body key it does not name.
+    return { status: 200, body: { ok: true } };
+  }
+  const untranslatedEcho = JSON.stringify(fieldFromRead);
+  const before = JSON.stringify(stored);
+  const result = modelWorkerPut(untranslatedEcho);
+  check("the untranslated echo (the read's own field object, `choices` " +
+    "key and all) is accepted (200) and changes nothing - the exact " +
+    "hazard F7 found, modeled off the real contract's own key names",
+    result.status === 200 && JSON.stringify(stored) === before);
+  const translated = JSON.stringify({ values: fieldFromRead.choices });
+  modelWorkerPut(translated);
+  check("the same values under the RIGHT key changes the spec - proving " +
+    "the model distinguishes the two rather than always no-op'ing",
+    JSON.stringify(stored) === JSON.stringify(fieldFromRead.choices) &&
+    stored !== fieldFromRead.choices);
 }
 
 /* -- Wiring for #433 fix wave, F1: the id cell (not the label cell)    */
@@ -1329,9 +1710,9 @@ check("Fields never fetches per-member counts - no /charts-data call " +
   const LONG_LABEL = "A very long value label, repeated to overflow. ".
     repeat(3).trim();
   const routes = Object.assign({}, BASE_ROUTES, {
-    "GET /spec": () => ok({ ok: true, spec: { fields: [
+    "GET /admin-fields": () => ok({ ok: true, spec: { fields: [
       { name: LONG_ID, kind: "choice", label: "Long field",
-        choices: [{ value: "v1", label: LONG_LABEL }] },
+        choices: [{ id: "v1", label: LONG_LABEL }] },
     ] } }),
   });
   const { byId } = await driven(routes, { isAdmin: true });
@@ -1742,7 +2123,12 @@ check("no download/export id survives in the real shipped markup - the " +
 // tests/charts-page.test.mjs and dev/xlsx.test.mjs both hold to: the
 // checks that ran are the whole claim this file makes, and a reader
 // loop that silently ran fewer of them would still print "OK".
-const EXPECTED = 150;
+// merge-forward over origin/accounts, 0.9-M3-S37: base (merge-base
+// 71f9f4a8dbe6) had 142; this branch's own head (9a1999e) added 8 for
+// the stacking/desktop-squeeze arms, reaching 150; S30's fix wave (PR
+// #468, merged to origin/accounts) added 29 more, reaching 171 there;
+// this merge keeps every arm from both sides, so 142 + 8 + 29 = 179.
+const EXPECTED = 179;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
