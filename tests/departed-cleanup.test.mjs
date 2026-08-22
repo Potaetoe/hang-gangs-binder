@@ -1289,6 +1289,17 @@ for (const [who, headers] of [
   const listed = (value.body && value.body.departed) || [];
   check("a stale account the bot calls a current member is NOT on the " +
     "departed list", !listed.some((row) => row.accountId === STALE_MEMBER));
+  /* An EXACT SET rather than one absence, because the absences are what
+     the verdict filter is for and naming them one at a time only ever
+     arms the cases somebody thought of. This fixture's stale candidates
+     are the leaver, the current member and the record with no id; only
+     the first may be here (0.9-M3-S15 fix wave 1: the F3 branch now
+     gates bypassed rows above the verdict filter, so a set assertion is
+     what keeps #420's own mutation reddening more than one arm). */
+  check("and the departed list is EXACTLY the leaver - one row, that " +
+    "account - so every other stale candidate is kept off it by the " +
+    "verdict and not by luck",
+    listed.length === 1 && listed[0].accountId === GONE);
   check("...in the very same answer that DOES carry the leaver, so the " +
     "check above is the verdict filter working and not an empty list",
     listed.some((row) => row.accountId === GONE));
@@ -1367,7 +1378,7 @@ for (const [who, headers] of [
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 106;
+const EXPECTED = 107;
 if (failures) {
   console.log("\nfailing checks:");
   for (const label of failed) console.log("  - " + label);
