@@ -1269,8 +1269,8 @@ function grantsAnythingSql(column) {
  * The account ids the `membership` table grants one role, AND WHETHER
  * THE READ ANSWERED AT ALL.
  *
- * FAILS CLOSED IN EVERY DIRECTION A READ CAN GO WRONG, which is the
- * whole of this function's design now that a row is a grant: a thrown
+ * THE SET IS EMPTY IN EVERY DIRECTION A READ CAN GO WRONG, which is
+ * half of this function's design now that a row is a grant: a thrown
  * query, a missing `results`, a shape that is not an array, a row whose
  * account id is not one - each gives the empty set rather than a partial
  * answer or a permissive default. An error swallowed into "assume they
@@ -1291,7 +1291,7 @@ function grantsAnythingSql(column) {
  * `read` IS FALSE FOR A SHAPE THAT IS NOT AN ARRAY as well as for a
  * throw, because a `results` that cannot be walked is a read that did
  * not answer however it arrived - the same argument departedVerdict()
- * makes for collapsing its own four ways to be unknown into one.
+ * makes for collapsing every way it cannot ask into one answer.
  * A row this Worker walked and refused is different: the read answered,
  * and grantsAnything() dropping a near-miss is the answer being read
  * correctly, not a failure to read it. The near-miss it refuses reads as
