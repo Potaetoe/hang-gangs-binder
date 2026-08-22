@@ -124,7 +124,7 @@ performed = 0
 # Asserted at the end, not merely printed - the floor every suite in
 # this fleet holds itself to: a hand-counted total nothing compares
 # against still prints a confident pass when a check stops running.
-EXPECTED = 210
+EXPECTED = 213
 
 
 def check(label, condition):
@@ -144,7 +144,9 @@ def git(repo, *args):
     done = subprocess.run(
         ["git", "-C", repo, "-c", "user.email=suite@example.invalid",
          "-c", "user.name=suite", *args],
-        capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+        stdin=subprocess.DEVNULL,
         timeout=FIXTURE_TIMEOUT,
     )
     return done.returncode, done.stdout + done.stderr
@@ -158,6 +160,15 @@ def sha(repo, ref):
 def write(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(data)
+
+
+def write_bytes(path, data):
+    """Like write() but for raw bytes - what a Python str literal cannot
+    hold, which a lone invalid-UTF-8 byte (0.9-M3-S29, #449's own
+    byte-faithful fixture) is."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as handle:
         handle.write(data)
 
 
@@ -1089,6 +1100,69 @@ try:
          "clause instead of the whole text",
           not ship_check._has_browser_evidence(still_denied_text))
 
+    print("\n--- byte-faithful identity despite errors=\"replace\" "
+         "(0.9-M3-S29, #449, scope item 3) ---")
+    # claim_vs_diff.git() now decodes with errors="replace" (this
+    # ticket's own first fix), and that replacement is lossy BY DESIGN:
+    # any invalid-UTF-8 byte, whatever its real value, becomes the same
+    # U+FFFD. So two files that differ ONLY in WHICH invalid byte they
+    # carry decode to IDENTICAL text - the stripped-comparison above
+    # would read them as the same file. Both fixture bytes below (0x9D,
+    # 0x81) sit inside a quoted SQL string literal, not a comment, so
+    # _strip_line_comments() (quote-aware, see its own docstring) never
+    # removes them - the collision has to be caught downstream, by
+    # `_prose_file_eligible()`'s own byte-faithful guard checking the
+    # RAW bytes via `_git_show_bytes()` whenever a replacement character
+    # shows up.
+    git(repo, "branch", "prose-only-byte-base", base_sha)
+    git(repo, "checkout", "-q", "prose-only-byte-base")
+    write_bytes(os.path.join(repo, "server", "byteval.sql"),
+               b"CREATE TABLE t (name TEXT DEFAULT '\x9d');\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "prose-only fixture: invalid-byte base")
+    prose_byte_base_sha = sha(repo, "HEAD")
+    prose_byte_declared = os.path.join(root, "declared-prose-byte.txt")
+    write(prose_byte_declared, "server/byteval.sql\n")
+
+    git(repo, "branch", "prose-only-byte-diff-head", "prose-only-byte-base")
+    git(repo, "checkout", "-q", "prose-only-byte-diff-head")
+    write_bytes(os.path.join(repo, "server", "byteval.sql"),
+               b"CREATE TABLE t (name TEXT DEFAULT '\x81');\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m",
+       "swap which invalid byte the string literal carries")
+    stage = ship_check.stage_tier(repo, prose_byte_declared,
+                                  prose_byte_base_sha, None)
+    check("two files differing ONLY in which non-UTF-8 byte they carry "
+         "(0x9D vs 0x81, both decoding to the SAME U+FFFD replacement "
+         "character) are NOT read as identical - the byte-faithful "
+         "guard catches what the decoded-text comparison alone would "
+         "have missed",
+          not stage.ok)
+    check("...and the printed line names the real reason (a "
+         "replacement character forced a raw-byte check, which then "
+         "found a real difference), not a bare 'differs'",
+          any("byteval.sql" in line and "replacement character" in line
+              for line in stage.lines))
+
+    git(repo, "branch", "prose-only-byte-same-head", "prose-only-byte-base")
+    git(repo, "checkout", "-q", "prose-only-byte-same-head")
+    write_bytes(os.path.join(repo, "server", "byteval.sql"),
+               b"-- a genuine comment-only reword\n"
+               b"CREATE TABLE t (name TEXT DEFAULT '\x9d');\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m",
+       "add a comment; the invalid byte itself is untouched")
+    stage = ship_check.stage_tier(repo, prose_byte_declared,
+                                  prose_byte_base_sha, None)
+    check("...and the documented trade-off: adding an ordinary comment "
+         "to a file that ALSO carries an invalid byte still refuses "
+         "the waiver, even though the byte itself never moved - the "
+         "guard checks the file's whole raw bytes, not only the "
+         "replaced position, which is the conservative (never-a-false-"
+         "identical) side of the two choices the ticket named",
+          not stage.ok)
+
     git(repo, "checkout", "-q", "0.9-m0-s22")
     for throwaway in ("prose-only-head", "prose-only-string-head",
                       "prose-only-base", "prose-only-sensitive-head",
@@ -1100,7 +1174,9 @@ try:
                       "prose-only-subdir-clean-head",
                       "prose-only-subdir-moved-head",
                       "prose-only-subdir-base",
-                      "mixed-waiver-red", "mixed-waiver-base"):
+                      "mixed-waiver-red", "mixed-waiver-base",
+                      "prose-only-byte-diff-head", "prose-only-byte-same-head",
+                      "prose-only-byte-base"):
         git(repo, "branch", "-D", throwaway)
 
     print("\n--- stage_totals: hand-typed gate totals vs what THIS run "
