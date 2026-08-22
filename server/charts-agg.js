@@ -22,9 +22,10 @@
  * sitting and re-accepted in the same words: the same rule, exact at
  * floor 0, and the floor SETTING is the protection any group can choose.
  * There is deliberately no second privacy rule for a combined view - it
- * is this one over fewer people, and above a floor of 0 an intersection
- * too small to draw gets the identical document a whole population that
- * small gets.
+ * is this one over fewer people, and AT EVERY FLOOR, the identity floor
+ * of 1 included, an intersection is treated exactly as a whole
+ * population of the same size: the same document, cell for cell, that
+ * this file answers for an unfiltered group that small.
  *
  * NOTHING WAS RIPPED OUT. The Other bucket, person-pooling and band
  * merging all still stand below and all obey whatever floor they are
@@ -91,7 +92,11 @@
  * worker.js: a handler holding raw counts is one `if` away from printing
  * them. At a floor of 0 that reduction is the identity, and the boundary
  * is what makes raising the setting a one-line change rather than a
- * rewrite.
+ * rewrite. AND IT IS APPLIED PER RESPONSE, which bounds what one answer
+ * says and nothing about what two answers differenced say - whether
+ * that is a hole this file has to close is the open question the batch
+ * security consult holds, ruled there rather than here by the
+ * orchestrator on 0.9-M3-S24's review (#438, finding F1).
  *
  * WHAT THE ANSWER CARRIES, reshaped by #371, again by #396 and again by
  * #438. This is the RESPONSE CONTRACT, stated whole here rather than
