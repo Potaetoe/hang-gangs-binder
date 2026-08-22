@@ -79,6 +79,11 @@ const adminHtml = await read("../apps/web/admin.html");
 const adminJs = await read("../apps/web/admin.js");
 const distHtml = await read("../dist/admin.html");
 const distJs = await read("../dist/admin.js");
+// Fix wave 1 (#458 review, F4/F5 in the review's own numbering): the
+// tablist overflow fix lives in theme.css, not admin.js - read both
+// copies here so the parsed-CSS arm below has something to parse.
+const themeCss = await read("../apps/web/theme.css");
+const distThemeCss = await read("../dist/theme.css");
 
 const DEAD_IDS = ["keyfile", "keyfile-picker", "run", "clear",
   "published-state", "unpublish", "unpublish-status", "membership-card",
@@ -461,6 +466,19 @@ check("departedSections keeps the ticket's own order - departed, then " +
   "unknown, then allowed - reordering nothing the Worker sent",
   Admin.departedSections(DEPARTED_FIXTURE, 20).sections
     .map((s) => s.key).join(",") === "departed,unknown,allowed");
+// Fix wave 1 on #458 (review F7 in the review's own numbering): the
+// check above proves the three SECTIONS stay in order; this proves
+// each section's own ROWS stay in the order the Worker sent them too
+// - "as sent", never resorted. The Worker's own sort direction (F1)
+// is a separate, still-open question Prime is ruling; this arm would
+// hold either way, because it only cares that the page does not touch
+// an order the Worker already chose.
+check("departedSections renders each section's own rows in the order " +
+  "the Worker sent them, unreordered",
+  Admin.departedSections({
+    departed: [{ accountId: "a" }, { accountId: "b" }, { accountId: "c" }],
+    unknown: [], allowed: [] }, 20).sections[0].rows
+    .map((row) => row.accountId).join(",") === "a,b,c");
 check("departedSections windows to ONE list of `revealed` rows total, " +
   "not per section (item 13 describes one list, not three)",
   (() => {
@@ -559,6 +577,52 @@ function findAll(el, predicate) {
 }
 function buttonByText(el, text) {
   return findAll(el, (n) => n.tag === "button" && n.textContent === text)[0];
+}
+
+// A whole-subtree serializer, not textContent - fix wave 1 on #458
+// (review comment 5380371688, F4 in the review's own numbering): the
+// #385-rule-1 arm used to read textContent alone, so a needle written
+// into title, aria-label, a data-* attribute, or anywhere else in the
+// markup would pass it silently. This walks every node under the
+// root and writes its tag, id, class, every attrs entry and every
+// leaf's own text into one string - the same thing a "view source"
+// on the real page would show - so a needle hiding in an attribute is
+// caught exactly like one hiding in visible text.
+function serializeSubtree(el) {
+  const attrPairs = [];
+  if (el.id) attrPairs.push('id="' + el.id + '"');
+  if (el.className) attrPairs.push('class="' + el.className + '"');
+  for (const key of Object.keys(el.attrs || {})) {
+    attrPairs.push(key + '="' + el.attrs[key] + '"');
+  }
+  const open = "<" + el.tag +
+    (attrPairs.length ? " " + attrPairs.join(" ") : "") + ">";
+  const inner = el.children.length
+    ? el.children.map(serializeSubtree).join("")
+    : (el._text || "");
+  return open + inner + "</" + el.tag + ">";
+}
+
+// Strips /* ... */ comments first, then returns the declaration block
+// of the first `selector { ... }` rule - not a whole-file string
+// match, which the eight-line comment sitting INSIDE this exact rule
+// (apps/web/theme.css, the [role="tablist"] block) would let a naive
+// regex keep matching even after the declaration it explains was
+// deleted. Fix wave 1 on #458 (review F5 in the review's own
+// numbering) asked for a parsed-CSS arm, not a comment string match.
+function cssRuleBody(css, selector) {
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const at = stripped.indexOf(selector);
+  if (at === -1) return null;
+  const open = stripped.indexOf("{", at);
+  if (open === -1) return null;
+  let depth = 1, i = open + 1;
+  while (i < stripped.length && depth > 0) {
+    if (stripped[i] === "{") depth += 1;
+    else if (stripped[i] === "}") depth -= 1;
+    i += 1;
+  }
+  return stripped.slice(open + 1, i - 1);
 }
 
 const PAGE_HTML = adminHtml;
@@ -874,6 +938,24 @@ const BASE_ROUTES = {
     byId.get("fields-card").hidden === true &&
     byId.get("tab-departed").getAttribute("aria-selected") === "true" &&
     byId.get("tab-log").getAttribute("aria-selected") === "false");
+}
+
+/* -- The tab bar's own overflow fix (fix wave 1, #458): a parsed-CSS   */
+/* arm, since the DOM stub above never lays anything out in pixels -    */
+/* geometry proof for this fix is the browser pass, this only proves    */
+/* the rule that pass measured is still in the shipped stylesheet. -- */
+
+{
+  const tablistRule = cssRuleBody(themeCss, '[role="tablist"]');
+  check("apps/web/theme.css's own [role=\"tablist\"] rule sets " +
+    "flex-wrap: wrap (fix wave 1, #458) - parsed from the rule's own " +
+    "declaration block, not matched against the comment sitting " +
+    "inside it",
+    tablistRule !== null && /flex-wrap\s*:\s*wrap\s*;/.test(tablistRule));
+  const distTablistRule = cssRuleBody(distThemeCss, '[role="tablist"]');
+  check("the dist/theme.css mirror carries the same rule",
+    distTablistRule !== null &&
+    /flex-wrap\s*:\s*wrap\s*;/.test(distTablistRule));
 }
 
 /* -- Settings: load, per-field validation, per-field save -- */
@@ -2034,6 +2116,34 @@ function departedRowByLabel(list, label) {
 }
 
 {
+  // Fix wave 1 on #458 (review comment 5380371688, F4 in the review's
+  // own numbering): the check above reads textContent alone, so a
+  // needle written into an attribute - title, aria-label, a data-*
+  // attribute, or any other field name - would pass it silently. This
+  // arms the WHOLE rendered subtree against a hostile stub carrying a
+  // handle, a numeric Telegram id, a username and an email, checked
+  // against every text node, every attribute value and the serialized
+  // markup together, not only the text a person reads.
+  const NEEDLES = ["@leakhandle", "918273645", "leakusername",
+    "leak@example.com"];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true,
+      departed: [{ accountId: "d1", label: null,
+        lastSeenAt: "2026-07-01T00:00:00.000Z",
+        handle: NEEDLES[0], telegramId: NEEDLES[1],
+        username: NEEDLES[2], email: NEEDLES[3] }],
+      unknown: [], allowed: [] }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const markup = serializeSubtree(byId.get("departed-list"));
+  check("no needle from a hostile stub (handle, numeric Telegram id, " +
+    "username, email) appears in any text node, any attribute value, " +
+    "or the serialized markup of the Departed list (#385 rule 1, the " +
+    "whole rendered subtree - not textContent alone)",
+    NEEDLES.every((needle) => !markup.includes(needle)));
+}
+
+{
   // 20-then-more (item 13) over ONE list - 25 departed rows, no
   // unknown/allowed, so this is the plainest arm of the pagination.
   const many = Array.from({ length: 25 }, (_unused, i) => ({
@@ -2268,7 +2378,7 @@ check("no download/export id survives in the real shipped markup - the " +
 // tests/charts-page.test.mjs and dev/xlsx.test.mjs both hold to: the
 // checks that ran are the whole claim this file makes, and a reader
 // loop that silently ran fewer of them would still print "OK".
-const EXPECTED = 203;
+const EXPECTED = 207;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

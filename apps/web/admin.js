@@ -2112,11 +2112,14 @@
     /* The toast (#454 item 8) - the one element (#toast) and the one   */
     /* function this page needs, so 0.9-M3-S33 can lift both site-wide  */
     /* unchanged. Used for this card's own write confirmations          */
-    /* (Added./Retired./Restored./Renamed./Reordered.) - loading and    */
-    /* refusal stay on the inline status line beside the control, since */
-    /* those need to persist and stay readable rather than fade;        */
-    /* converting every card's feedback site-wide is S33's own scope    */
-    /* (Prime's map on #454), not this ticket's.                        */
+    /* (Added./Retired./Restored./Renamed./Reordered.), and also for    */
+    /* the Departed card's own erase result, success or the Worker's    */
+    /* refusal verbatim (#454 item 8, this ticket, #458) - loading and  */
+    /* refusal on every OTHER card still stay on the inline status line */
+    /* beside the control, since those need to persist and stay         */
+    /* readable rather than fade; converting every other card's         */
+    /* feedback site-wide is S33's own scope (Prime's map on #454), not */
+    /* this ticket's.                                                   */
     let toastTimer = null;
     function showToast(message) {
       const toast = $("toast");
