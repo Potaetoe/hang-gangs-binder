@@ -5064,18 +5064,45 @@ async function handleReadDeparted(env, origin) {
    * truncates, so each returned row carries the count of candidates
    * that existed. A separate `SELECT COUNT(*)` would be a second look
    * at a table that sign-ins move, and two looks a moment apart can
-   * disagree - which is how a page ends up saying "showing 50 of 49".
+   * disagree - which is how a page ends up saying it checked 50 of 49.
    *
    * The ORDER BY is untouched and must stay untouched: oldest-stale
    * first is the owner's ruling at #454 item 13, and the count sits
    * beside the list rather than in front of it.
    *
-   * WHAT THE COUNT COSTS: the read visits every stale row instead of
-   * stopping at the cap, which server/schema.sql's `directory_last_seen`
-   * index keeps a range scan over the stale window rather than a full
-   * table read. What the cap bounds is the outbound getChatMember call
-   * per candidate - the expensive half, and the reason the cap exists -
-   * and that is still capped at DEPARTED_LIST_CAP.
+   * WHAT THE COUNT COSTS, as the query planner reports it rather than
+   * as it reads. EXPLAIN QUERY PLAN over 5000 rows on SQLite 3.53.3,
+   * with server/schema.sql's `directory_last_seen` index in place,
+   * gives this statement:
+   *
+   *   CO-ROUTINE (subquery-2)
+   *   SEARCH directory USING INDEX directory_last_seen (last_seen_at<?)
+   *   SCAN (subquery-2)
+   *   USE TEMP B-TREE FOR ORDER BY
+   *
+   * against the plain SEARCH the same statement without the window
+   * function gets. So the count costs two things, not one: the read
+   * visits every stale row instead of stopping at the cap, AND the
+   * ordering comes off the index into a temporary b-tree, which is why
+   * LIMIT can no longer stop the walk early. Rows read here therefore
+   * grow with the stale population - stale is DEPARTED_STALE_DAYS
+   * without a sign-in, which in a real group can be most of the
+   * directory - and only the range scan keeps that off a full table
+   * read. What the cap bounds is the outbound getChatMember call per
+   * candidate, the expensive half and the reason the cap exists, and
+   * that is still capped at DEPARTED_LIST_CAP.
+   *
+   * THE SORT IS AVOIDABLE AND IS NOT AVOIDED, so the next reader has
+   * the fact rather than the hint. Two forms measured on the same
+   * engine drop the temp b-tree: a scalar `(SELECT COUNT(*) FROM
+   * directory WHERE last_seen_at < ?)` beside the row, which keeps
+   * this ORDER BY and reads the table a second time inside the one
+   * statement; and the window function over an already-ordered
+   * subquery, which drops the outer ORDER BY and leaves
+   * gone-longest-first (#454 item 13) resting on the planner rather
+   * than on a clause. At this project's size neither is worth trading
+   * a stated ordering or a second read for; a group whose directory
+   * outgrows that is the condition to revisit it.
    */
   const stale = await env.DB.prepare(
     "SELECT account_id, last_seen_at, COUNT(*) OVER () AS candidates " +

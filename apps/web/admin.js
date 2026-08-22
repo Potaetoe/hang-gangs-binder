@@ -666,33 +666,48 @@
       hasMore: shown < total };
   }
 
-  /* Item 23 ("a capped list sends its total and the page says 'showing
-   * 50 of N'"): GET /admin-departed asks the bot about at most its own
-   * DEPARTED_LIST_CAP accounts, so a group with more stale rows than
-   * that has an answer that stopped short - and the More button above
-   * windows what arrived, which is why it can never reach past the cap
-   * and why only the Worker's own counts can say so.
+  /* Item 23 in the owner's own refined words (2026-08-22): "Showing 43
+   * (checked 50 of 120)" - the rows on the page, the accounts the route
+   * examined, the candidates there were. GET /admin-departed asks the
+   * bot about at most its own DEPARTED_LIST_CAP accounts, so a group
+   * with more stale rows than that has an answer that stopped short -
+   * and the More button above windows what arrived, which is why it can
+   * never reach past the cap and why only the Worker's own counts can
+   * say so.
    *
-   * BOTH NUMBERS COME OFF THE RESPONSE. A page holding its own copy of
+   * THE FIRST NUMBER IS NOT THE SECOND, and that is the whole reason
+   * the sentence has three of them. The route drops a candidate the bot
+   * calls a current member, so fifty examined can be five rows drawn -
+   * or none, when every candidate is still a member. `rows` is
+   * therefore counted off the three lists the card rendered and is
+   * never derived from `cap`; a line printing the cap in that place
+   * promises an admin rows that are not on the page.
+   *
+   * THE OTHER TWO COME OFF THE RESPONSE. A page holding its own copy of
    * the cap would go on printing 50 after the Worker's constant moved,
-   * and a page deriving the total from the rows it received would
-   * print the cap twice.
+   * and a page deriving the total from the rows it received would print
+   * the cap twice.
    *
-   * NOT departedSections()'s `total`, which counts the rows the Worker
-   * SENT and drives the More button. This one counts the candidates it
-   * read before the cap. Two different numbers about two different
-   * things, which is why neither is derived from the other.
+   * `rows` IS NOT departedSections()'s `shown` either. That one is the
+   * twenty-at-a-time window the More button walks, which is about
+   * scrolling; this line is about what the route did not look at, so it
+   * counts everything that arrived whether it is revealed yet or not.
    *
    * Numbers or nothing: an answer that carries no counts - one from a
    * Worker without them, or a malformed read - draws no line at all
-   * rather than "showing undefined of NaN". */
-  function departedCapNote(payload) {
+   * rather than "Showing 3 (checked undefined of NaN)", and a caller
+   * that hands over no usable row count gets the same silence, since
+   * that number is the one the response cannot supply. */
+  function departedCapNote(payload, rows) {
     const total = payload && payload.total;
     const cap = payload && payload.cap;
     if (typeof total !== "number" || !Number.isFinite(total)) return "";
     if (typeof cap !== "number" || !Number.isFinite(cap)) return "";
+    if (typeof rows !== "number" || !Number.isFinite(rows) || rows < 0) {
+      return "";
+    }
     if (!(total > cap)) return "";
-    return "showing " + cap + " of " + total;
+    return "Showing " + rows + " (checked " + cap + " of " + total + ")";
   }
 
   /* ---------------------------------------------------------------- */
@@ -1977,8 +1992,14 @@
       /* The footer is the last line of the card in EVERY state,
        * including the empty one: a group whose fifty candidates are all
        * still members shows no rows at all, and the empty sentence on
-       * its own would read as the whole group checked and cleared. */
-      const capNote = departedCapNote(departedPayload);
+       * its own would read as the whole group checked and cleared -
+       * "Showing 0 (checked 50 of 120)" is exactly the case the three
+       * numbers exist for.
+       *
+       * view.total is the count of rows that ARRIVED, not the twenty
+       * this render revealed, which is the number the owner's first
+       * word is about. */
+      const capNote = departedCapNote(departedPayload, view.total);
       if (!capNote) return;
       const footer = document.createElement("p");
       footer.className = "hint";

@@ -484,13 +484,16 @@
 
   
 
-  function departedCapNote(payload) {
+  function departedCapNote(payload, rows) {
     const total = payload && payload.total;
     const cap = payload && payload.cap;
     if (typeof total !== "number" || !Number.isFinite(total)) return "";
     if (typeof cap !== "number" || !Number.isFinite(cap)) return "";
+    if (typeof rows !== "number" || !Number.isFinite(rows) || rows < 0) {
+      return "";
+    }
     if (!(total > cap)) return "";
-    return "showing " + cap + " of " + total;
+    return "Showing " + rows + " (checked " + cap + " of " + total + ")";
   }
 
    
@@ -1768,7 +1771,7 @@
       }
       
 
-      const capNote = departedCapNote(departedPayload);
+      const capNote = departedCapNote(departedPayload, view.total);
       if (!capNote) return;
       const footer = document.createElement("p");
       footer.className = "hint";

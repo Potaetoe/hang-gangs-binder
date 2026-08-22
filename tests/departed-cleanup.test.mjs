@@ -433,8 +433,9 @@ function makeDb(seed) {
      * whole reason ONE read answers both questions. The steps below
      * are in that order on purpose: filter, count, sort, truncate. A
      * stub that counted after slicing would report `min(total, cap)`
-     * as the total and let every arm below pass against a Worker that
-     * could never say "showing 50 of 120".
+     * as the total and let every arm below pass against a Worker whose
+     * page could never say it checked 50 of 120 - a total equal to the
+     * cap draws no line at all.
      *
      * Proven against a real engine rather than assumed: SQLite 3.53.3
      * over 120 stale rows returns 50 rows each carrying 120, and 50
