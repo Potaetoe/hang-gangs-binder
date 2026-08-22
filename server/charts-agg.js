@@ -16,6 +16,16 @@
  * member's number to every signed-in member - so a one-person view
  * drawing its true value is the design here, not a hole in it.
  *
+ * COMBINED FILTERS SHARPEN THAT AND WERE RULED THE SAME WAY. #384's
+ * chips AND several predicates together, and two chips can isolate a
+ * member a single one cannot. Put to the owner adversarially at that
+ * sitting and re-accepted in the same words: the same rule, exact at
+ * floor 0, and the floor SETTING is the protection any group can choose.
+ * There is deliberately no second privacy rule for a combined view - it
+ * is this one over fewer people, and above a floor of 0 an intersection
+ * too small to draw gets the identical document a whole population that
+ * small gets.
+ *
  * NOTHING WAS RIPPED OUT. The Other bucket, person-pooling and band
  * merging all still stand below and all obey whatever floor they are
  * given; at 0 each of them is the IDENTITY - reached by the same code
@@ -83,11 +93,23 @@
  * is what makes raising the setting a one-line change rather than a
  * rewrite.
  *
- * WHAT THE ANSWER CARRIES, reshaped by #371 and again by #396. This is
- * the RESPONSE CONTRACT, stated whole here rather than only inside the
- * functions that build it: the page's builder reads this header, and a
- * shape they have to reconstruct from suppressBins() and a spec comment
- * is a shape they will get wrong (#371, the S10 review, finding F3).
+ * WHAT THE ANSWER CARRIES, reshaped by #371, again by #396 and again by
+ * #438. This is the RESPONSE CONTRACT, stated whole here rather than
+ * only inside the functions that build it: the page's builder reads this
+ * header, and a shape they have to reconstruct from suppressBins() and a
+ * spec comment is a shape they will get wrong (#371, the S10 review,
+ * finding F3).
+ *
+ *   filters        THE CALLER'S OWN PREDICATES, HANDED BACK - a LIST of
+ *                  `{ field, value }` in the order they were asked, and
+ *                  EMPTY for Everyone. Every count uses this one shape,
+ *                  including none and one, so a page never reads a key
+ *                  that exists only at a particular count (#438; it
+ *                  replaced a single `filter` pair that read
+ *                  `{ field: null, value: null }` when nothing was
+ *                  filtered). It is an echo and never an enumeration -
+ *                  echoFilters() below carries why that distinction is
+ *                  the whole of mandate 5.
  *
  *   ONE ANSWER IS IN ONE UNIT SYSTEM AND CARRIES NO OTHER READING OF
  *   ITSELF. Every number below - a band edge, a trend average, a self
@@ -471,6 +493,65 @@ const CHOICE_LIST_SHAPES = { countries: /^[A-Z]{2}$/ };
  */
 const ASK_PARAMS = new Set(["measure", "filter", "value", "self", "units"]);
 
+/*
+ * The two names that may appear MORE THAN ONCE, and the pairing rule.
+ *
+ * A CHIP IS A `filter=`/`value=` PAIR AND THE PAIRING IS POSITIONAL
+ * (0.9-M3-S24, #438, building the chips ruled at #384): the nth
+ * `filter=` owns the nth `value=`, so
+ * `filter=gender&value=male&filter=roles&value=feedee` is two predicates
+ * ANDed. The names did not change when the count did, because the page
+ * sending one chip and the page sending three are the same page sending
+ * more of the same thing.
+ *
+ * WHAT WAS REJECTED AND WHY, since a wire format is the hardest thing to
+ * change later. A `filters=` parameter of its own would leave two
+ * spellings of one idea for a page to get wrong. A compound
+ * `filter=gender:male` would put a separator inside a value the SPEC
+ * owns, so a fork whose choice value contains that character would have
+ * a filter nobody could ask for.
+ *
+ * EVERY OTHER NAME KEEPS THE GIVEN-TWICE REFUSAL. `measure`, `self` and
+ * `units` each decide one thing about the whole answer, so a second copy
+ * is a caller contradicting themselves and honoring either would be this
+ * route guessing which they meant.
+ *
+ * A FIELD STILL MAY NOT REPEAT. That refusal survives from the
+ * single-filter world in its own words, raised against the FIELD rather
+ * than against the parameter: #384 ruled ONE value per dimension, so two
+ * values for one field would be an OR inside an AND - a different
+ * question, and one no chip in the ruled design can express.
+ */
+const REPEATABLE = new Set(["filter", "value"]);
+
+/*
+ * The most predicates one request may carry.
+ *
+ * A BOUND ON THE REQUEST, NOT ON THE FORM. The spec's categorical fields
+ * are admin data since 0.9-M3-S11 (#419) - an admin may add as many as
+ * they like, and #384 ruling 3 is that a field they add becomes a chip
+ * with no code change - so a cap read off the spec would be no cap at
+ * all. Four is a fixed number: one more than the shipped form's three
+ * categorical fields (gender, roles, country), so nothing the shipped
+ * chips can build is out of reach, and the work one request may ask for
+ * stays constant however far a fork's form grows.
+ *
+ * WHAT IT BOUNDS IS THE SWEEP, NOT THE ARITHMETIC. Matching costs one
+ * heldValues() read per predicate per person, which is small; what grows
+ * without a cap is how finely a single request may cut the group, and a
+ * caller walking the product of every field's values is the shape this
+ * declines to serve one request at a time.
+ *
+ * IT IS NOT A PRIVACY RULE AND MUST NOT BE READ AS ONE. The floor is
+ * that rule, and it applies to an intersection exactly as it applies to
+ * the whole - this file's own header carries the ruling and what was put
+ * to the owner adversarially before it was re-accepted. Raising this
+ * number would cost nothing in disclosure that the floor does not
+ * already answer for; lowering it would not protect anybody the floor
+ * leaves exposed.
+ */
+const MAX_FILTERS = 4;
+
 /* An account id as server/worker.js writes one: SHA-256 HMAC, hex. */
 const ACCOUNT_ID = /^[0-9a-f]{64}$/;
 
@@ -675,7 +756,7 @@ function askFor(params, spec) {
     if (!ASK_PARAMS.has(name)) {
       return fault('"' + name + '" is not a parameter of this view.');
     }
-    if (params.getAll(name).length > 1) {
+    if (!REPEATABLE.has(name) && params.getAll(name).length > 1) {
       return fault('"' + name + '" is given more than once.');
     }
   }
@@ -698,20 +779,57 @@ function askFor(params, spec) {
     return fault("That is not a measure this form charts.");
   }
 
-  let filter = null;
-  const by = params.get("filter");
-  const value = params.get("value");
-  if (by !== null) {
+  /*
+   * THE PREDICATES: one value per categorical field, ANDed (#438,
+   * building #384's chips). Read as two positional lists, so the nth
+   * filter owns the nth value - REPEATABLE above carries why the names
+   * repeat rather than a new parameter arriving.
+   *
+   * THE COUNT IS CHECKED BEFORE ANY NAME IS RESOLVED. An over-cap
+   * request then costs one comparison whatever it names, and - the part
+   * that matters - a caller cannot read the ordering of these refusals
+   * to learn which of the fields they invented this form happens to
+   * have. The cap's refusal is about the request's shape alone.
+   *
+   * ONE BAD PREDICATE REFUSES THE WHOLE ASK rather than the good half
+   * being honored. Answering a narrower question than the one asked
+   * would describe a population the caller never named, and the
+   * response gives them no way to tell that apart from the one they did
+   * name - which is the same reason a single bad filter has always been
+   * a refusal rather than a silently dropped clause.
+   *
+   * EVERY REFUSAL BELOW IS STILL ABOUT THE CONFIGURATION. A value an
+   * admin RETIRED is simply not in the effective spec's choice list
+   * (#385 rule 7; server/worker.js's offeredValues() is what drops it),
+   * so it is refused in the same sentence a value that never existed
+   * gets - a caller cannot read a refusal for the group's own history.
+   */
+  const by = params.getAll("filter");
+  const values = params.getAll("value");
+  if (by.length > MAX_FILTERS) {
+    return fault("This view takes at most " + MAX_FILTERS +
+      " filters at once.");
+  }
+  if (by.length > values.length) {
+    return fault("That filter needs a value.");
+  }
+  if (values.length > by.length) {
+    return fault("A value needs a filter to belong to.");
+  }
+
+  const filters = [];
+  for (let i = 0; i < by.length; i += 1) {
+    const field = by[i];
     const on = measures.filter((one) =>
-      one.name === by && one.kind === "categorical")[0];
+      one.name === field && one.kind === "categorical")[0];
     if (!on) return fault("That is not a filter this form offers.");
-    if (value === null) return fault("That filter needs a value.");
-    if (!permits(on, value)) {
+    if (filters.some((one) => one.field === field)) {
+      return fault('"' + field + '" is given more than once.');
+    }
+    if (!permits(on, values[i])) {
       return fault("That is not a value of that filter.");
     }
-    filter = { field: by, value: value, measure: on };
-  } else if (value !== null) {
-    return fault("A value needs a filter to belong to.");
+    filters.push({ field: field, value: values[i], measure: on });
   }
 
   /*
@@ -739,7 +857,7 @@ function askFor(params, spec) {
     return fault("That is not a unit system this form offers.");
   }
 
-  return { ok: true, ask: { measure: measure, filter: filter,
+  return { ok: true, ask: { measure: measure, filters: filters,
     self: self === "1",
     system: asked === null ? site.units.default : asked } };
 }
@@ -1112,32 +1230,49 @@ function echoMeasure(measure) {
 }
 
 /*
- * The filter, ECHOED AND NEVER ENUMERATED (mandate 5).
+ * The filters, ECHOED AND NEVER ENUMERATED (mandate 5).
  *
- * The caller is handed back the value they sent and nothing beside it.
- * Listing the genders, affiliations or countries the group actually
- * holds would be the membership oracle DESIGN.md, "The identifier is the
- * whole problem", turns the whole store on - reachable with one request
- * and no floor in the way, because a list of which values EXIST is not a
- * cell and no suppression rule would ever have looked at it.
+ * The caller is handed back the predicates THEY sent and nothing beside
+ * them. Listing the genders, affiliations or countries the group
+ * actually holds would be the membership oracle DESIGN.md, "The
+ * identifier is the whole problem", turns the whole store on - reachable
+ * with one request and no floor in the way, because a list of which
+ * values EXIST is not a cell and no suppression rule would ever have
+ * looked at it.
  *
  * A measure's own drawn cells do name values, and that is not the same
  * thing: a cell is the chart, and every drawn cell has already cleared
  * the floor.
+ *
+ * ONE SHAPE AT EVERY COUNT: a LIST, empty for Everyone (#438). The
+ * single-filter world echoed `{ field: null, value: null }` for no
+ * filter and a pair for one, and carrying that forward beside a list
+ * would have left a page reading a key that exists only at one
+ * particular count. The caller's own order is kept, because this is
+ * their question handed back - and the answer around it does not depend
+ * on that order, since AND is commutative.
  */
-function echoFilter(filter) {
-  return filter === null
-    ? { field: null, value: null }
-    : { field: filter.field, value: filter.value };
+function echoFilters(filters) {
+  return filters.map((one) => ({ field: one.field, value: one.value }));
 }
 
 /*
  * What nothing to draw looks like, and it is ONE document (mandate 4).
  *
- * A view with nobody in it, a filter value nobody holds, a measure
- * nobody in the view answered - and, at any raised floor, a group below
- * it - all arrive here and leave with the same bytes: same status, same
- * sentence, no counts, no partition, no band residue, no group makeup.
+ * A view with nobody in it, a filter value nobody holds, an
+ * INTERSECTION OF SEVERAL FILTERS nobody is in, a measure nobody in the
+ * view answered - and, at any raised floor, a group below it - all
+ * arrive here and leave with the same bytes: same status, same sentence,
+ * no counts, no partition, no band residue, no group makeup.
+ *
+ * THE COMBINED CASE IS THE ONE THIS NOW EARNS ITS KEEP ON (#438). Two
+ * chips can cut the group to one member where one chip could not, so at
+ * any floor above 0 the isolating combination and the combination
+ * nobody is in have to be the same document - otherwise the difference
+ * between them answers "is there exactly one person who is both of
+ * these", which is the question the floor exists to refuse. The only
+ * thing that varies between them is the echo, which is the caller's own
+ * question and tells them nothing they did not send.
  * Telling any two of those apart would answer "does anybody in this
  * group hold that value", which is the question a floor exists to
  * refuse, asked from outside the data. At the shipped floor of 0 only
@@ -1152,7 +1287,7 @@ function notEnough(ask, floor) {
   return {
     ok: true,
     measure: echoMeasure(ask.measure),
-    filter: echoFilter(ask.filter),
+    filters: echoFilters(ask.filters),
     floor: floor,
     enough: false,
     note: NOT_ENOUGH,
@@ -1178,17 +1313,32 @@ function latestPerAccount(rows) {
 }
 
 /*
- * Whether one person is in this view.
+ * Whether one person is in this view: they hold EVERY predicate's value.
  *
  * Decided on their CURRENT record, for both pictures. Placing somebody
  * by whatever they held at the time of each row instead would let the
  * population move underneath the trend line, so a change in the group's
  * average could be a change in who is being averaged - a chart that
  * cannot be read is worse than one that is coarse.
+ *
+ * AND, ACROSS FIELDS, AND THE EMPTY SET IS EVERYONE (#438, #384's
+ * chips). A member holding a value on a multiple-choice field satisfies
+ * that field's predicate once however many values they hold, so nobody
+ * is counted twice by combining - the person-rule the whole file runs on
+ * is untouched by there being more predicates.
+ *
+ * Everyone is the empty list rather than a null, which is why there is
+ * no special case here to get wrong: a loop over no predicates is
+ * vacuously true, so "no chips" reaches the same code every other count
+ * reaches.
  */
-function matches(record, filter) {
-  if (filter === null) return true;
-  return heldValues(filter.measure, record).indexOf(filter.value) !== -1;
+function matchesAll(record, filters) {
+  for (const filter of filters) {
+    if (heldValues(filter.measure, record).indexOf(filter.value) === -1) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /*
@@ -1321,7 +1471,12 @@ function cellsOf(people, measure, floor) {
  * part of one answer about one group - "who is in this view" beside
  * "what this view weighs". A block computed over everybody would be a
  * second population inside a document about the first, and a reader
- * could difference the two.
+ * could difference the two. With several filters set that view is the
+ * INTERSECTION (#438), and this needs no code of its own: `people` is
+ * already whoever matched every predicate, so the block describes them
+ * and the floor reduces their cells by the same rule it reduces the
+ * whole binder's - which is what stops a two-chip cut naming a value
+ * only one of the people behind it holds.
  *
  * `multiple` rides along because it changes how the numbers read: on a
  * field a member may answer more than once the lines sum to holdings
@@ -1452,7 +1607,7 @@ function aggregate(rows, ask, spec, settings) {
   const people = [];
   const accounts = new Set();
   for (const row of latestPerAccount(rows).values()) {
-    if (!matches(row.record, ask.filter)) continue;
+    if (!matchesAll(row.record, ask.filters)) continue;
     people.push(row);
     accounts.add(row.accountId);
   }
@@ -1464,7 +1619,7 @@ function aggregate(rows, ask, spec, settings) {
   return {
     ok: true,
     measure: echoMeasure(ask.measure),
-    filter: echoFilter(ask.filter),
+    filters: echoFilters(ask.filters),
     floor: floor,
     enough: true,
     note: null,
@@ -1496,11 +1651,11 @@ function aggregate(rows, ask, spec, settings) {
  * series would put a cell of one person inside a document every other
  * rule here reduced.
  *
- * THE FILTER IS NOT APPLIED. The overlay is the caller's own history,
- * which they can already read in full at GET /my-entries, so narrowing
- * it by the group filter would buy no privacy and would make their line
- * appear and disappear as they changed the group they were comparing
- * themselves to.
+ * THE FILTERS ARE NOT APPLIED, however many are set. The overlay is the
+ * caller's own history, which they can already read in full at GET
+ * /my-entries, so narrowing it by the group's filters would buy no
+ * privacy and would make their line appear and disappear as they
+ * changed the group they were comparing themselves to.
  *
  * IT TAKES THE SETTINGS ANYWAY, AND NOT FOR THE FLOOR. This line is
  * drawn OVER the group trend on one pair of axes, so it has to be in
@@ -1531,4 +1686,4 @@ function selfSeries(rows, accountId, ask, spec, settings) {
   return { points: points };
 }
 
-export { DEFAULT_FLOOR, askFor, aggregate, selfSeries };
+export { DEFAULT_FLOOR, MAX_FILTERS, askFor, aggregate, selfSeries };
