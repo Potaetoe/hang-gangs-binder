@@ -53,6 +53,7 @@ was judged as. Exit 0 always (this is a reading, not a gate); a gate
 that wants to refuse reads the first line - `ship_check.py`'s own
 `stage_tier()` is that gate for this repository.
 """
+import posixpath
 import re
 import sys
 
@@ -94,25 +95,45 @@ TRIVIAL = [
 ]
 
 
+def normalize_path(path):
+    """Repo-relative path normal form for judge()'s own matching (re-fire
+    #2, #460, finding F7, Prime's ruling 2026-08-22).
+
+    Fix wave 2 (re-fire #1, finding F4) stripped a leading "./" in a
+    loop, after a backslash-to-forward-slash replace - which fixed the
+    ONE spelling the review's probe demonstrated ("./tools/reaper.py")
+    but is not a real path normalizer, so re-fire #2 found neighbors it
+    still missed: a doubled slash ("tools//reaper.py") and a "../"
+    detour ("a/../tools/reaper.py") both tiered normal, because neither
+    is a leading "./" and the old loop only ever looked at the front of
+    the string.
+
+    The fix is a real normalizer, not a third hand-rolled string trick:
+    backslashes to forward slashes, then `posixpath.normpath`, which
+    collapses doubled slashes, resolves "." and ".." segments, and
+    strips a leading "./" as a side effect of doing all three uniformly
+    - "./tools/reaper.py", "tools//reaper.py", "a/../tools/reaper.py"
+    and "tools\\reaper.py" (once backslash-replaced) all normalize to
+    the bare "tools/reaper.py" the anchored SENSITIVE rows already
+    match. A leading "/" is stripped afterward too (`normpath` leaves an
+    absolute path absolute): this repository's declared paths are
+    always repo-relative, and a caller who typed a leading slash by
+    accident should still match the row the bare spelling matches, the
+    same generosity the anchored rows already extend to a leading "./"."""
+    p = path.strip().replace("\\", "/")
+    if not p:
+        return ""
+    p = posixpath.normpath(p)
+    while p.startswith("/"):
+        p = p[1:]
+    return p
+
+
 def judge(path):
     """(tier, why) for one repo-relative path - "sensitive", "trivial"
     or "normal", never None for a non-empty path (the fallback IS
-    "normal", per the ruling's "everything in between").
-
-    Fix wave 2 (#460, re-fire #1, finding F4): normalize backslashes AND
-    strip a leading "./" (however many times it repeats - "././x" is the
-    same path as "x") BEFORE judging, not just backslashes. Without this
-    a prefixed spelling of an anchored sensitive row - `^tools/reaper\\.py$`
-    matches "tools/reaper.py" but not "./tools/reaper.py" - silently
-    tiered normal, the exact gap the review's own probe demonstrated.
-    claim-vs-diff's own declared-list paths never carry a "./" prefix in
-    practice, but the anchored rows this amendment sits beside
-    (`(^|/)wrangler\\.toml$`) already tolerate a prefix by construction,
-    and the two rows patterned on them should read the same regardless
-    of which of the two spellings a caller happens to use."""
-    p = path.strip().replace("\\", "/")
-    while p.startswith("./"):
-        p = p[2:]
+    "normal", per the ruling's "everything in between")."""
+    p = normalize_path(path)
     if not p:
         return None, ""
     for rx, why in SENSITIVE:

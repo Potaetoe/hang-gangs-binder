@@ -1,12 +1,36 @@
 /*
  * Contract checks for gate-pool.mjs's runPool() - the concurrency-
  * limited scheduler tests/run.mjs now runs every arm through (0.9-M3-
- * S35, #460). This is the fixture roster of fake, known-duration tasks
- * the ticket asks for: real Promises with a real `setTimeout` delay,
- * never a spawned process, because the property under test - "the
- * returned order matches input order, not finish order, and a pool of
- * size N genuinely overlaps N tasks rather than serializing them" - is
- * a property of the scheduler itself, independent of what a task does.
+ * S35, #460).
+ *
+ * RE-FIRE #2 (#460, Prime's ruling 2026-08-22, "the class is closed
+ * whole this time" - no arm in this file may decide pass/fail on real
+ * wall-clock timing): the "pool of size N overlaps N tasks" check below
+ * used to compare a REAL measured elapsed time for three 150ms tasks
+ * against a fixed 400ms ceiling, and it reded 1 run in 8 under 24
+ * synthetic CPU spinners (review comment on #460, re-fire #2, finding
+ * F2) - the same class of flake the ordering/ratio checks in
+ * tests/gate-budget.test.mjs already moved off real timing for. This
+ * file now proves the same three properties - results come back in
+ * input order regardless of finish order; a pool of size N genuinely
+ * runs N tasks concurrently; concurrency 1 is genuinely sequential -
+ * with DEFERRED PROMISES this file resolves BY HAND, in a chosen order,
+ * rather than real `setTimeout` delays whose relative ORDER a busy
+ * machine can invert. A task's synchronous prelude (pushing its own id
+ * into `started` before it awaits anything) plus JavaScript's own
+ * single-threaded execution order - not any clock - is what proves
+ * "these N tasks are all in flight before any of them was released":
+ * runPool's own worker loop (see gate-pool.mjs) launches every worker up
+ * to its own first await SYNCHRONOUSLY, before yielding control back to
+ * the caller at all, so by the time `runPool(tasks, N)` returns a
+ * pending promise, every task that pool size permits has already run to
+ * its own await point - no tick-counting, no timer, and so nothing here
+ * can flake regardless of what else is running on this machine. The
+ * `edge shapes` and `a task's own rejection propagates` blocks further
+ * down still use real `setTimeout`-based tasks for realism, but neither
+ * one's pass/fail ever compares an elapsed time against a threshold -
+ * only counts, ids and a thrown error's message - so neither needed to
+ * change.
  *
  *     node tests/gate-pool.test.mjs
  */
@@ -26,86 +50,130 @@ function check(label, condition) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/* A task that sleeps `ms`, records when it FINISHED into the shared
-   `finishOrder` array (proving real overlap: a shorter sleep started
-   later can still finish first), and returns its own identity so the
-   result array can be checked against INPUT position rather than
-   finish position. */
+/* A task that sleeps `ms` and returns its own identity - used only
+   where the PROPERTY under test never compares an elapsed time against
+   anything (the edge-shape and rejection-propagation blocks below), so
+   a real delay is realistic without being load-bearing for pass/fail. */
 function timedTask(id, ms, finishOrder) {
   return async () => {
     await sleep(ms);
-    finishOrder.push(id);
+    if (finishOrder) finishOrder.push(id);
     return { id, ms };
   };
 }
 
-console.log("--- results come back in input order, not finish order ---");
+/* A promise this file resolves BY HAND, on its own schedule - the
+   deterministic replacement for a real `setTimeout` delay wherever the
+   property under test is about ORDER or COUNT, never duration. */
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+/* Drains a fixed number of microtask ticks - NOT a real-time wait (no
+   timer anywhere in this function): resolving a deferred promise
+   schedules its `.then()` reactions on the microtask queue, and an
+   async function chain needs a small, FIXED number of ticks to run to
+   its next await - independent of CPU load, because microtask draining
+   is plain single-threaded JS execution, never an OS-scheduled delay. A
+   generous tick count costs nothing (an already-settled `Promise.
+   resolve()` resolves on the very next tick regardless), so this is
+   insurance, not a margin anything can flake on. */
+async function flushMicrotasks(times = 10) {
+  for (let i = 0; i < times; i += 1) await Promise.resolve();
+}
+
+console.log("--- results come back in input order, not finish order "
+            + "(deterministic - each task blocked on its own hand-"
+            + "resolved promise, resolved in the REVERSE of input "
+            + "order) ---");
 {
-  // Descending delays: task 0 is the SLOWEST, task 2 the FASTEST - if
-  // the pool merely returned things in the order they settled, this
-  // would come back [2, 1, 0]. runPool's contract is that it never
-  // does, whatever order the tasks actually finish in.
   const finishOrder = [];
-  const tasks = [
-    timedTask(0, 150, finishOrder),
-    timedTask(1, 80, finishOrder),
-    timedTask(2, 20, finishOrder),
-  ];
-  const results = await runPool(tasks, 3);
+  const d = [deferred(), deferred(), deferred()];
+  const tasks = d.map((def, id) => async () => {
+    await def.promise;
+    finishOrder.push(id);
+    return id;
+  });
+  const resultsPromise = runPool(tasks, 3);
+  // Resolve 2 first, then 1, then 0 - the opposite of input order. If
+  // runPool merely returned things in the order they settled, the
+  // result array would read [2, 1, 0].
+  d[2].resolve();
+  d[1].resolve();
+  d[0].resolve();
+  const results = await resultsPromise;
   check("three results came back for three tasks", results.length === 3);
-  check("result[0] is task 0's own result, not whichever finished first",
-        results[0] && results[0].id === 0);
-  check("result[1] is task 1's own result", results[1] && results[1].id === 1);
-  check("result[2] is task 2's own result", results[2] && results[2].id === 2);
-  check("THE TASKS ACTUALLY FINISHED OUT OF INPUT ORDER - proving the "
-        + "ordered result above is the pool's own doing, not an accident "
-        + "of these tasks happening to finish in input order anyway",
-        finishOrder.join(",") !== "0,1,2" &&
-        finishOrder[finishOrder.length - 1] === 0);
+  check("results came back in INPUT order (0,1,2), not the reverse "
+        + "order they were released in",
+        results.join(",") === "0,1,2");
+  check("THE TASKS ACTUALLY FINISHED IN THE REVERSE ORDER THEY WERE "
+        + "RELEASED (2,1,0) - proving the ordered result array above is "
+        + "the pool's own doing, not an accident of these tasks "
+        + "happening to finish in input order anyway",
+        finishOrder.join(",") === "2,1,0");
 }
 
-console.log("\n--- a pool of size N overlaps N tasks, not one at a time ---");
+console.log("\n--- a pool of size N overlaps N tasks, not one at a time "
+            + "(deterministic - proven by which tasks have STARTED, "
+            + "never by an elapsed time) ---");
 {
-  // Three 150ms tasks. Run one at a time, this is >= 450ms; run three
-  // at once, this is close to 150ms. A wide, one-sided tolerance
-  // (250ms) absorbs scheduler jitter on a loaded machine without
-  // hiding a regression to serial execution, which would land north of
-  // 450ms.
-  const finishOrder = [];
-  const tasks = [
-    timedTask(0, 150, finishOrder),
-    timedTask(1, 150, finishOrder),
-    timedTask(2, 150, finishOrder),
-  ];
-  const started = Date.now();
-  await runPool(tasks, 3);
-  const elapsedMs = Date.now() - started;
-  check("three 150ms tasks at concurrency 3 finish in well under their "
-        + "150*3=450ms sequential sum (took " + elapsedMs + "ms)",
-        elapsedMs < 400);
+  // No clock anywhere. If the pool ran tasks one at a time instead of
+  // three concurrently, task 1 and task 2 could not have reached their
+  // own `started.push` before task 0's deferred is released, because a
+  // serial scheduler would still be blocked awaiting task 0. Genuine
+  // concurrency is what lets all three reach that line before any of
+  // them is released - the exact property the deleted 400ms-ceiling
+  // check inferred from a margin instead of observing directly.
+  const started = [];
+  const d = [deferred(), deferred(), deferred()];
+  const tasks = d.map((def, id) => async () => {
+    started.push(id);
+    return await def.promise;
+  });
+  const resultsPromise = runPool(tasks, 3);
+  check("all three tasks had already started - none is waiting on a "
+        + "predecessor to finish first - before any of the three was "
+        + "released",
+        started.length === 3 && started.slice().sort().join(",") ===
+          "0,1,2");
+  d.forEach((def, id) => def.resolve(id));
+  const results = await resultsPromise;
+  check("results still returned in input order once every task "
+        + "resolves",
+        results.join(",") === "0,1,2");
 }
 
-console.log("\n--- pool size 1 is genuinely sequential - the old wall "
-            + "time, restored by mutation ---");
+console.log("\n--- pool size 1 is genuinely sequential - proven by "
+            + "which task has started, never by an elapsed time ---");
 {
-  // The direct mutation the ticket asks for: pool size 1 restores the
-  // wall time the un-pooled runner used to pay. Same three 150ms tasks,
-  // concurrency forced to 1.
-  const finishOrder = [];
-  const tasks = [
-    timedTask(0, 150, finishOrder),
-    timedTask(1, 150, finishOrder),
-    timedTask(2, 150, finishOrder),
-  ];
-  const started = Date.now();
-  const results = await runPool(tasks, 1);
-  const elapsedMs = Date.now() - started;
-  check("concurrency 1 takes at least the sum of the delays (took "
-        + elapsedMs + "ms, sum is 450ms)", elapsedMs >= 440);
-  check("finish order equals input order when nothing overlaps",
-        finishOrder.join(",") === "0,1,2");
+  // The direct mutation the ticket asks for, made deterministic: with
+  // concurrency forced to 1, task 1 must not have started at all until
+  // task 0's own deferred is released, and task 2 must not start until
+  // task 1's is - proven by observing `started`'s own length after each
+  // release, never by comparing a measured duration against a sum.
+  const started = [];
+  const d = [deferred(), deferred(), deferred()];
+  const tasks = d.map((def, id) => async () => {
+    started.push(id);
+    return await def.promise;
+  });
+  const resultsPromise = runPool(tasks, 1);
+  check("with concurrency 1, only the first task has started",
+        started.length === 1 && started[0] === 0);
+  d[0].resolve(0);
+  await flushMicrotasks();
+  check("only after task 0 resolves does task 1 begin",
+        started.length === 2 && started[1] === 1);
+  d[1].resolve(1);
+  await flushMicrotasks();
+  check("only after task 1 resolves does task 2 begin",
+        started.length === 3 && started[2] === 2);
+  d[2].resolve(2);
+  const results = await resultsPromise;
   check("results are still in input order at concurrency 1 too",
-        results.map((r) => r.id).join(",") === "0,1,2");
+        results.join(",") === "0,1,2");
 }
 
 console.log("\n--- edge shapes: empty, one task, more workers than tasks, "

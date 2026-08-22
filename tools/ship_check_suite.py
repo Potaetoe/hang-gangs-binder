@@ -142,7 +142,10 @@ performed = 0
 # prove tools/reaper.py and tools/prime_lock.py tier sensitive now. Then
 # 223 - the five added at fix wave 2 (#460, re-fire #1, F4) prove a
 # prefixed "./" spelling of either file tiers the same as the bare one.
-EXPECTED = 223
+# Then 229 - the six added at re-fire #2 (#460, F7) prove judge()'s real
+# path normalizer catches a doubled slash and a "../" detour too, not
+# only the leading "./" the previous fix already caught.
+EXPECTED = 229
 
 
 def check(label, condition):
@@ -583,6 +586,35 @@ try:
          "./tools/reaper_suite.py - the neighbor, not the reaper itself "
          "- still judges normal",
           tier.judge("./tools/reaper_suite.py")[0] == "normal")
+
+    print("\n--- F7 re-fire #2 (#460, Prime's ruling 2026-08-22): "
+         "judge() normalizes paths for real now (backslashes, "
+         "posixpath.normpath, a stripped leading './' or '/') rather "
+         "than a leading-'./'-only loop, so the neighbours that loop "
+         "still missed - a doubled slash and a '../' detour - tier the "
+         "same as the bare spelling too ---")
+    check("tools//reaper.py (a doubled slash) judges sensitive, the "
+         "same as the bare spelling",
+          tier.judge("tools//reaper.py")[0] == "sensitive")
+    check("a/../tools/reaper.py (a '../' detour that resolves to the "
+         "same file) judges sensitive, the same as the bare spelling",
+          tier.judge("a/../tools/reaper.py")[0] == "sensitive")
+    check("tools\\reaper.py (bare backslash spelling, no leading dot-"
+         "slash) still judges sensitive under the real normalizer",
+          tier.judge("tools\\reaper.py")[0] == "sensitive")
+    check("a declared list naming tools//reaper.py tiers the WHOLE "
+         "slice sensitive, exactly like the bare spelling does",
+          tier.tier_of(["README.md", "tools//reaper.py",
+                        "tests/x.test.mjs"])[0] == "sensitive")
+    check("a declared list naming a/../tools/reaper.py tiers the WHOLE "
+         "slice sensitive too",
+          tier.tier_of(["README.md", "a/../tools/reaper.py",
+                        "tests/x.test.mjs"])[0] == "sensitive")
+    check("the amendment stays narrow under BOTH new spellings too: "
+         "tools//reaper_suite.py and a/../tools/reaper_suite.py - the "
+         "neighbor, not the reaper itself - still judge normal",
+          tier.judge("tools//reaper_suite.py")[0] == "normal" and
+          tier.judge("a/../tools/reaper_suite.py")[0] == "normal")
 
     print("\n--- stage: slice tier - the evidence-below-tier refusal "
          "(0.9-M3-S5, #403) ---")

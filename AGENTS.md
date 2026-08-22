@@ -344,34 +344,48 @@ guards, never as the pattern for a new one.
   (`.github/workflows/deploy.yml`, step "Run the 0.9 gate"), so it is
   registered exactly where its apparatus registers checks — nothing
   here is the registration-suspended exception it once was.
-- **The gate runs its arms through a pool, and reds its own slowness**
-  (0.9-M3-S35, #460): arms run concurrently, a worker pool sized to the
-  CPU count by default — `tests/run.mjs`'s own header names the
-  environment variable that overrides the size, rather than a second
-  copy of that name living here to drift from it — printed in the same
-  fixed roster order regardless of which one finishes first —
-  `tests/gate-pool.mjs` carries that ordering guarantee, unit-tested
-  against known-duration fake tasks in `tests/gate-pool.test.mjs`
-  rather than only exercised indirectly through real arms. The runner
-  prints the whole run's wall time and the three slowest arms, and reds
-  a run over 300s (the same file names the override for this figure
-  too, with a reason for raising it) so slowness is a red here, not a
-  surprise a reader notices by eye in a scrolling log —
-  `tests/gate-budget.test.mjs` proves both the ordering and the budget
-  at the integration level, against a real copy of the runner. The gate
-  is expected under five minutes; a run that routinely misses that on
-  an otherwise-idle machine is a slice worth cutting the way 0.9-M3-S35
-  cut `tests/reaper.test.mjs`, not a budget
-  worth silently raising. **A single arm that never finishes is a
-  separate failure from a slow one** (0.9-M3-S35 fix wave 1, #460, F3):
-  the whole-run budget above only fires after every arm has already
-  returned, so a hung arm — a deadlock, a wedged subprocess — used to
-  hang the gate forever with no budget line ever printed. Each arm now
-  carries its own timeout (`tests/run.mjs`'s own header names the
-  environment variable that overrides it, the same one-home-per-fact
-  rule as the pool and budget levers above); past it, the arm's whole
-  process tree is killed and the gate reds by the arm's name and the
-  timeout in seconds, rather than waiting on it.
+- **The gate runs its arms through a pool, and reds its own slowness —
+  in CI only** (0.9-M3-S35, #460, sharpened at re-fire #2, Prime's
+  ruling 2026-08-22, "the class is closed whole this time: no pass/fail
+  decision in this apparatus may depend on real wall-clock timing of a
+  contended machine, one exception only"): arms run concurrently, a
+  worker pool sized to the CPU count by default — `tests/run.mjs`'s own
+  header names the environment variable that overrides the size, rather
+  than a second copy of that name living here to drift from it —
+  printed in the same fixed roster order regardless of which one
+  finishes first — `tests/gate-pool.mjs` carries that ordering
+  guarantee, proven DETERMINISTICALLY in `tests/gate-pool.test.mjs`
+  (hand-resolved promises and observed start order, never a real
+  elapsed time compared against a threshold — a real-timer version of
+  its own "pool of size N overlaps N tasks" check reded 1 run in 8 under
+  synthetic load before re-fire #2 replaced it). The runner prints the
+  whole run's wall time and the three slowest arms, and a run over 300s
+  (the same file names the override for this figure too, with a reason
+  for raising it) prints ADVISORY OVER BUDGET everywhere except CI:
+  `BINDER_GATE_ENFORCE_BUDGET=1` — set only by
+  `.github/workflows/deploy.yml` — is what turns the identical line into
+  a red, because "this specific machine, right now, was slow" is not a
+  fact a local run should fail a build over. The gate is expected under
+  five minutes; a run that routinely misses that on an otherwise-idle
+  machine is a slice worth cutting the way 0.9-M3-S35 cut
+  `tests/reaper.test.mjs`, not a budget worth silently raising.
+  **A single arm that never finishes is a separate failure from a slow
+  one** (0.9-M3-S35 fix wave 1, #460, F3): the whole-run budget above
+  only fires after every arm has already returned, so a hung arm — a
+  deadlock, a wedged subprocess — used to hang the gate forever with no
+  budget line ever printed. Each arm now carries its own timeout
+  (`tests/run.mjs`'s own header names the environment variable that
+  overrides it, the same one-home-per-fact rule as the pool and budget
+  levers above) — a HANG guard, not a slowness ceiling, so its default is
+  large on purpose; past it, the arm's whole process tree is killed and
+  the gate reds by the arm's name and the timeout in seconds, rather
+  than waiting on it. **`tests/preflight.mjs` is explicitly exempt from
+  this timeout** (re-fire #2, F1/F3): it used to run through the same
+  timeout as an arm, and under load it was the one getting killed
+  instead of a genuinely hung arm, which graded a scenario that never
+  ran what it claimed to — preflight is a handful of fast, local checks,
+  not a suite that can spawn arbitrary long work, so a hang there is an
+  environment problem this gate does not try to solve by killing it.
 - **A sensitive slice's fix wave is re-fired by an agent who did not
   author the fix, before any landing order issues** (owner ruling A1,
   audit finding F1, 2026-08-14; narrowed to the sensitive tier by

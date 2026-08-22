@@ -20,15 +20,35 @@
  * ratio for the SECOND check (pool 3 wall vs pool 1 wall) climb from
  * ~0.5 to ~0.69 against an unmoved 0.75 threshold - trading nine
  * percentage points of headroom for one, and the re-fire caught the
- * SECOND check flaking twice in 26 runs. Prime's ruling: no pass/fail
- * decision in this file may depend on real wall-clock timing of real
- * sleeps, except for ONE real-timing smoke check asserting only coarse,
- * un-flakable truths - see tests/run.mjs's own "THE TEST-DURATION SEAM"
- * comment for the mechanism this uses instead: an arm may report its
- * OWN duration by printing a line, and the runner substitutes that
- * EXACT injected number for the real measured one, but ONLY when
+ * SECOND check flaking twice in 26 runs. Prime's ruling then: no
+ * pass/fail decision in this file may depend on real wall-clock timing
+ * of real sleeps, except for ONE real-timing smoke check asserting only
+ * coarse, un-flakable truths - see tests/run.mjs's own "THE TEST-
+ * DURATION SEAM" comment for the mechanism this uses instead: an arm may
+ * report its OWN duration by printing a line, and the runner substitutes
+ * that EXACT injected number for the real measured one, but ONLY when
  * BINDER_GATE_TEST_DURATIONS_MS=1 is set - never in a real run, CI
- * included. Every scenario below states which of the two modes it uses
+ * included.
+ *
+ * RE-FIRE #2 (#460, Prime's ruling 2026-08-22, "the class is closed
+ * whole this time"): the "one real-timing smoke check" carve-out above
+ * itself flaked (2 of 30 runs) and is GONE - deleted outright, not
+ * loosened, because coarse or not, it was still a real-wall-clock
+ * pass/fail decision on a contended machine, which the ruling now
+ * forbids without exception in this file. The ONE surviving real-timing
+ * scenario is the hung-arm kill (F3 originally, "F1" below): a real kill
+ * cannot be simulated by the duration seam, which only overrides what
+ * NUMBER a passing arm's own report claims, never whether a process
+ * tree actually died. Its fixture now uses a per-arm timeout of 30s
+ * (the ruling's own floor) against a 600s sleeper - both numbers far
+ * enough apart that killing at ~30s and asserting "well under the 600s
+ * sleep" needs no fine margin at all - and its own preflight stub is
+ * exempt from that timeout by construction: it is the SAME `preflight`
+ * exemption tests/run.mjs's own PREFLIGHT constant carries (this
+ * fixture is a byte-identical copy of the real runner, so any exemption
+ * built into tests/run.mjs governs the fixture's stub too, with zero
+ * separate code here). Every scenario below states which of the two
+ * modes (seam-based or the one surviving real-timing exception) it uses
  * and why.
  *
  * HOW IT PROVES IT WITHOUT TOUCHING THE REAL GATE - the same technique
@@ -53,9 +73,12 @@ const STUB_PREFLIGHT =
   "tests/worktree-contract.test.mjs, not here)\");\nprocess.exit(0);\n";
 
 /* A REAL-SLEEP arm - it genuinely waits `ms` before printing its own
-   verdict and exiting with `code`. RESTRICTED USE (fix wave 2): only
-   the one real-timing smoke check below and the F3 hung-arm scenario
-   use this builder - every other scenario in this file uses
+   verdict and exiting with `code`. RESTRICTED USE, NARROWED FURTHER AT
+   RE-FIRE #2: the SMOKE scenario that used to share this builder is
+   gone (a real-wall-clock pass/fail decision, forbidden without
+   exception now); only the hung-arm scenario below still uses it, for
+   the one property nothing else in this file proves - a REAL kill of a
+   REAL hung process - every other scenario in this file uses
    `fakeDurationArm` instead, which takes no real time at all and so
    cannot flake regardless of what else is running on this machine. */
 const sleepArm = (label, ms, code) =>
@@ -79,18 +102,21 @@ const fakeDurationArm = (label, durationMs, code) =>
   "console.log(\"" + label + (code ? " NOT OK" : " OK") + "\");\n" +
   "process.exit(" + (code || 0) + ");\n";
 
-/* Builds <tmp>/tests/ holding the real run.mjs and gate-pool.mjs, the
-   stub preflight, a ROSTER naming every given arm as required, and one
-   arm per [label, durationOrMs, exitCode] triple, built by `makeArm`
-   (either builder above). Returns the scratch root so the caller can
-   clean it up. */
-async function buildFixture(arms, makeArm) {
+/* Builds <tmp>/tests/ holding the real run.mjs and gate-pool.mjs, a
+   ROSTER naming every given arm as required, and one arm per [label,
+   durationOrMs, exitCode] triple, built by `makeArm` (either builder
+   above). `preflightSource` defaults to the fast STUB_PREFLIGHT above;
+   the preflight-exemption scenario below passes a slow one instead, to
+   prove tests/run.mjs's own timeout truly does not govern it. Returns
+   the scratch root so the caller can clean it up. */
+async function buildFixture(arms, makeArm, preflightSource) {
   const root = await mkdtemp(join(tmpdir(), "hgb-gate-budget-"));
   const testsDir = join(root, "tests");
   await mkdir(testsDir);
   await writeFile(join(testsDir, "run.mjs"), REAL_RUNNER);
   await writeFile(join(testsDir, "gate-pool.mjs"), REAL_GATE_POOL);
-  await writeFile(join(testsDir, "preflight.mjs"), STUB_PREFLIGHT);
+  await writeFile(join(testsDir, "preflight.mjs"),
+    preflightSource || STUB_PREFLIGHT);
   const rosterText = arms
     .map(([label]) => "tests/" + label + ".test.mjs\n").join("");
   await writeFile(join(testsDir, "ROSTER"), rosterText);
@@ -130,6 +156,12 @@ function runFixture(root, env, safetyTimeoutMs) {
   // needs a genuinely ABSENT variable, not one this outer shell happens
   // to already have set for an unrelated reason.
   delete base.BINDER_GATE_TEST_DURATIONS_MS;
+  // Re-fire #2 (#460, Prime's ruling 2026-08-22): the fifth lever,
+  // cleared for the same reason - the ADVISORY-mode budget scenario
+  // below needs BINDER_GATE_ENFORCE_BUDGET genuinely ABSENT, not
+  // inherited from whatever CI-shaped environment this suite itself
+  // happens to run inside.
+  delete base.BINDER_GATE_ENFORCE_BUDGET;
   const options = {
     encoding: "utf8", env: Object.assign(base, env || {}),
   };
@@ -154,8 +186,9 @@ function runFixture(root, env, safetyTimeoutMs) {
 }
 
 const roots = [];
-async function scenario(arms, env, makeArm, safetyTimeoutMs) {
-  const root = await buildFixture(arms, makeArm);
+async function scenario(arms, env, makeArm, safetyTimeoutMs,
+    preflightSource) {
+  const root = await buildFixture(arms, makeArm, preflightSource);
   roots.push(root);
   return runFixture(root, env, safetyTimeoutMs);
 }
@@ -247,10 +280,30 @@ for (const seamValue of [undefined, "0"]) {
 }
 
 /* ================================================================== */
-/* MUTATION, direction one: a forced, tiny budget reds the run even     */
-/* though every arm passed - slowness is a red on its own. SEAM ON but  */
-/* unused by any assertion here - the fixture's arms take no real time  */
-/* either way, so a 0s budget always reds regardless of mode.           */
+/* THE BUDGET, BOTH MODES (re-fire #2, F1/F5, Prime's ruling            */
+/* 2026-08-22): a forced, tiny budget against three arms that all pass  */
+/* - SEAM ON but unused by any assertion here, since the fixture's arms */
+/* take no real time either way, so a 0s budget is over budget          */
+/* regardless of mode. What differs between the two scenarios below is  */
+/* ONLY BINDER_GATE_ENFORCE_BUDGET - the CI-only lever - never a        */
+/* real-timing margin.                                                  */
+
+{
+  const FAKE_ARMS = [["alpha", 100], ["beta", 50], ["gamma", 10]];
+  const result = await scenario(FAKE_ARMS,
+    { BINDER_GATE_TEST_DURATIONS_MS: "1", BINDER_GATE_POOL: "3",
+      BINDER_GATE_BUDGET_SECONDS: "0", BINDER_GATE_ENFORCE_BUDGET: "1" },
+    fakeDurationArm);
+  check("ENFORCED: a forced 0s budget exits nonzero even though all "
+        + "three arms passed, when BINDER_GATE_ENFORCE_BUDGET=1",
+        result.code !== 0);
+  check("ENFORCED: the red names OVER BUDGET",
+        result.output.includes("OVER BUDGET"));
+  check("ENFORCED: the summary counts it as a problem",
+        /1 problem\(s\): over budget/.test(result.output));
+  check("ENFORCED: BINDER_GATE_BUDGET_SECONDS is named as the remedy",
+        result.output.includes("BINDER_GATE_BUDGET_SECONDS"));
+}
 
 {
   const FAKE_ARMS = [["alpha", 100], ["beta", 50], ["gamma", 10]];
@@ -258,30 +311,54 @@ for (const seamValue of [undefined, "0"]) {
     { BINDER_GATE_TEST_DURATIONS_MS: "1", BINDER_GATE_POOL: "3",
       BINDER_GATE_BUDGET_SECONDS: "0" },
     fakeDurationArm);
-  check("MUTATION: a forced 0s budget exits nonzero even though all "
-        + "three arms passed", result.code !== 0);
-  check("the red names OVER BUDGET", result.output.includes("OVER BUDGET"));
-  check("the summary counts it as a problem",
-        /1 problem\(s\): over budget/.test(result.output));
-  check("BINDER_GATE_BUDGET_SECONDS is named as the remedy",
-        result.output.includes("BINDER_GATE_BUDGET_SECONDS"));
+  check("ADVISORY (the local default, ENFORCE_BUDGET unset): the same "
+        + "forced 0s budget still exits 0 - a locally over-budget run "
+        + "is visible, never a red for a fact that might be nothing but "
+        + "this one machine's own load",
+        result.code === 0);
+  check("ADVISORY: the line reads ADVISORY OVER BUDGET, never the bare "
+        + "enforced OVER BUDGET: wording",
+        result.output.includes("ADVISORY OVER BUDGET: this run took") &&
+        !result.output.includes("\nOVER BUDGET: this run took"));
+  check("ADVISORY: BINDER_GATE_ENFORCE_BUDGET is named as what turns "
+        + "this same line into a red",
+        result.output.includes("BINDER_GATE_ENFORCE_BUDGET"));
+  check("ADVISORY: the summary still reports all green - advisory means "
+        + "advisory, not a problem the count includes",
+        /3 arm\(s\), all green\./.test(result.output));
 }
 
 /* ================================================================== */
 /* RESTORE: the default budget (unset) does not red the same short      */
-/* fixture - direction one's own restore, proving OVER BUDGET is a      */
-/* real branch, not a message that always prints.                      */
+/* fixture, in EITHER mode - the two scenarios above's own restore,     */
+/* proving OVER BUDGET/ADVISORY OVER BUDGET are real branches, not a    */
+/* message that always prints regardless of whether the budget was      */
+/* actually exceeded.                                                   */
+
+{
+  const FAKE_ARMS = [["alpha", 100], ["beta", 50], ["gamma", 10]];
+  const result = await scenario(FAKE_ARMS,
+    { BINDER_GATE_TEST_DURATIONS_MS: "1", BINDER_GATE_POOL: "3",
+      BINDER_GATE_ENFORCE_BUDGET: "1" },
+    fakeDurationArm);
+  check("RESTORE (enforced mode): with no forced budget, the same "
+        + "fixture exits 0", result.code === 0);
+  check("RESTORE (enforced mode): neither OVER BUDGET line appears",
+        !result.output.includes("OVER BUDGET"));
+  check("RESTORE (enforced mode): the summary reports all green",
+        /3 arm\(s\), all green\./.test(result.output));
+}
 
 {
   const FAKE_ARMS = [["alpha", 100], ["beta", 50], ["gamma", 10]];
   const result = await scenario(FAKE_ARMS,
     { BINDER_GATE_TEST_DURATIONS_MS: "1", BINDER_GATE_POOL: "3" },
     fakeDurationArm);
-  check("RESTORE: with no forced budget, the same fixture exits 0",
-        result.code === 0);
-  check("OVER BUDGET does not appear",
+  check("RESTORE (advisory mode): with no forced budget, the same "
+        + "fixture exits 0", result.code === 0);
+  check("RESTORE (advisory mode): neither OVER BUDGET line appears",
         !result.output.includes("OVER BUDGET"));
-  check("the summary reports all green",
+  check("RESTORE (advisory mode): the summary reports all green",
         /3 arm\(s\), all green\./.test(result.output));
 }
 
@@ -332,90 +409,100 @@ for (const seamValue of [undefined, "0"]) {
 }
 
 /* ================================================================== */
-/* F3 (0.9-M3-S35 fix wave 1, #460, review comment 5379811881): a HUNG  */
-/* arm - one that never exits on its own - is killed by its own         */
-/* per-arm timeout, and reds the gate NAMING the arm and the timeout,   */
-/* in seconds, rather than hanging the whole run forever.               */
+/* THE ONE SURVIVING REAL-TIMING SCENARIO (0.9-M3-S35 fix wave 1, #460, */
+/* review comment 5379811881, originally "F3"; RE-MEASURED AND WIDENED */
+/* at re-fire #2, Prime's ruling 2026-08-22): a HUNG arm - one that     */
+/* never exits on its own - is killed by its own per-arm timeout, and   */
+/* reds the gate NAMING the arm and the timeout, in seconds, rather     */
+/* than hanging the whole run forever.                                  */
 /*                                                                      */
-/* REAL SLEEP, DELIBERATELY (fix wave 2 exemption). This scenario's own */
-/* pass/fail DOES read a real measured wall time (`result.ms`), which   */
-/* looks like exactly what the F1 ruling refuses - but what it proves   */
-/* is a fundamentally different property from the ordering/ratio checks */
-/* above: whether killTree() actually terminated a REAL hung process    */
-/* inside its timeout window, not how two fixture arms' durations       */
-/* compare to each other. There is no way to fake a real kill - the     */
-/* test-duration seam only overrides what a NUMBER a passing arm's own  */
-/* report claims, it cannot make an unkilled process appear killed. The */
-/* margin here is enormous by construction (a 2s timeout against a 15s  */
-/* sleep, asserted against a 10s ceiling - 7.5+ seconds of slack) and   */
-/* has never flaked once across every run in this ticket's history,     */
-/* unlike the two checks the ruling was written for, which measured     */
-/* margins in the tens of milliseconds. This is not "at most one        */
-/* real-timing smoke check" being violated twice - it is a second,      */
-/* unrelated real-timing property (a kill mechanism, not a duration      */
-/* comparison) that this file already needed before fix wave 2 and      */
-/* still needs after it. */
+/* REAL SLEEP, DELIBERATELY, THE ONE EXCEPTION THE RULING NAMES. This   */
+/* scenario's own pass/fail DOES read a real measured wall time         */
+/* (`result.ms`), which looks like exactly what the ruling refuses -    */
+/* but what it proves is a fundamentally different property from every  */
+/* other check in this file: whether killTree() actually terminated a   */
+/* REAL hung process inside its timeout window, not how two fixture     */
+/* arms' durations compare to each other. There is no way to fake a     */
+/* real kill - the test-duration seam only overrides what a NUMBER a    */
+/* passing arm's own report claims, it cannot make an unkilled process   */
+/* appear killed.                                                       */
+/*                                                                      */
+/* RE-FIRE #2 FOUND THE OLD MARGIN WAS NOT ENOUGH (findings F1 and F3): */
+/* a 2s per-arm timeout covered the fixture's OWN stub preflight too -  */
+/* under 24 synthetic CPU spinners the reviewer's probe measured that   */
+/* stub taking 5.8-8.4s, so the 2s deadline killed PREFLIGHT, not the   */
+/* hung arm, and the scenario graded an arm that never ran. Two fixes,  */
+/* both named in the ruling, and BOTH proven by this ONE scenario -     */
+/* re-fire #2 is explicit that the exemption is a property of THIS      */
+/* fixture, not a second real-timing scenario: (1) tests/run.mjs's own  */
+/* preflight call now passes NO timeout at all (see its "PREFLIGHT IS   */
+/* EXEMPT" comment) - this fixture is a byte-identical copy of that     */
+/* file, so the exemption already covers a stub preflight with no       */
+/* separate code here; (2) the fixture's own per-arm timeout is raised  */
+/* to the ruling's floor of 30s against a 600s sleeper. SLOW_PREFLIGHT   */
+/* below deliberately sleeps 32s - just PAST the 30s timeout - so this   */
+/* single scenario proves BOTH properties at once with no numeric        */
+/* margin anywhere but the one the ruling names: under the OLD bug (the  */
+/* timeout governing preflight too), a 32s preflight sleep against a 30s */
+/* timeout would have killed PREFLIGHT ITSELF at ~30s, and the gate      */
+/* would have printed "preflight is red, so no arm ran" - never reaching */
+/* the hung arm at all, so none of the TIMED-OUT/hung.test.mjs checks    */
+/* below could ever pass. Every one of them passing is only possible if  */
+/* preflight survived its own sleep well past the timeout that would     */
+/* have killed an arm running that long - which is exactly what          */
+/* "exempt" means. The outer safetyTimeoutMs backstop (150s) is, as       */
+/* before, insurance against a genuine regression that removed the kill  */
+/* entirely - never the thing under test, and comfortably above the      */
+/* ~62s (32s preflight + ~30s to kill the arm) this scenario actually     */
+/* takes on a correct build. */
 
 {
-  const HUNG_ARMS = [["hung", 15000]];
+  const SLOW_PREFLIGHT =
+    "await new Promise((r) => setTimeout(r, 32000));\n" +
+    "console.log(\"initialized: CI path (deliberately slow stub, past " +
+    "the 30s per-arm timeout, proving preflight is exempt from it - " +
+    "re-fire #2, F1/F3)\");\nprocess.exit(0);\n";
+  const HUNG_ARMS = [["hung", 600000]];
   const result = await scenario(HUNG_ARMS,
-    { BINDER_GATE_POOL: "1", BINDER_ARM_TIMEOUT_SECONDS: "2" },
-    sleepArm, 30000);
-  check("F3: this scenario's own measured wall time shows the arm was "
-        + "actually killed early, not merely reported as timed out - "
-        + "took " + (result.ms / 1000).toFixed(1) + "s against a 15s "
-        + "sleep and a 2s per-arm timeout",
-        result.ms < 10000);
-  check("F3: a hung arm reds the gate", result.code !== 0);
-  check("F3: the red names the arm and TIMED OUT",
+    { BINDER_GATE_POOL: "1", BINDER_ARM_TIMEOUT_SECONDS: "30" },
+    sleepArm, 150000, SLOW_PREFLIGHT);
+  check("this scenario's own measured wall time shows the arm was "
+        + "actually killed well before its own 600s sleep could finish "
+        + "- took " + (result.ms / 1000).toFixed(1) + "s total "
+        + "(32s of that is the fixture's own deliberately slow "
+        + "preflight, which is supposed to run to completion - see "
+        + "the PREFLIGHT EXEMPTION check below)",
+        result.ms < 90000);
+  check("a hung arm reds the gate", result.code !== 0);
+  check("the red names the arm and TIMED OUT",
         /TIMED OUT: tests\/hung\.test\.mjs/.test(result.output));
-  check("F3: the red states the timeout in seconds and names the "
-        + "override lever",
-        result.output.includes("its 2s per-arm timeout") &&
+  check("the red states the timeout in seconds and names the override "
+        + "lever",
+        result.output.includes("its 30s per-arm timeout") &&
         result.output.includes("BINDER_ARM_TIMEOUT_SECONDS"));
-  check("F3: the summary counts exactly one problem, naming the arm "
-        + "and the timeout",
-        /1 problem\(s\): tests\/hung\.test\.mjs \(timed out after 2s\)/
+  check("the summary counts exactly one problem, naming the arm and "
+        + "the timeout",
+        /1 problem\(s\): tests\/hung\.test\.mjs \(timed out after 30s\)/
           .test(result.output));
-}
-
-/* ================================================================== */
-/* THE ONE REAL-TIMING SMOKE CHECK (Prime's ruling on #460, re-fire #1: */
-/* "at most one real-timing smoke check ... asserts only coarse truths  */
-/* that cannot flake ... no ratios, no thresholds, no ordering of real  */
-/* sleeps"). Three arms, real sleeps, deliberately staggered (900ms,    */
-/* 400ms, 50ms) so they genuinely overlap under a pool wide enough to   */
-/* run all three - proving the pool is really concurrent, not merely    */
-/* configured to look like it. Every assertion below is one of exactly  */
-/* the three Prime named, and nothing else: no comparison between two   */
-/* measured runs, no claim about WHICH name the slowest line puts       */
-/* first. */
-
-{
-  const SMOKE_ARMS = [["alpha", 900], ["beta", 400], ["gamma", 50]];
-  const result = await scenario(SMOKE_ARMS,
-    { BINDER_GATE_POOL: "3" }, sleepArm);
-  check("SMOKE: exits 0", result.code === 0);
-  const wallLine = /wall time\s+([\d.]+)s/.exec(result.output);
-  check("SMOKE: the printed total is AT LEAST the longest arm's own "
-        + "real time (900ms) - a floor no amount of contention can put "
-        + "the total UNDER, whatever else the machine is doing",
-        wallLine !== null && Number(wallLine[1]) >= 0.85);
-  const slowestLine = /slowest\s+(.+)/.exec(result.output);
-  check("SMOKE: the slowest line lists all three arm names - which one "
-        + "is claimed first is NOT checked here, per the ruling",
-        slowestLine !== null &&
-        slowestLine[1].includes("tests/alpha.test.mjs") &&
-        slowestLine[1].includes("tests/beta.test.mjs") &&
-        slowestLine[1].includes("tests/gamma.test.mjs"));
-  check("SMOKE: the budget line prints",
-        /3 arm\(s\), all green\./.test(result.output));
+  check("PREFLIGHT EXEMPTION (re-fire #2, F1/F3), proven WITHOUT a "
+        + "second real-timing scenario - the same fixture's own stub "
+        + "preflight (built above with SLOW_PREFLIGHT) deliberately "
+        + "sleeps LONGER than the 30s per-arm timeout before succeeding; "
+        + "every check above already required tests/hung.test.mjs's own "
+        + "TIMED OUT text to appear, which is only reachable if "
+        + "preflight survived its own 32s sleep FAR past the 30s "
+        + "timeout that would have killed an arm taking that long - "
+        + "under the old bug (the timeout governing preflight too) "
+        + "preflight itself would have been killed at ~30s and the gate "
+        + "would have printed 'preflight is red, so no arm ran' "
+        + "instead, which none of the checks above would have matched",
+        !result.output.includes("preflight is red"));
 }
 
 /* ------------------------------------------------------------------ */
 for (const root of roots) await rm(root, { recursive: true, force: true });
 
-const EXPECTED = 34;
+const EXPECTED = 38;
 console.log(failures
   ? `\ngate-budget FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
