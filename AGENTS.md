@@ -342,19 +342,22 @@ guards, never as the pattern for a new one.
   here is the registration-suspended exception it once was.
 - **The gate runs its arms through a pool, and reds its own slowness**
   (0.9-M3-S35, #460): arms run concurrently, a worker pool sized to the
-  CPU count by default (`BINDER_GATE_POOL` overrides it), printed in
-  the same fixed roster order regardless of which one finishes first —
+  CPU count by default — `tests/run.mjs`'s own header names the
+  environment variable that overrides the size, rather than a second
+  copy of that name living here to drift from it — printed in the same
+  fixed roster order regardless of which one finishes first —
   `tests/gate-pool.mjs` carries that ordering guarantee, unit-tested
   against known-duration fake tasks in `tests/gate-pool.test.mjs`
   rather than only exercised indirectly through real arms. The runner
   prints the whole run's wall time and the three slowest arms, and reds
-  a run over 300s (`BINDER_GATE_BUDGET_SECONDS` overrides it, with a
-  reason) so slowness is a red here, not a surprise a reader notices by
-  eye in a scrolling log — `tests/gate-budget.test.mjs` proves both the
-  ordering and the budget at the integration level, against a real copy
-  of the runner. The gate is expected under five minutes; a run that
-  routinely misses that on an otherwise-idle machine is a slice worth
-  cutting the way 0.9-M3-S35 cut `tests/reaper.test.mjs`, not a budget
+  a run over 300s (the same file names the override for this figure
+  too, with a reason for raising it) so slowness is a red here, not a
+  surprise a reader notices by eye in a scrolling log —
+  `tests/gate-budget.test.mjs` proves both the ordering and the budget
+  at the integration level, against a real copy of the runner. The gate
+  is expected under five minutes; a run that routinely misses that on
+  an otherwise-idle machine is a slice worth cutting the way 0.9-M3-S35
+  cut `tests/reaper.test.mjs`, not a budget
   worth silently raising.
 - **A sensitive slice's fix wave is re-fired by an agent who did not
   author the fix, before any landing order issues** (owner ruling A1,

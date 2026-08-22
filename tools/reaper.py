@@ -531,11 +531,11 @@ def mainlines(repo, names):
 def resolved_mainlines(repo):
     """(DEBRIS_MAINLINES resolved, SLICE_MAINLINES resolved) - ONCE.
 
-    0.9-M3-S35 (#460): every proof that names a mainline used to call
-    `mainlines()` fresh - one or two more `git rev-parse` per candidate,
-    for a question ("where do accounts/main point") whose answer cannot
-    change while this one plan() or main() call is enumerating, because
-    this program never moves accounts or main itself (see the module
+    0.9-M3-S35 (#460): a fresh `mainlines()` call per proof that names a
+    mainline - one or two more `git rev-parse` per candidate - answers a
+    question ("where do accounts/main point") whose answer cannot change
+    while this one plan() or main() call is enumerating, because this
+    program never moves accounts or main itself (see the module
     docstring, "WHAT THIS DELIBERATELY DOES NOT DO"). Measured on the
     reaper suite's fixture machine, that repeated per-candidate
     resolution was the largest single cost the suite's own fixture
@@ -566,7 +566,7 @@ def resolved_mainlines(repo):
 
     THE FILTER MATCHES BY NAME, NOT BY LABEL (caught by
     tests/fleet-status.test.mjs, whose fixture carries a real `origin`
-    remote - tests/reaper.test.mjs's own fabricated machine never adds
+    remote; tools/reaper_suite.py's own fabricated machine never adds
     one, so a label-equality filter passed there by accident). `mainlines()`
     labels a remote-resolved mainline `"origin/accounts"`, not
     `"accounts"` - `pair[0] in SLICE_MAINLINES` is false for that label
@@ -575,8 +575,8 @@ def resolved_mainlines(repo):
     returned zero mainlines the moment `origin/accounts` existed and
     resolved first - every "not an ancestor of any mainline this
     repository has" that followed was this filter, not a real absence.
-    `rsplit("/", 1)[-1]` reads the bare name back out of either label
-    shape.
+    Splitting each label on its last slash reads the bare name back out
+    of either shape.
     """
     debris = mainlines(repo, DEBRIS_MAINLINES)
     slice_names = set(SLICE_MAINLINES)
@@ -1001,8 +1001,8 @@ def branch_items(repo, state, table, spoken_for, resolved=None):
 
     `resolved` is `(DEBRIS_MAINLINES resolved, SLICE_MAINLINES resolved)`
     - `resolved_mainlines()`'s own return shape - reused for both the
-    `reserved` set below (which used to call `mainlines()` itself) and
-    every branch's own ancestry proof, instead of asking fresh for each.
+    `reserved` set below and every branch's own ancestry proof, instead
+    of a fresh `mainlines()` call for each.
     Left None, this resolves its own once here, so a caller that has not
     already done it for a wider plan()/main() pass still gets one clean
     resolution rather than the old per-branch cost.

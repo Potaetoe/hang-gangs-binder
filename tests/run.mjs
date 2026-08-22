@@ -415,10 +415,8 @@ console.log("");
    array is ordered by INPUT position regardless of finish order (see
    gate-pool.mjs), so this loop reads exactly as it did one arm at a
    time - only the `await runPool(...)` line above it is new. */
-const armsStarted = Date.now();
 const results = await runPool(
   arms.map((path) => () => runFile(path)), POOL_SIZE);
-const armsMs = Date.now() - armsStarted;
 
 for (let index = 0; index < arms.length; index += 1) {
   const path = arms[index];
