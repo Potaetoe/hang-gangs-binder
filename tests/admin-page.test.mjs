@@ -181,16 +181,20 @@ check("isAdminVia reads absent, empty or unrecognized as 'not an " +
   // the Worker's own adminVia is one of the four literal strings, never
   // a value this page title-cases or guesses at.
 
+// AWAITED before check() sees it - a promise handed straight to check()
+// is truthy whether the import lands or not, and the pending import
+// then races the driven() calls below it: 0.9-M3-S33's own fix wave
+// found the dist import's module body running AFTER document had
+// already been set by a later driven() call, because nothing here had
+// awaited it first.
+await import("data:text/javascript," + encodeURIComponent(distNavJs) +
+  "#dist-nav-parity");
+const DistNav = globalThis.BinderNav;
+const NAV_PROBES = ["telegram", "flag", "secret", "break-glass", "",
+  "member", null];
 check("dist/nav.js's isAdminVia agrees, value for value - the mirror " +
   "is not stale",
-  (async () => {
-    await import("data:text/javascript," + encodeURIComponent(distNavJs) +
-      "#dist-nav-parity");
-    const DistNav = globalThis.BinderNav;
-    const probes = ["telegram", "flag", "secret", "break-glass", "",
-      "member", null];
-    return probes.every((v) => DistNav.isAdminVia(v) === Nav.isAdminVia(v));
-  })());
+  NAV_PROBES.every((v) => DistNav.isAdminVia(v) === Nav.isAdminVia(v)));
 
 /* -- Settings validation, mirroring S8's real server-side rules      */
 /* (#414 completion, comment 5370945709, the "contract, in full" block) -- */

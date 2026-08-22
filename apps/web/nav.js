@@ -1,13 +1,25 @@
 /*
- * Two jobs, both about the shared shell rather than a page's own
+ * Three jobs, all about the shared shell rather than a page's own
  * content: marking where you are in the rail (and, since 0.9-M3-S33,
- * #457, in the bottom bar), and gating the bar's Admin item to admins.
+ * #457, in the bottom bar), gating the bar's Admin item to admins, and
+ * showing/wiring the bar's own Sign out item.
  *
  * It is loaded by the three pages that HAVE a rail and a bar, and by
  * nothing else. The palette control is theme.js's whole subject - the
  * disclosure opens itself and the sign-in page has none - so a page
  * with no rail has no reason to fetch this file at all, and the
  * sign-in page does not.
+ *
+ * THE BAR'S SIGN OUT ITEM IS WIRED HERE, DELIBERATELY, NOT IN
+ * apps/web/signout.js beside the rail's own copy. `tools/tier.py`
+ * reads signout.js as an auth/session module (it revokes the session
+ * row, clears the device key) and tiers ANY edit to it sensitive
+ * regardless of size (AGENTS.md, "The M3 delivery shape") - this slice
+ * builds on the normal tier, so the bar's copy reads the same public,
+ * already-frozen `BinderSession`/`BinderSignOut` exports nav.js's own
+ * admin gate already reads, from a file that stays normal. Nothing
+ * about signing out changes; only where the button that starts it is
+ * found and shown.
  *
  * The destinations themselves are in the HTML of each rail/bar page,
  * not built here. That is deliberate and it is the opposite of what
@@ -26,7 +38,7 @@
  * is not a disclosure either, just a different position for the same
  * kind of always-visible destination.
  *
- * Mostly wiring, with one small pure-shaped read (adminGateWords, used
+ * Mostly wiring, with one small pure-shaped read (isAdminVia, used
  * only to decide true/false and easy to exercise without a document).
  */
 (function (root) {
@@ -107,8 +119,37 @@
     });
   }
 
+  /*
+   * The bar's Sign out item - the same honest-resting-state rule the
+   * rail's own #sign-out follows (see apps/web/signout.js's own
+   * comment on paintSession()): ships `hidden`, revealed only once a
+   * session is confirmed, because with no session there is nothing to
+   * end. Wired to the same `BinderSignOut.signOut()` the rail's own
+   * button calls - both are one act, two buttons, never two copies of
+   * what leaving means.
+   *
+   * Re-run on every session change (`BinderSession.onChange`), not
+   * only at load, for the reason signout.js's own paintSession()
+   * gives: a 401 elsewhere in the tab, or a stored session expiring
+   * while this tab sits open, both drop the credential without
+   * leaving the page, and a bar still offering to end a session that
+   * is already gone is a control that does nothing.
+   */
+  function paintBarSignOut() {
+    const button = document.getElementById("tab-bar-signout");
+    if (!button) return;
+    const session = root.BinderSession && root.BinderSession.read();
+    button.hidden = !session;
+    if (session && root.BinderSignOut) {
+      button.addEventListener("click", root.BinderSignOut.signOut);
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     markCurrent();
     gateAdminItem();
+    paintBarSignOut();
   });
+
+  if (root.BinderSession) root.BinderSession.onChange(paintBarSignOut);
 })(globalThis);

@@ -49,8 +49,23 @@
     });
   }
 
+  
+
+  function paintBarSignOut() {
+    const button = document.getElementById("tab-bar-signout");
+    if (!button) return;
+    const session = root.BinderSession && root.BinderSession.read();
+    button.hidden = !session;
+    if (session && root.BinderSignOut) {
+      button.addEventListener("click", root.BinderSignOut.signOut);
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     markCurrent();
     gateAdminItem();
+    paintBarSignOut();
   });
+
+  if (root.BinderSession) root.BinderSession.onChange(paintBarSignOut);
 })(globalThis);

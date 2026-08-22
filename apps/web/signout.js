@@ -274,22 +274,18 @@
   if (typeof document === "undefined") return;
 
   /*
-   * The rail's session home, and - since 0.9-M3-S33, #457 - the bar's
-   * Sign out item, gated the identical way. Both ship `hidden` and are
+   * The rail's session home. The Sign out control ships `hidden` and is
    * revealed only once a session is confirmed, which is the honest
    * resting state: with no session there is nothing to end, and with
    * scripts dead there is no way to end one, so a button offering to
    * would be a control that does nothing.
    *
-   * The Sign in route beside the rail's own copy is the same reasoning
-   * read the other way (#187). It ships VISIBLE: with scripts dead
-   * there is no session, the door is exactly what the rail must still
-   * carry - the anti-stranding rule in tools/check_web.py stands on it
-   * - and it is a plain link, so it works with nothing running. A
-   * confirmed session is what hides it, the reverse of the buttons
-   * below. The bar carries no Sign in item of its own - #187 already
-   * settled that a signed-out visitor is not on a signed-in page's bar
-   * to begin with, so there is nothing here for it to stand beside.
+   * The Sign in route beside it is the same reasoning read the other
+   * way (#187). It ships VISIBLE: with scripts dead there is no
+   * session, the door is exactly what the rail must still carry - the
+   * anti-stranding rule in tools/check_web.py stands on it - and it is
+   * a plain link, so it works with nothing running. A confirmed session
+   * is what hides it, the reverse of the button below.
    *
    * The name is the member's own, on a screen their own session opened.
    * It is read from the session rather than fetched - this file makes
@@ -299,7 +295,6 @@
     const who = document.getElementById("session-who");
     const door = document.getElementById("sign-in");
     const button = document.getElementById("sign-out");
-    const barButton = document.getElementById("tab-bar-signout");
     const session = Session ? Session.read() : null;
 
     if (who) {
@@ -311,10 +306,6 @@
     if (button) {
       button.hidden = !session;
       if (session) button.addEventListener("click", signOut);
-    }
-    if (barButton) {
-      barButton.hidden = !session;
-      if (session) barButton.addEventListener("click", signOut);
     }
   }
 

@@ -121,7 +121,6 @@
     const who = document.getElementById("session-who");
     const door = document.getElementById("sign-in");
     const button = document.getElementById("sign-out");
-    const barButton = document.getElementById("tab-bar-signout");
     const session = Session ? Session.read() : null;
 
     if (who) {
@@ -133,10 +132,6 @@
     if (button) {
       button.hidden = !session;
       if (session) button.addEventListener("click", signOut);
-    }
-    if (barButton) {
-      barButton.hidden = !session;
-      if (session) barButton.addEventListener("click", signOut);
     }
   }
 
