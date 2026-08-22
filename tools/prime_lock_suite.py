@@ -71,16 +71,28 @@ sys.exit(prime_lock.main([verb, session, "--state", state] + flags))
 def barrier_trial(state, specs):
     """Run `specs` [(verb, session, [flags]), ...] against one GO barrier.
 
-    Returns [(session, exit_code), ...] in spec order. The lock's own
-    directory must already exist (every caller seeds a record first), so
-    the GO file has somewhere to live that every worker agrees on.
+    Returns [(session, exit_code, stderr), ...] in spec order. The lock's
+    own directory must already exist (every caller seeds a record first),
+    so the GO file has somewhere to live that every worker agrees on.
+
+    WHY stderr IS CAPTURED AND NOT DISCARDED (S23 fix wave, #436). Exit
+    codes alone graded these storms before, and a contender that CRASHED
+    simply exited nonzero, which reads as "did not win" and violates
+    nothing - so the very crash this suite's slice was written to remove
+    could fire and the arm still exited 0. Twenty-five runs of the
+    unfixed module printed a worker traceback in four of them and all
+    twenty-five passed. A traceback in a contender's stderr is now a
+    failure in its own right (`crashed` below): a lock mechanism whose
+    contenders die is not one whose invariant held, it is one whose
+    invariant was not tested.
     """
     go = os.path.join(prime_lock.locks_dir(state), "GO")
     procs = []
     for verb, session, flags in specs:
         procs.append((session, subprocess.Popen(
             [sys.executable, "-c", _WORKER, TOOLS_DIR, state, verb,
-             session, go, *flags])))
+             session, go, *flags], stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE, text=True)))
     # Let every worker reach its spin loop before firing the barrier, so
     # the contention is real. Correctness does not depend on perfect
     # simultaneity - the single-winner invariant holds under any
@@ -88,13 +100,39 @@ def barrier_trial(state, specs):
     # likelier to be caught.
     time.sleep(0.25)
     open(go, "w").close()
-    return [(session, proc.wait()) for session, proc in procs]
+    out = []
+    for session, proc in procs:
+        _, said = proc.communicate()
+        out.append((session, proc.returncode, said or ""))
+    return out
+
+
+def crashed(outcomes):
+    """The contenders in `outcomes` that died with a traceback.
+
+    Returns [(session, first line of the traceback), ...] - a list rather
+    than a count so a failing arm can print WHO died and of what, which
+    is the whole difference between a red that can be acted on and a red
+    that sends the next reader back to the storm to reproduce it.
+    """
+    dead = []
+    for session, _, said in outcomes:
+        if "Traceback" not in said:
+            continue
+        lines = [line for line in said.strip().splitlines()
+                 if line.strip() and not line.startswith(" ")]
+        dead.append((session, lines[-1] if lines else "Traceback"))
+    return dead
+
+
+def exit_codes(outcomes):
+    return {session: code for session, code, _ in outcomes}
 
 # Asserted at the end rather than only printed - a hand-written total
 # nothing compares against still prints a confident pass when a check
 # stops running, which is the armed-looking-but-not failure this
 # repository holds to be worse than no check at all.
-EXPECTED = 85
+EXPECTED = 114
 
 
 def check(label, condition):
@@ -377,7 +415,10 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     outcomes = barrier_trial(takeover_state, [
         ("acquire", "taker-%d" % i, ["--take-stale", "--stale-hours", "12"])
         for i in range(8)])
-    winners = [session for session, code in outcomes if code == 0]
+    dead = crashed(outcomes)
+    check("none of the 8 concurrent callers crashed%s"
+          % ("" if not dead else " - %s" % dead), not dead)
+    winners = [session for session, code, _ in outcomes if code == 0]
     final = read(takeover_state)
     check("exactly one of 8 concurrent --take-stale callers wins",
           len(winners) == 1)
@@ -399,16 +440,20 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     trials = 8
     violations = 0
     protected = 0
+    dead = []
     for trial in range(trials):
         rel_state = os.path.join(root, "concurrent-release-%d" % trial)
         prime_lock.write_lock(prime_lock.lock_path(rel_state), "holder",
                               "host-h", hours_ago(20))
-        outcomes = dict(barrier_trial(rel_state, [("release", "holder", [])]
-                        + [("acquire", "taker-%d" % i,
-                            ["--take-stale", "--stale-hours", "12"])
-                           for i in range(3)]))
-        taker_wins = [s for s in outcomes
-                      if s.startswith("taker-") and outcomes[s] == 0]
+        outcomes = barrier_trial(rel_state, [("release", "holder", [])]
+                                 + [("acquire", "taker-%d" % i,
+                                     ["--take-stale", "--stale-hours",
+                                      "12"])
+                                    for i in range(3)])
+        dead.extend(crashed(outcomes))
+        codes = exit_codes(outcomes)
+        taker_wins = [s for s in codes
+                      if s.startswith("taker-") and codes[s] == 0]
         final = read(rel_state)
         if len(taker_wins) > 1:
             violations += 1
@@ -422,6 +467,11 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
           violations == 0)
     check("and the storms actually produced a takeover winner to protect",
           protected > 0)
+    # The arm the ticket's own deliverable rests on. This is what an exit-
+    # code-only grading could not see: the crash the module was fixed to
+    # stop reads as "did not win", never as a violation. See barrier_trial.
+    check("and no contender in any of the %d storms crashed%s"
+          % (trials, "" if not dead else " - %s" % dead), not dead)
 
     print("\n--- MAJOR2: the mutation mutex steals a crashed holder's ---")
     # A crashed session can leave its short-lived mutex behind. It must not
@@ -476,10 +526,20 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     real_open = os.open
 
     def flaky_once(target):
+        return flaky_once_matching(lambda path: path == target)
+
+    def flaky_once_under(prefix):
+        # publish_lock's create lands on a name it invents per call
+        # (pid plus random bytes), so the primary-lock injection below
+        # matches the prefix rather than one exact name.
+        return flaky_once_matching(
+            lambda path: isinstance(path, str) and path.startswith(prefix))
+
+    def flaky_once_matching(wanted):
         calls = {"n": 0}
 
         def opener(path, flags, *a, **kw):
-            if path == target and calls["n"] == 0:
+            if calls["n"] == 0 and wanted(path):
                 calls["n"] += 1
                 raise PermissionError(13, "Permission denied (injected, "
                                           "S23)")
@@ -505,12 +565,15 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     check("the mutex is still cleaned up after the retried acquisition",
           not os.path.exists(prime_lock.mutex_path(inj_mutex_state)))
 
-    # do_acquire's own exclusive create on the primary lock file - the
-    # same Windows quirk threatens this fast path exactly the same way,
-    # racing a concurrent release rather than a concurrent takeover.
+    # The acquire path's own exclusive create, which since the S23 fix
+    # wave lands on the PRIVATE name publish_lock fills before it links
+    # rather than on the lock file itself. The same Windows quirk
+    # threatens that create exactly the way it threatens the mutex's, and
+    # a fresh private name is what the retry buys.
     inj_primary_state = os.path.join(root, "injected-collision-primary")
     os.makedirs(prime_lock.locks_dir(inj_primary_state), exist_ok=True)
-    opener, calls = flaky_once(prime_lock.lock_path(inj_primary_state))
+    opener, calls = flaky_once_under(
+        prime_lock.lock_path(inj_primary_state) + ".filling-")
     os.open = opener
     raised, code = None, None
     try:
@@ -520,35 +583,35 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
         raised = exc
     finally:
         os.open = real_open
-    check("do_acquire retries a transient PermissionError on the primary "
-          "lock instead of propagating it", raised is None)
+    check("the acquire path retries a transient PermissionError on its "
+          "private create instead of propagating it", raised is None)
     check("the injected collision actually fired once", calls["n"] == 1)
     check("the retried acquire still succeeds and installs the lock",
           raised is None and code == 0
           and read(inj_primary_state).get("session") == "session-inj")
 
     print("\n--- S23 (#436): a second, distinct race - a takeover must "
-          "not mistake a fast-path winner's unfilled gap for staleness "
+          "not mistake a two-step writer's unfilled gap for staleness "
           "---")
     # A 500-trial run of the release/takeover storm above (not this
     # suite's fixed 8, which is too few to reach it reliably) hit this
-    # twice at the 200-trial mark: write_new_lock's own create-then-fill
-    # gap (its docstring already names it: "the gap between the file
-    # existing and the file being readable ... cannot be closed from
-    # this end, only narrowed") left a fast-path winner's record reading
-    # as {} for a moment, a concurrent takeover read that as "its
-    # started-at could not be read" (STALE) and, under --take-stale,
-    # unconditionally overwrote a winner it had not finished announcing -
-    # two acquire callers both exited 0. settle_unreadable gives the gap
-    # a bounded moment to close before a takeover decision trusts it.
-    # Injected deterministically with a background thread standing in
-    # for the racing fast-path winner, on a controlled clock instead of
-    # the storm's own low, timing-dependent rate.
+    # twice at the 200-trial mark, back when this module filled the lock
+    # file in place after creating it: the create-then-fill gap left a
+    # fast-path winner's record reading as {} for a moment, a concurrent
+    # takeover read that as "its started-at could not be read" (STALE)
+    # and, under --take-stale, unconditionally overwrote a winner it had
+    # not finished announcing - two acquire callers both exited 0.
+    # publish_lock closed that for this module's OWN writes (the arms
+    # below), and settle_unreadable is what is left for a writer this
+    # module does not control - an older copy of it out of a parallel
+    # checkout is the ordinary case. That is the writer standing in here:
+    # a background thread filling a file it created in two steps, on a
+    # controlled clock instead of the storm's low, timing-dependent rate.
     settle_state = os.path.join(root, "settle-collision")
     os.makedirs(prime_lock.locks_dir(settle_state), exist_ok=True)
     settle_path = prime_lock.lock_path(settle_state)
-    # The exact shape os.open(O_CREAT|O_EXCL) leaves behind before
-    # write_new_lock fills it: present, zero bytes, unreadable as JSON.
+    # The exact shape os.open(O_CREAT|O_EXCL) leaves behind before a
+    # second call fills it: present, zero bytes, unreadable as JSON.
     os.close(os.open(settle_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
 
     def fill_after_pause():
@@ -650,6 +713,250 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     check("the exclusivity that mattered (path itself) was still won - "
           "only the graveyard cleanup was interrupted",
           not os.path.exists(remove_path))
+
+    print("\n--- S23 fix wave (#436): every arm of the mutex loop tests "
+          "its own deadline ---")
+    # The review finding this wave opened on. Catching PermissionError on
+    # the steal arm without testing the deadline THERE turned a loud
+    # crash into a sleepless hot loop: a live process holding a mutex
+    # whose mtime is already past the steal threshold makes
+    # mutex_is_stale answer True forever and steal_mutex fail forever,
+    # and the old loop's `elif` meant the deadline arm was never reached
+    # at all. Measured against the unfixed module: still spinning at 25 s
+    # with MUTEX_TIMEOUT_SECONDS at 20.
+    #
+    # The real 20 s bound is shortened for the span of this check alone.
+    # What is under test is the SHAPE of the loop - that it terminates at
+    # whatever deadline it was given, on the arm the inputs select - and
+    # a check that spends 20 s of the gate to prove it would be paid for
+    # in every run forever. The constant itself is checked separately,
+    # below, against the invariant the module argues for.
+    check("the shipped timeout still outlasts the steal threshold, so a "
+          "wedged fleet recovers rather than every waiter timing out",
+          prime_lock.MUTEX_TIMEOUT_SECONDS > prime_lock.MUTEX_STALE_SECONDS)
+    spin_state = os.path.join(root, "unstealable-mutex")
+    spin_path = prime_lock.mutex_path(spin_state)
+    os.makedirs(os.path.dirname(spin_path), exist_ok=True)
+    live = subprocess.Popen(
+        [sys.executable, "-c",
+         "import sys, time\n"
+         "with open(sys.argv[1], 'w', encoding='utf-8') as f:\n"
+         "    f.write('{}')\n"
+         "    f.flush()\n"
+         "    print('HELD', flush=True)\n"
+         "    time.sleep(30.0)\n",
+         spin_path],
+        stdout=subprocess.PIPE, text=True)
+    live.stdout.readline()  # blocks until the subprocess has it open
+    old = time.time() - (prime_lock.MUTEX_STALE_SECONDS + 5)
+    os.utime(spin_path, (old, old))
+    check("the mutex a live process holds still reads STALE by mtime, so "
+          "the steal arm is the one this loop keeps selecting",
+          prime_lock.mutex_is_stale(spin_path))
+    real_timeout = prime_lock.MUTEX_TIMEOUT_SECONDS
+    prime_lock.MUTEX_TIMEOUT_SECONDS = 1.0
+    raised, elapsed = None, None
+    try:
+        started = time.monotonic()
+        try:
+            with prime_lock.mutation_lock(spin_state):
+                pass
+        except Exception as exc:  # the point is WHICH one escapes
+            raised = exc
+        elapsed = time.monotonic() - started
+    finally:
+        prime_lock.MUTEX_TIMEOUT_SECONDS = real_timeout
+    live.kill()
+    live.wait()
+    check("mutation_lock against an unstealable stale mutex fails LOUDLY "
+          "instead of spinning - it raises TimeoutError",
+          isinstance(raised, TimeoutError))
+    check("and it does so inside its own deadline rather than past it "
+          "(%.2f s against a 1.0 s bound)"
+          % (elapsed if elapsed is not None else -1.0),
+          elapsed is not None and elapsed < 5.0)
+    check("and the timeout names the error that kept it out, not just "
+          "'a holder is wedged'",
+          raised is not None
+          and ("FileExistsError" in str(raised)
+               or "PermissionError" in str(raised)))
+
+    print("\n--- S23 fix wave (#436): settle_unreadable's own stat takes "
+          "the same Windows error its siblings do ---")
+    # The one function the slice ADDED was the one place it did not apply
+    # its own rule: os.stat caught FileNotFoundError alone, so the very
+    # PermissionError the slice exists to absorb escaped do_acquire as an
+    # uncaught traceback. Injected in the shape of the twelve checks
+    # above; os.stat is patched process-wide for the span of one call and
+    # restored in `finally` before anything else can observe it.
+    stat_state = os.path.join(root, "injected-collision-stat")
+    os.makedirs(prime_lock.locks_dir(stat_state), exist_ok=True)
+    with open(prime_lock.lock_path(stat_state), "w",
+              encoding="utf-8") as handle:
+        handle.write("not json at all {")
+    real_stat = os.stat
+    stat_calls = {"n": 0}
+
+    def flaky_stat(path, *a, **kw):
+        if path == prime_lock.lock_path(stat_state) and stat_calls["n"] == 0:
+            stat_calls["n"] += 1
+            raise PermissionError(13, "Permission denied (injected, S23)")
+        return real_stat(path, *a, **kw)
+    os.stat = flaky_stat
+    raised, code, said = None, None, ""
+    try:
+        code, said = run(["acquire", "session-stat", "--state", stat_state])
+    except Exception as exc:  # proving NONE escapes
+        raised = exc
+    finally:
+        os.stat = real_stat
+    check("a transient PermissionError on settle_unreadable's stat does "
+          "not escape do_acquire", raised is None)
+    check("the injected collision actually fired once", stat_calls["n"] == 1)
+    check("the acquire still lands on its ordinary refusal rather than a "
+          "traceback", raised is None and code != 0 and "STALE" in said)
+
+    print("\n--- S23 fix wave (#436): the lock is PUBLISHED whole, so no "
+          "contender can ever see it half-written ---")
+    # The race the slice narrowed to a 0.25 s budget, closed by
+    # construction instead. Measured on the budgeted version: a 0.6 s
+    # stall between the exclusive create and the fill produced two
+    # winners and a permanently unreadable lock file five times out of
+    # five. There is no interval to widen here - the record is complete
+    # before the name it lands on exists.
+    pub_state = os.path.join(root, "publish-contract")
+    pub_path = prime_lock.lock_path(pub_state)
+    check("publishing onto a free name wins",
+          prime_lock.publish_lock(pub_path, "first", "host-p",
+                                  prime_lock.now()) is True)
+    check("and the record is whole the moment the name exists",
+          read(pub_state).get("session") == "first")
+    check("publishing onto a taken name LOSES - no retry, no overwrite",
+          prime_lock.publish_lock(pub_path, "second", "host-p",
+                                  prime_lock.now()) is False)
+    check("and the loser wrote nothing over the winner's record",
+          read(pub_state).get("session") == "first")
+    check("a publish leaves no private file behind",
+          os.listdir(prime_lock.locks_dir(pub_state)) == ["prime.json"])
+
+    # The property itself, watched from inside: at the instant before the
+    # name is claimed, there is nothing at it to misread.
+    watch_state = os.path.join(root, "publish-watch")
+    watch_path = prime_lock.lock_path(watch_state)
+    real_link = os.link
+    seen = []
+
+    def watching_link(src, dst, *a, **kw):
+        if dst == watch_path:
+            seen.append(prime_lock.read_lock(watch_path))
+        return real_link(src, dst, *a, **kw)
+    os.link = watching_link
+    try:
+        run(["acquire", "watched", "--state", watch_state])
+    finally:
+        os.link = real_link
+    check("what a contender would find at the lock path one instant "
+          "before the publish: nothing at all, never a partial record",
+          seen == [None])
+
+    # Both interleavings of a contender against the publish, driven at
+    # the exact instant rather than hoped for by a stall. A nested
+    # acquire re-enters os.link, so each hook fires once.
+    for when in ("before", "after"):
+        race_state = os.path.join(root, "publish-race-%s" % when)
+        race_path = prime_lock.lock_path(race_state)
+        fired = {"n": 0}
+        rival = {}
+
+        def racing_link(src, dst, *a, **kw):
+            if dst == race_path and fired["n"] == 0:
+                fired["n"] += 1
+                if when == "before":
+                    rival["out"] = run(["acquire", "rival", "--state",
+                                        race_state, "--take-stale",
+                                        "--stale-hours", "12"])
+                    return real_link(src, dst, *a, **kw)
+                result = real_link(src, dst, *a, **kw)
+                rival["out"] = run(["acquire", "rival", "--state",
+                                    race_state, "--take-stale",
+                                    "--stale-hours", "12"])
+                return result
+            return real_link(src, dst, *a, **kw)
+        os.link = racing_link
+        try:
+            code, said = run(["acquire", "publisher", "--state",
+                              race_state])
+        finally:
+            os.link = real_link
+        rival_code, rival_said = rival.get("out", (None, ""))
+        check("a rival arriving %s the publish: exactly one of the two "
+              "wins" % when,
+              [code, rival_code].count(0) == 1)
+        check("a rival arriving %s the publish: the lock file is readable "
+              "and names that winner" % when,
+              read(race_state).get("session")
+              == ("rival" if rival_code == 0 else "publisher"))
+        check("a rival arriving %s the publish: the loser is REFUSED "
+              "against a FRESH lock, never handed a stale one to take"
+              % when,
+              "fresh lock" in (said if code else rival_said))
+
+    # And a publisher that DIES between filling and publishing: the name
+    # it was going to claim was never created, so the next caller wins it
+    # cleanly rather than inheriting a wedged record.
+    crash_state = os.path.join(root, "publish-crash")
+    os.makedirs(prime_lock.locks_dir(crash_state), exist_ok=True)
+    dying = subprocess.run(
+        [sys.executable, "-c",
+         "import os, sys\n"
+         "sys.path.insert(0, sys.argv[1])\n"
+         "import prime_lock\n"
+         "real = os.link\n"
+         "def die(src, dst, *a, **kw):\n"
+         "    if dst == prime_lock.lock_path(sys.argv[2]):\n"
+         "        os._exit(3)\n"
+         "    return real(src, dst, *a, **kw)\n"
+         "os.link = die\n"
+         "prime_lock.main(['acquire', 'doomed', '--state', sys.argv[2]])\n",
+         TOOLS_DIR, crash_state],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    check("a publisher killed between filling and publishing exits "
+          "nonzero without a traceback",
+          dying.returncode != 0 and "Traceback" not in (dying.stderr or ""))
+    check("and it left no lock file for anyone to inherit",
+          not os.path.exists(prime_lock.lock_path(crash_state)))
+    code, _ = run(["acquire", "after-crash", "--state", crash_state])
+    check("so the next caller acquires cleanly, no --take-stale needed",
+          code == 0
+          and read(crash_state).get("session") == "after-crash")
+
+    print("\n--- S23 fix wave (#436): a contender that CRASHES reds the "
+          "storm arms, where an exit code alone did not ---")
+    # The ticket's own deliverable ("the storm arm stops flaking") was
+    # unproven because barrier_trial graded workers by exit code: a
+    # crashed taker exits nonzero, which reads as "did not win", never as
+    # a violation. Twenty-five runs of the unfixed module printed a
+    # worker traceback in four of them and every one exited 0. This check
+    # proves the new grading catches a real dying worker - and that its
+    # exit code alone still reads as an ordinary loss, which is exactly
+    # why the old grading let it through. A directory where the record
+    # belongs is a deterministic way to kill a contender inside the real
+    # code path; any real crash would serve.
+    dying_state = os.path.join(root, "crashing-contender")
+    os.makedirs(prime_lock.locks_dir(dying_state), exist_ok=True)
+    os.makedirs(prime_lock.lock_path(dying_state), exist_ok=True)
+    outcomes = barrier_trial(dying_state, [
+        ("acquire", "doomed", ["--take-stale", "--stale-hours", "12"])])
+    dead = crashed(outcomes)
+    check("a contender that dies with a traceback is graded as a crash",
+          [session for session, _ in dead] == ["doomed"])
+    check("the grading names what it died of, so a red can be acted on",
+          bool(dead) and "Error" in dead[0][1])
+    check("while its exit code alone reads as an ordinary loss - the "
+          "reason exit-code grading let the storm crash through",
+          exit_codes(outcomes)["doomed"] != 0)
+    check("and a clean contender is not graded as a crash",
+          crashed([("fine", 1, "REFUSED: somebody else holds it\n")]) == [])
 
 print("\n%d checks, %d failure(s)" % (performed, failures))
 if performed != EXPECTED:
