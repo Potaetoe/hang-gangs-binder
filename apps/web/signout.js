@@ -178,11 +178,19 @@
    * sign-out deleting a database nobody ever made while the real one
    * survives, and that failure has no symptom at all.
    *
-   * ONE NAME, AND NOTHING ENUMERATED. Sign out is in the rail on
-   * admin.html too, where the keyholder's imported working copy lives in
-   * a database of its own. A sweep over the origin's databases, or a
-   * second name added here for tidiness, would destroy the corpus key on
-   * the way out of the export page.
+   * ONE NAME, AND NOTHING ENUMERATED. There is no second key database
+   * on this origin to steer around: the keyholder's imported working
+   * copy on admin.html is gone with the keyfile-decrypt tool
+   * (0.9-M3-S10, #416), and the client seal that would make another one
+   * is gone with the keys, as the block above says. So the hazard that
+   * argued for this rule is retired and the rule is not, because it
+   * never rested on that one database. A sweep over the origin's
+   * databases destroys whatever any page ever left on this device, an
+   * older build's leftovers and a tool nobody has written yet alike, on
+   * no stronger promise than the one this single name already makes
+   * about hgb-member-key: that sign-out knows what it is, and that
+   * destroying it is the point rather than collateral. A second name
+   * added here for tidiness carries no such promise.
    *
    * Never thrown from and never waited on, which is the same trade the
    * revoke above makes for the same reason: the user-visible act is
