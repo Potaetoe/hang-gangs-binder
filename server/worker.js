@@ -788,6 +788,43 @@ const DEPARTED_STALE_DAYS = 30;
 const DEPARTED_LIST_CAP = 50;
 
 /*
+ * What an admin is told about an account an operator's list is holding
+ * open (Prime's ruling on review finding F3, 2026-08-21: never
+ * attribute to the bot what the bot did not say).
+ *
+ * ONE STRING, TWO SURFACES, because the list and the erase are the same
+ * fact reached twice: an admin reads it on the row and meets it again
+ * on the refusal, and two hand-kept wordings would be two chances for
+ * one of them to drift back into speaking for Telegram. Either
+ * always_allow arm - the deployment secret or the `membership` row -
+ * answers "member" before any call is made, so this account's departed
+ * state is the operator's decision and not the group's.
+ *
+ * IT NAMES THE NEXT ACTION, which is the whole reason it exists.
+ * Removing the always_allow entry is the only thing that changes this
+ * answer, and an admin met with a bare refusal has no way to learn
+ * that: the bypass is a deployment secret on one arm and a role row on
+ * the other, and neither is visible from the cleanup surface.
+ */
+const ALLOWED_BY_LIST =
+  "allowed by the operator's list - remove it there first";
+
+/*
+ * The two ways an account is unknown, told apart (review finding F4).
+ *
+ * Both mean "the question could not be asked" and both fail closed
+ * identically - that part is deliberate and unchanged. What differs is
+ * the NEXT ACTION, and the reason string is the only thing an admin
+ * acts on. A record with no sealed id is fixed by that member signing
+ * in, and by nothing else; a Telegram outage is fixed by waiting, and a
+ * next sign-in will not touch it. Printing the sign-in wording over an
+ * outage told an admin to wait for the wrong event.
+ */
+const UNKNOWN_UNTIL_SIGN_IN = "unknown until next sign-in";
+const UNKNOWN_BOT_SILENT =
+  "Telegram could not be asked, so try again shortly";
+
+/*
  * How much of an account id the change log records for an erase.
  *
  * ENOUGH TO TELL TWO ERASES APART, and deliberately not the whole HMAC.
@@ -1533,14 +1570,25 @@ async function claimPayload(env, payloadHash) {
  * of a role inside the group, and reading it as one would let
  * ALWAYS_ALLOW_TELEGRAM_IDS mint admins. An unreachable Telegram is
  * null for the same reason it is "unknown".
+ *
+ * `bypassed` SAYS SO OUT LOUD rather than leaving it to be inferred
+ * from the null (0.9-M3-S15 fix wave 1, review finding F3). A caller
+ * that has to work out "member with no status must mean an operator
+ * allowed them" is one refactor away from getting it wrong, and the
+ * departed check got it wrong in exactly that shape: it told an admin
+ * "Telegram says that account is still in the group" about an account
+ * Telegram was never asked about, and could say so while the bot would
+ * have said the opposite. Sign-in ignores this field - both arms are
+ * "member" there and always were - so what it adds is a caller's
+ * ability to refuse to speak for the bot.
  */
 async function groupStanding(env, userId) {
   if (idList(env.ALWAYS_ALLOW_TELEGRAM_IDS).includes(String(userId))) {
-    return { standing: "member", status: null };
+    return { standing: "member", status: null, bypassed: true };
   }
   if ((await membershipAccountIds(env, "always_allow"))
     .has(await accountIdFor(env, userId))) {
-    return { standing: "member", status: null };
+    return { standing: "member", status: null, bypassed: true };
   }
   if (!env.TELEGRAM_GROUP_CHAT_ID) return { standing: "unknown", status: null };
 
@@ -4305,10 +4353,18 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
  * NOWHERE ELSE. It is unsealed here, handed to groupStanding(), and
  * dropped when this function returns: it is never written to another
  * table, never put in a response, never logged, and never returned from
- * this function - the verdict that leaves here is a word and a boolean.
- * This is the ONLY reader of that field, which is the condition the
- * owner attached to letting the field exist at all (2026-08-21). A
- * second reader is not a refactor; it is a new decision.
+ * this function - what leaves here is two booleans and, when somebody
+ * actually said one, a word. This is the ONLY reader of that field,
+ * which is the condition the owner attached to letting the field exist
+ * at all (2026-08-21). A second reader is not a refactor; it is a new
+ * decision.
+ *
+ * THREE ANSWERS, NOT TWO. Departed, still here, or allowed by an
+ * operator's list - and the third is not a flavor of the second. It is
+ * reached without asking Telegram at all, so a caller that reports it
+ * as the group's verdict is speaking for somebody who never spoke; the
+ * `allowed` flag below carries that, and `status` stays null with it.
+ * Unknown sits outside all three, as its own refusal.
  *
  * FOUR WAYS TO GET "UNKNOWN", AND UNKNOWN IS NEVER DEPARTED. No
  * directory row; a row whose record will not open; a record written
@@ -4316,9 +4372,12 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
  * until its member next signs in; and Telegram not answering. All four
  * collapse to the same answer on purpose, because "the question could
  * not be asked" is one fact however it arose, and every caller must
- * fail closed on all of it. DESIGN.md's bot-failure stance governs here
- * exactly as it governs sign-in: "cannot check" is never treated as
- * "not a member".
+ * fail closed on all of it. (A fifth branch below catches a standing
+ * that carries no word at all, which groupStanding() does not produce
+ * today; it is a guard against inventing a quotation, not a fifth way
+ * for a real deployment to get here.) DESIGN.md's bot-failure stance
+ * governs here exactly as it governs sign-in: "cannot check" is never
+ * treated as "not a member".
  *
  * IT THROWS NOTHING. A directory row that will not open is a real
  * possibility across a key rotation, and an admin looking at a cleanup
@@ -4328,7 +4387,17 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
  * "unknown" the callers already refuse on.
  */
 async function departedVerdict(env, accountId) {
-  const unknown = { known: false, departed: false, status: null };
+  /*
+   * The reason travels WITH the refusal rather than being reconstructed
+   * by the caller: this function is the only place that knows which of
+   * the ways it failed actually happened, and a caller guessing from a
+   * bare `known: false` is how the sign-in wording ended up printed
+   * over a Telegram outage.
+   */
+  const unknown = (reason) => ({
+    known: false, departed: false, allowed: false, status: null,
+    reason: reason,
+  });
 
   let row;
   try {
@@ -4336,9 +4405,11 @@ async function departedVerdict(env, accountId) {
       "SELECT ciphertext FROM directory WHERE account_id = ?"
     ).bind(accountId).first();
   } catch (e) {
-    return unknown;
+    return unknown(UNKNOWN_UNTIL_SIGN_IN);
   }
-  if (!row || typeof row.ciphertext !== "string") return unknown;
+  if (!row || typeof row.ciphertext !== "string") {
+    return unknown(UNKNOWN_UNTIL_SIGN_IN);
+  }
 
   let telegramId;
   try {
@@ -4348,7 +4419,7 @@ async function departedVerdict(env, accountId) {
       { accountId: accountId, recordId: DIRECTORY_SLOT }));
     telegramId = record && record.telegramId;
   } catch (e) {
-    return unknown;
+    return unknown(UNKNOWN_UNTIL_SIGN_IN);
   }
   /*
    * TELEGRAM_ID rather than a truthiness test, and the difference is
@@ -4358,23 +4429,54 @@ async function departedVerdict(env, accountId) {
    * ask", and neither may be interpolated into the bot URL.
    */
   if (typeof telegramId !== "string" || !TELEGRAM_ID.test(telegramId)) {
-    return unknown;
+    return unknown(UNKNOWN_UNTIL_SIGN_IN);
   }
 
+  /*
+   * FROM HERE ON A FAILURE IS TELEGRAM'S, NOT THE RECORD'S, and that is
+   * where the two reasons part company (review finding F4). Everything
+   * above is fixed by that member signing in again; nothing below is.
+   */
   const standing = await groupStanding(env, telegramId);
-  if (standing.standing === "unknown") return unknown;
+  if (standing.standing === "unknown") return unknown(UNKNOWN_BOT_SILENT);
+
+  /*
+   * AN OPERATOR'S LIST IS ITS OWN ANSWER, not a quiet "still a member"
+   * (Prime's ruling on review finding F3, 2026-08-21: never attribute
+   * to the bot what the bot did not say).
+   *
+   * groupStanding() answers "member" for an account on either
+   * always_allow arm WITHOUT asking Telegram, so such an account's
+   * departed state is decided by the operator's list and not by the
+   * group. The previous shape folded that into the same "still a
+   * member" answer a real bot verdict produces, and the refusal built
+   * on it told an admin Telegram had spoken - which it can do while the
+   * bot would have said the exact opposite, since the bypass is checked
+   * before the call is ever made.
+   *
+   * `status` STAYS NULL HERE on purpose. Every word this function hands
+   * out is a word somebody said; there is nobody to quote for this one,
+   * so the callers name the list instead.
+   */
+  if (standing.bypassed) {
+    return { known: true, departed: false, allowed: true, status: null };
+  }
+
+  /*
+   * Everything left came from the group and carries the group's own
+   * word. A member-or-left standing with no word is a shape
+   * groupStanding() does not produce; if one ever arrives it is
+   * "cannot ask" rather than a word to invent, because a quoted status
+   * that nobody said is the whole of what F3 was.
+   */
+  if (typeof standing.status !== "string" || standing.status === "") {
+    return unknown(UNKNOWN_BOT_SILENT);
+  }
   return {
     known: true,
     departed: standing.standing === "left",
-    /*
-     * Telegram's own word where it gave one. The always_allow bypass
-     * answers "member" with no status at all, so it is reported as the
-     * bypass it is rather than as a word Telegram did not say - an
-     * admin reading "allowed" back can tell that this account is on the
-     * bypass list and was never asked about.
-     */
-    status: standing.status ||
-      (standing.standing === "left" ? "left" : "allowed"),
+    allowed: false,
+    status: standing.status,
   };
 }
 
@@ -4454,6 +4556,7 @@ async function handleReadDeparted(env, origin) {
 
   const departed = [];
   const unknown = [];
+  const allowed = [];
   for (const row of ((stale && stale.results) || [])) {
     const verdict = await departedVerdict(env, row.account_id);
     const entry = {
@@ -4462,7 +4565,9 @@ async function handleReadDeparted(env, origin) {
       lastSeenAt: row.last_seen_at,
     };
     /*
-     * TWO LISTS, BECAUSE UNKNOWN IS NOT DEPARTED AND IS NOT NOTHING.
+     * THREE LISTS, BECAUSE THE TWO REASONS AN ACCOUNT IS NOT ERASABLE
+     * ARE DIFFERENT REASONS AND NEITHER IS NOTHING.
+     *
      * An account the bot could not be asked about must never appear
      * among the departed - an erase offered against that list has to be
      * safe, and that is the list's whole meaning. But dropping it
@@ -4470,22 +4575,40 @@ async function handleReadDeparted(env, origin) {
      * a directory record written before the numeric id was sealed into
      * it (owner ruling, 2026-08-21), which every row carries until its
      * member next signs in. An admin who saw a stale account simply
-     * vanish would conclude it had been checked and cleared.
+     * vanish would conclude it had been checked and cleared. The row
+     * carries the verdict's OWN reason rather than a wording chosen
+     * here, because a Telegram outage and a record with no sealed id
+     * are both unknown and call for opposite next actions (review
+     * finding F4).
      *
-     * So it goes in `unknown` with the reason a person can act on, and
-     * the erase refuses it exactly as this list does.
+     * `allowed` is the same argument for a different fact (Prime's
+     * ruling on review finding F3): an account on either always_allow
+     * arm is held here by the OPERATOR'S LIST, not by the group, and
+     * the bot was never asked about it. Reporting it as still-a-member
+     * would put words in Telegram's mouth, and dropping it would leave
+     * an admin unable to erase it and unable to find out why. The
+     * reason names the list and the next action, because removing the
+     * always_allow row is the only thing that changes this answer.
+     *
+     * A current member simply is not listed: the bot answered, the
+     * answer was "still here", and that is a fact about somebody who is
+     * not being cleaned up.
      */
     if (!verdict.known) {
-      unknown.push(Object.assign({ reason: "unknown until next sign-in" },
-        entry));
+      unknown.push(Object.assign({ reason: verdict.reason }, entry));
+      continue;
+    }
+    if (verdict.allowed) {
+      allowed.push(Object.assign({ reason: ALLOWED_BY_LIST }, entry));
       continue;
     }
     if (!verdict.departed) continue;
     departed.push(Object.assign({ status: verdict.status }, entry));
   }
 
-  return json({ ok: true, departed: departed, unknown: unknown }, 200,
-    origin);
+  return json(
+    { ok: true, departed: departed, unknown: unknown, allowed: allowed },
+    200, origin);
 }
 
 /*
@@ -4508,6 +4631,17 @@ async function handleReadDeparted(env, origin) {
  * from "Telegram did not answer" - the two look identical from a
  * surface that only says no, and they call for opposite next actions.
  * The status is Telegram's own word and names nobody.
+ *
+ * AND AN ACCOUNT AN OPERATOR'S LIST IS HOLDING OPEN IS A THIRD
+ * REFUSAL, in the list's words rather than Telegram's (Prime's ruling
+ * on review finding F3). The bot is never asked about such an account,
+ * so quoting it here reported a verdict nobody gave - and could report
+ * the opposite of the one the bot would have given, since the bypass
+ * short-circuits the call. Worse, that refusal was permanent and said
+ * nothing about why: the branch below names the list and the next
+ * action instead. It sits ABOVE the still-a-member branch because a
+ * bypassed account satisfies that test too, and the more specific
+ * reason is the true one.
  *
  * AN ADMIN MAY NOT ERASE THEMSELVES here. The route is for members who
  * are gone, and a caller holding a live admin session is demonstrably
@@ -4554,8 +4688,14 @@ async function handleEraseDeparted(env, origin, accountId, caller) {
   const verdict = await departedVerdict(env, wanted);
   if (!verdict.known) {
     return json({
-      error: "The bot could not say whether that member has left, so " +
-        "nothing was erased. Try again shortly.",
+      error: "The bot could not say whether that member has left - " +
+        verdict.reason + ". Nothing was erased.",
+    }, 409, origin);
+  }
+  if (verdict.allowed) {
+    return json({
+      error: "That account is " + ALLOWED_BY_LIST + ". Telegram was " +
+        "never asked about it, so nothing was erased.",
     }, 409, origin);
   }
   if (!verdict.departed) {

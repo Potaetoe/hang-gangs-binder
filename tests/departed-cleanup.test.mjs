@@ -984,6 +984,16 @@ for (const [who, headers] of [
  * fixture that put the departed account on the bypass made the erase
  * unreachable and every arm downstream fail for an unrelated reason.
  * That is exactly the kind of fact that belongs in an arm.
+ *
+ * AND THE WORDS ARE THE LIST'S, NEVER TELEGRAM'S (Prime's ruling on
+ * review finding F3, 2026-08-21: never attribute to the bot what the
+ * bot did not say). The bypass is checked BEFORE the call is made, so
+ * the old refusal - "Telegram says that account is still in the group"
+ * - reported a verdict nobody gave, and the bot here would have said
+ * the exact opposite. These arms hold both directions: never departed,
+ * and never attributed. `botSaying("kicked")` is what makes the second
+ * one a real check rather than a coincidence, because it puts the
+ * bypass in front of a bot that WOULD have said the member is gone.
  */
 {
   const db = await fixture();
@@ -1000,13 +1010,177 @@ for (const [who, headers] of [
     Boolean(list.body && Array.isArray(list.body.departed) &&
       !list.body.departed.some((row) => row.accountId === BYPASSED)));
 
+  const listedAllowed = ((list.body && list.body.allowed) || [])
+    .find((row) => row.accountId === BYPASSED);
+  check("it is reported in its OWN state rather than dropped - an " +
+    "account that vanished from the list would read as checked and " +
+    "cleared, exactly as an unknown one would", Boolean(listedAllowed));
+  check("and the row's reason names the OPERATOR'S LIST and the next " +
+    "action, because removing that entry is the only thing that " +
+    "changes this answer", Boolean(listedAllowed) &&
+    listedAllowed.reason ===
+      "allowed by the operator's list - remove it there first");
+  check("the bypassed account is NOT filed as unknown either - the " +
+    "answer is known, it is just not the group's",
+    !((list.body && list.body.unknown) || [])
+      .some((row) => row.accountId === BYPASSED));
+  check("nothing in that whole answer says Telegram spoke about the " +
+    "bypassed account, because Telegram was never asked",
+    !/Telegram/i.test(JSON.stringify(list.body || {})));
+
   const { value: erase } = await withBot(botSaying("kicked"), () =>
     call(env, "DELETE", "/admin-departed/" + BYPASSED,
       { headers: ADMIN_BEARER }));
   check("an always_allow account cannot be erased through this route",
     erase.status === 409);
+  check("and the erase refuses with THAT SAME REASON - the list's " +
+    "words, so an admin learns what to remove",
+    /allowed by the operator's list - remove it there first/
+      .test(String((erase.body || {}).error)));
+  check("the refusal never says Telegram called them a current member, " +
+    "which it would have been the opposite of here: this bot says kicked",
+    !/Telegram says/.test(String((erase.body || {}).error)));
   check("that refusal moved none of the bypassed account's rows",
     belongingTo(db, BYPASSED) === before);
+}
+
+/*
+ * THE SAME, THROUGH THE OTHER always_allow ARM - the deployment secret
+ * ALWAYS_ALLOW_TELEGRAM_IDS rather than the `membership` row.
+ *
+ * This is the arm the review's own probe used, and it is the one that
+ * survives a Worker that cannot reach D1 at all, so it is the one an
+ * operator reaches for on the worst day. Both arms answer "member"
+ * before any call is made and both must therefore refuse to speak for
+ * Telegram; arming only the table arm would leave the break-glass one
+ * free to drift.
+ *
+ * GONE sits in the same answer as a real leaver, so this is one call
+ * telling the two apart rather than a run where nothing is departed.
+ */
+{
+  const db = await fixture();
+  db.directory.set(BYPASSED, await directoryRow(BYPASSED, BYPASSED_ID, OLD));
+  const env = envFor(db, { ALWAYS_ALLOW_TELEGRAM_IDS: BYPASSED_ID });
+  const before = belongingTo(db, BYPASSED);
+
+  const { value: list } = await withBot(botSaying("left"), () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+  check("an ALWAYS_ALLOW_TELEGRAM_IDS account is not departed either, " +
+    "with a bot that says left",
+    !((list.body && list.body.departed) || [])
+      .some((row) => row.accountId === BYPASSED));
+  check("...while the leaver in the very same answer IS departed, so " +
+    "the check above is the bypass working and not an empty list",
+    ((list.body && list.body.departed) || [])
+      .some((row) => row.accountId === GONE));
+  check("the secret-list account is reported as allowed by the " +
+    "operator's list, in the same words the table arm gets",
+    ((list.body && list.body.allowed) || []).some((row) =>
+      row.accountId === BYPASSED && row.reason ===
+        "allowed by the operator's list - remove it there first"));
+
+  const { value: erase } = await withBot(botSaying("left"), () =>
+    call(env, "DELETE", "/admin-departed/" + BYPASSED,
+      { headers: ADMIN_BEARER }));
+  check("erasing it is refused in the list's words, not Telegram's - " +
+    "the exact case the review found reported backwards",
+    erase.status === 409 &&
+    /allowed by the operator's list/.test(String((erase.body || {}).error)) &&
+    !/Telegram says/.test(String((erase.body || {}).error)));
+  check("and none of that account's rows moved",
+    belongingTo(db, BYPASSED) === before);
+}
+
+/*
+ * TELEGRAM FAILING DURING THE LIST READ IS "UNKNOWN", AND SAYS SO
+ * (review finding F4).
+ *
+ * The erase already refused on an unreachable bot and was armed for it.
+ * The LIST was not: every unknown fixture reached that state through a
+ * record with no sealed id, which is a different branch, so a mutation
+ * making a bot failure read as departed reddened only erase-side arms.
+ * This is that input class - a row that IS askable, in front of a bot
+ * that will not answer.
+ *
+ * TWO FAILURE SHAPES, because they arrive on different code paths: a
+ * thrown fetch (the network is gone, or the timeout fired) and a 200
+ * carrying `ok: false` (Telegram answered and refused). Neither may be
+ * departed, neither may be dropped, and both must say the bot is the
+ * problem - a next sign-in fixes a record with no id and does nothing
+ * at all about an outage, so printing the sign-in wording here sends an
+ * admin to wait for the wrong event.
+ */
+{
+  const db = await fixture();
+  db.directory.set(STALE_MEMBER,
+    await directoryRow(STALE_MEMBER, STALE_MEMBER_ID, OLD));
+  const env = envFor(db);
+
+  /* Throws for STALE_MEMBER, answers for everybody else - so one call
+     holds a leaver, an unaskable record and a bot failure at once. */
+  const flaky = async (url) => {
+    if (String(url).includes("user_id=" + STALE_MEMBER_ID)) {
+      throw new Error("connect ECONNREFUSED");
+    }
+    return new Response(
+      JSON.stringify({ ok: true, result: { status: "left" } }),
+      { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  const { value: list } = await withBot(flaky, () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+
+  const unknownRows = (list.body && list.body.unknown) || [];
+  check("a row the bot call THREW on is never departed - an outage is " +
+    "not evidence that anybody left",
+    !((list.body && list.body.departed) || [])
+      .some((row) => row.accountId === STALE_MEMBER));
+  check("...in an answer that DOES carry the leaver, so the check above " +
+    "is the failure being handled and not an empty list",
+    ((list.body && list.body.departed) || [])
+      .some((row) => row.accountId === GONE));
+  check("it is not dropped either: the list reports it as unknown",
+    unknownRows.some((row) => row.accountId === STALE_MEMBER));
+  check("and the reason names TELEGRAM as the thing that failed - " +
+    "waiting fixes this, and a next sign-in does not",
+    unknownRows.some((row) => row.accountId === STALE_MEMBER &&
+      row.reason === "Telegram could not be asked, so try again shortly"));
+  check("the record-side unknown in the same answer keeps its OWN " +
+    "reason, so the two are told apart rather than sharing one wording",
+    unknownRows.some((row) => row.accountId === STALE_NO_ID &&
+      row.reason === "unknown until next sign-in"));
+}
+
+{
+  const db = await fixture();
+  db.directory.set(STALE_MEMBER,
+    await directoryRow(STALE_MEMBER, STALE_MEMBER_ID, OLD));
+  const env = envFor(db);
+  const before = belongingTo(db, STALE_MEMBER);
+
+  /* A 200 that carries ok:false - Telegram answered and refused, which
+     is what a 4xx from the bot API looks like once it is parsed. */
+  const refusing = botPerPerson({ [GONE_ID]: "left" });
+  const { value: list } = await withBot(refusing, () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+
+  check("a 4xx-shaped answer from Telegram is not departed on the list " +
+    "either", !((list.body && list.body.departed) || [])
+      .some((row) => row.accountId === STALE_MEMBER));
+  check("it is reported unknown with the bot named",
+    ((list.body && list.body.unknown) || []).some((row) =>
+      row.accountId === STALE_MEMBER &&
+      row.reason === "Telegram could not be asked, so try again shortly"));
+
+  const { value: erase } = await withBot(refusing, () =>
+    call(env, "DELETE", "/admin-departed/" + STALE_MEMBER,
+      { headers: ADMIN_BEARER }));
+  check("and the erase refuses it with the same named failure rather " +
+    "than telling an admin to wait for a sign-in",
+    erase.status === 409 &&
+    /Telegram could not be asked/.test(String((erase.body || {}).error)));
+  check("nothing of that account moved on the refusal",
+    belongingTo(db, STALE_MEMBER) === before);
 }
 
 /*
@@ -1193,7 +1367,7 @@ for (const [who, headers] of [
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 86;
+const EXPECTED = 106;
 if (failures) {
   console.log("\nfailing checks:");
   for (const label of failed) console.log("  - " + label);
