@@ -916,6 +916,50 @@ check("and it is that constant the group check is bounded by",
     "overridden is not grounds for ending sessions", db.sessions.size === 1);
 }
 
+/*
+ * AN always_allow ROW IN THE WRONG LETTER CASE STILL GRANTS NOTHING
+ * (0.9-M3-S15 fix wave 3, review finding F1).
+ *
+ * THIS IS THE HALF THAT MUST NOT MOVE. Fix wave 3 made the departed
+ * check read the operator's list without regard to letter case,
+ * because the erase's own DELETE matches that way and a guard that
+ * could not see the row let the erase destroy it. That is PROTECTION.
+ * Sign-in asks a different question - may this person in - and the
+ * answer there is unchanged: a row spelled in a case nothing in this
+ * Worker writes is a row nobody can prove was meant, and admitting
+ * somebody on the strength of it would widen an authentication
+ * boundary that no ruling widened.
+ *
+ * Grants nothing, protects everything - and the protecting half is
+ * armed in tests/departed-cleanup.test.mjs. Both directions here: the
+ * same row spelled the way this Worker writes it DOES bypass, so the
+ * refusal below is the case check working and not the bypass being
+ * broken outright.
+ */
+{
+  const rowFor = (accountId) => [{ account_id: accountId,
+    role: "always_allow", label: "written-by-hand",
+    added_at: "2020-01-01T00:00:00.000Z", added_by: accountId }];
+
+  const near = await signIn({
+    seed: { membership: rowFor(ACCOUNT_ID.toUpperCase()) },
+    bot: leftAnswer });
+  check("an always_allow row in UPPER-CASE hex does not let a leaver " +
+    "sign in - the near-miss row grants nobody anything",
+    near.status === 403 || near.status === 401);
+  check("and the bot WAS asked about them, so that row was never read " +
+    "as a bypass", near.bot.calls.length === 1);
+
+  const exact = await signIn({
+    seed: { membership: rowFor(ACCOUNT_ID) }, bot: leftAnswer });
+  check("the same row spelled the way this Worker writes it DOES " +
+    "bypass, so the refusal above is the letter case and not a broken " +
+    "list", exact.status === 200 &&
+    Boolean(exact.body && exact.body.ok === true));
+  check("...and that one asked the bot nothing at all",
+    exact.bot.calls.length === 0);
+}
+
 /* ------------------------------------------------------------------ */
 /* 7. The 401/403 contract OPERATIONS.md's check table pins.           */
 
@@ -1368,7 +1412,7 @@ async function mutant(label, from, to) {
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 112;
+const EXPECTED = 116;
 console.log(failures
   ? `\ntelegram-auth FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

@@ -16,9 +16,13 @@
  *      refusal erases nothing - a route that 401s and deletes anyway
  *      would pass a status-code check and fail the only thing that
  *      matters.
- *   3. THE GUARDS. A malformed id, an admin's own account, and the last
- *      `admin` row that still grants are each refused, and the refusal
- *      leaves the store exactly as it was.
+ *   3. THE GUARDS. A malformed id, an admin's own account, the last
+ *      `admin` row that still grants, a membership row spelled in a
+ *      letter case the guard and the delete disagree about, and a
+ *      pre-check read that did not answer are each refused, and every
+ *      refusal leaves the store exactly as it was - counted across all
+ *      four row classes, because the failure this covers deleted three
+ *      of them and reported success.
  *   4. THE LOG LINE. One line per erase, carrying who erased, the short
  *      id, the verdict and the COUNTS - never a row, never a handle,
  *      never a numeric Telegram id.
@@ -153,6 +157,15 @@ const BYPASSED = accountFor(BYPASSED_ID);
 const STALE_MEMBER_ID = "757070707";
 const STALE_MEMBER = accountFor(STALE_MEMBER_ID);
 
+/* Stale, carries its id, has left the group, and the only `membership`
+   row an operator wrote for it is spelled in UPPER-CASE hex - what
+   `wrangler d1 execute` writes and what nothing in this Worker writes
+   (fix wave 3, review finding F1). The granting predicate refuses that
+   spelling; the erase's DELETE matches it. */
+const NEAR_MISS_ID = "758080808";
+const NEAR_MISS = accountFor(NEAR_MISS_ID);
+const NEAR_MISS_ROW = NEAR_MISS.toUpperCase();
+
 const STORE_SECRET = "canary-s15-store-secret-belonging-to-nobody-v1";
 const direct = await store.openStore({ STORE_SECRET: STORE_SECRET });
 
@@ -205,6 +218,17 @@ function makeDb(seed) {
      formed while this row did not answer, and a whole-table failure
      would 500 the route before it ran. */
   const failDirectoryRead = seed && seed.failDirectoryRead;
+  /*
+   * THE THIRD HOOK, AND THE ONE THE ERASE OWNS (fix wave 3, review
+   * finding F2). The two above fail reads on the way to a VERDICT.
+   * This one fails the read handleEraseDeparted() makes before it asks
+   * for a verdict at all - the membership pre-check - in the three
+   * shapes a read can fail in: a throw, no row at all, and a row that
+   * came back without the columns it named. The third is the one the
+   * route used to spend as "no problem", answering ok:true after
+   * deleting three of the four row classes.
+   */
+  const failPreCheck = seed && seed.failPreCheck;
 
   for (const row of (seed && seed.sessions) || []) {
     sessions.set(row.token_hash, row);
@@ -316,14 +340,34 @@ function makeDb(seed) {
         .map((row) => ({ account_id: row.account_id })) };
     }
     /* The erase's own pre-check: does this account hold a granting
-       `admin` row, and is it the last one? Answered as two named
-       columns so the Worker reads a shape rather than a position. */
+       `admin` row, is it the last one, and does the table hold any row
+       for this account the DELETE would remove and the guard cannot
+       see? Answered as three named columns so the Worker reads a shape
+       rather than a position. */
     if (sql.startsWith("SELECT (SELECT COUNT(*) FROM membership")) {
-      const wanted = String(args[0]).toLowerCase();
+      if (failPreCheck === "throw") {
+        throw new Error("D1_ERROR: the erase's membership pre-check " +
+          "did not answer");
+      }
+      /* No row at all, and a row without the columns it named. Both
+         are shapes the route used to walk straight past. */
+      if (failPreCheck === "null") return null;
+      if (failPreCheck === "malformed") return { granting: 1 };
+      const bound = String(args[0]);
+      const wanted = bound.toLowerCase();
       const target = membership.find((row) =>
         row.account_id.toLowerCase() === wanted && row.role === "admin" &&
         grants(row.account_id));
-      return { granting: grantingAdmins(), holds: target ? 1 : 0 };
+      /* `COLLATE NOCASE` matches it, `COLLATE BINARY` does not: every
+         row the erase would remove whose spelling is not the one the
+         guard compared. Answered in JavaScript rather than parsed out
+         of the statement, because what this stub has to get right is
+         the ANSWER. */
+      const nearMiss = membership.filter((row) =>
+        String(row.account_id).toLowerCase() === wanted &&
+        String(row.account_id) !== bound).length;
+      return { granting: grantingAdmins(), holds: target ? 1 : 0,
+        nearMiss: nearMiss };
     }
     if (sql.startsWith("DELETE FROM membership WHERE account_id = ? COLLATE " +
       "NOCASE AND role")) {
@@ -555,6 +599,7 @@ async function fixture(options) {
        scenario above this one is untouched by the hooks' existence. */
     failRole: (options && options.failRole) || null,
     failDirectoryRead: (options && options.failDirectoryRead) || null,
+    failPreCheck: (options && options.failPreCheck) || null,
     submissions: [
       { id: 11, account_id: GONE, ciphertext: "gone-one",
         received_at: "2025-01-01T00:00:00.000Z", supersedes: null },
@@ -654,6 +699,25 @@ const countsFor = (db, accountId) => ({
   sessions: [...db.sessions.values()]
     .filter((row) => row.account_id === accountId).length,
 });
+
+/*
+ * Every `membership` row that NAMES this account, in any spelling.
+ *
+ * belongingTo() above deliberately compares rows whose account_id
+ * matches byte for byte, which is every row this Worker writes - and
+ * it is blind to exactly the row fix wave 3 is about (review finding
+ * F1), an operator's hand-written one in upper-case hex. The erase's
+ * DELETE matches `COLLATE NOCASE` and removes that row, so proving it
+ * survived a refusal needs a comparison that can see it. Two helpers
+ * rather than a flag on one: the byte proof and the any-spelling proof
+ * answer different questions and an arm should say which it is asking.
+ */
+const membershipNaming = (db, accountId) => JSON.stringify(
+  db.membership()
+    .filter((row) => String(row.account_id).toLowerCase() ===
+      String(accountId).toLowerCase())
+    .sort((a, b) => (a.account_id + a.role)
+      .localeCompare(b.account_id + b.role)));
 
 const ADMIN_BEARER = bearer("admin-token");
 const MEMBER_BEARER = bearer("member-token");
@@ -895,6 +959,85 @@ for (const [who, headers] of [
     belongingTo(db, GONE) === before);
 }
 
+/*
+ * THE PRE-CHECK ITSELF FAILS CLOSED (fix wave 3, review finding F2).
+ *
+ * THE HARM: the last-granting-admin pre-check spent a read that did
+ * not answer as "no problem". A throw escaped to the catch-all 500 -
+ * nothing deleted, but nothing named either - and a null row or a row
+ * missing the columns it asked for skipped the check entirely, so the
+ * route went on and answered `ok: true` having deleted the
+ * submissions, the directory row and the sessions. The membership row
+ * survived only because eraseAccount()'s own statement carries the
+ * same guard, and that statement protects ONE of the four row classes.
+ * `removed.membership: 0` was the only signal, and nothing reads it.
+ *
+ * ALL-OR-NOTHING IS PROVED BY COUNTING, NOT BY ASSERTING IT. Each arm
+ * seeds real rows in all four classes, refuses, and compares the whole
+ * lot byte for byte afterwards - the partial erase the finding
+ * describes would move three of the four and this comparison sees it.
+ * No log line either: the erase's line is written after the write, so
+ * a line here would mean a write happened.
+ *
+ * THE REASON IS ITS OWN. It names the membership table and not the
+ * allow list, because "the list that holds people open could not be
+ * read" and "the read that counts the rows I am about to delete could
+ * not be read" send an admin to different places, and the whole point
+ * of telling the unknown reasons apart is the next action.
+ */
+for (const [shape, why] of [
+  ["throw", "the read throws, as a transient D1 error does"],
+  ["null", "the read answers no row at all"],
+  ["malformed", "the read answers a row without the columns it named"],
+]) {
+  const db = await fixture({ failPreCheck: shape });
+  const env = envFor(db);
+  const before = belongingTo(db, GONE);
+  const staysBefore = belongingTo(db, STAYS);
+  check("the fixture holds rows in all four classes before the refused " +
+    "erase: " + why, JSON.stringify(countsFor(db, GONE)) ===
+      JSON.stringify({ submissions: 2, directory: 1, membership: 1,
+        sessions: 2 }));
+
+  const { value } = await withBot(botSaying("left"), () =>
+    call(env, "DELETE", "/admin-departed/" + GONE,
+      { headers: ADMIN_BEARER }));
+  check("the erase is REFUSED rather than answering ok:true when " +
+    why, value.status === 409 &&
+    !((value.body || {}).ok === true));
+  check("the refusal names the membership read as the reason, not the " +
+    "allow list and not Telegram: " + why,
+    /the membership table could not be read/
+      .test(String((value.body || {}).error)) &&
+    !/allow list/.test(String((value.body || {}).error)) &&
+    !/Telegram/.test(String((value.body || {}).error)));
+  check("NOTHING was deleted - not three of four classes, not one: " +
+    why, belongingTo(db, GONE) === before);
+  check("and the other member's rows are byte-identical too: " + why,
+    belongingTo(db, STAYS) === staysBefore);
+  check("no log line says an erase happened: " + why,
+    db.adminLog.length === 0);
+}
+
+/* The baseline the three above are a branch off. Same fixture, same
+   bot, same call - with the pre-check answering, the erase goes
+   through and every class comes down, so the 409s are the read failing
+   and not the route having stopped working. */
+{
+  const db = await fixture();
+  const env = envFor(db);
+  const { value } = await withBot(botSaying("left"), () =>
+    call(env, "DELETE", "/admin-departed/" + GONE,
+      { headers: ADMIN_BEARER }));
+  check("BASELINE: with the pre-check answering, the same erase goes " +
+    "through", value.status === 200 &&
+    Boolean(value.body && value.body.ok === true));
+  check("...and all four classes came down", JSON.stringify(
+    countsFor(db, GONE)) === JSON.stringify({ submissions: 0,
+      directory: 0, membership: 0, sessions: 0 }));
+  check("...and it wrote its one log line", db.adminLog.length === 1);
+}
+
 /* ------------------------------------------------------------------ */
 /* 4. The log line: counts and a verdict, never a row and never a      */
 /*    handle.                                                          */
@@ -1124,6 +1267,174 @@ for (const [who, headers] of [
     !/Telegram says/.test(String((erase.body || {}).error)));
   check("and none of that account's rows moved",
     belongingTo(db, BYPASSED) === before);
+}
+
+/*
+ * A ROW IN THE WRONG LETTER CASE HOLDS AN ACCOUNT OPEN TOO (fix wave 3,
+ * review finding F1).
+ *
+ * THE HARM, IN ONE SENTENCE: two spellings of "this account's row"
+ * disagreed inside one request. `wrangler d1 execute` writes upper-case
+ * hex, so an operator's hand-written always_allow row is spelled in a
+ * case the granting predicate refuses - the account was served as
+ * departed, the bot was asked, the erase went through, and the erase's
+ * own DELETE, which matches `COLLATE NOCASE`, then removed the very row
+ * that was meant to stop it. The reviewer's probe printed the sharp
+ * part: `ERASE 200 ... its always_allow row after the erase: []`.
+ *
+ * TWO WALLS, AND EACH IS ARMED WHERE IT IS THE ONLY ONE STANDING.
+ * departedVerdict() now reads the list with the same normalization the
+ * DELETE's collation implies, so the LIST route below is where that
+ * wall alone decides. handleEraseDeparted()'s pre-check refuses
+ * whenever the guard's view and the delete's view disagree at all, so
+ * the ERASE route is where that wall answers first - and the arm on
+ * the admin-row case further down is where it is the only wall there
+ * is. Reverting either one reds a check here and leaves the other
+ * holding, which is what belt and braces is supposed to look like.
+ *
+ * GRANTS NOTHING, PROTECTS EVERYTHING. The row still does not admit
+ * anybody - tests/telegram-auth.test.mjs holds that direction, because
+ * widening who may sign in on the strength of a row nobody can prove
+ * was meant is a different decision from this one.
+ */
+/* Real rows in every class the erase removes, so "intact" below is a
+   comparison of seeded state and never a stub default that already
+   satisfied the assertion (AGENTS.md, "Verification"). */
+async function seedNearMiss(db, role) {
+  db.membership().push({ account_id: NEAR_MISS_ROW, role: role,
+    label: "written-by-hand", added_at: OLD, added_by: ADMIN });
+  db.directory.set(NEAR_MISS,
+    await directoryRow(NEAR_MISS, NEAR_MISS_ID, OLD));
+  db.submissions().push({ id: 51, account_id: NEAR_MISS,
+    ciphertext: "near-miss-one", received_at: OLD, supersedes: null });
+  const session = sessionRow("near-miss-token", NEAR_MISS);
+  db.sessions.set(session.token_hash, session);
+}
+
+{
+  const db = await fixture();
+  await seedNearMiss(db, "always_allow");
+  const env = envFor(db);
+  const before = belongingTo(db, NEAR_MISS);
+  const staysBefore = belongingTo(db, STAYS);
+  const rowsNaming = membershipNaming(db, NEAR_MISS);
+  check("the near-miss fixture really holds rows in all four classes " +
+    "before anything is asked of it",
+    JSON.stringify(countsFor(db, NEAR_MISS)) ===
+      JSON.stringify({ submissions: 1, directory: 1, membership: 0,
+        sessions: 1 }) &&
+    db.membership().some((row) => row.account_id === NEAR_MISS_ROW));
+
+  const { value: list } = await withBot(botSaying("left"), () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+  check("the reviewer's probe, first line: an account whose only " +
+    "always_allow row is UPPER-CASE hex is NOT reported departed",
+    !((list.body && list.body.departed) || [])
+      .some((row) => row.accountId === NEAR_MISS));
+  check("...while the real leaver in the very same answer IS departed, " +
+    "so the check above is the fix working and not an empty list",
+    ((list.body && list.body.departed) || [])
+      .some((row) => row.accountId === GONE));
+  check("it is reported as allowed by the operator's list, in the same " +
+    "words a correctly spelled row gets - the operator did put it there",
+    ((list.body && list.body.allowed) || []).some((row) =>
+      row.accountId === NEAR_MISS && row.reason ===
+        "allowed by the operator's list - remove it there first"));
+  check("and it is not filed as unknown - the list answered, and what " +
+    "it said is that this account is named",
+    !((list.body && list.body.unknown) || [])
+      .some((row) => row.accountId === NEAR_MISS));
+
+  const { value: erase } = await withBot(botSaying("left"), () =>
+    call(env, "DELETE", "/admin-departed/" + NEAR_MISS,
+      { headers: ADMIN_BEARER }));
+  check("the reviewer's probe, second line: the erase is REFUSED " +
+    "rather than answering 200", erase.status === 409);
+  check("the refusal names the letter case and the next action, which " +
+    "is the pre-check answering first - the more specific of the two " +
+    "walls, and the one that can say which row to go and fix",
+    /different letter case/.test(String((erase.body || {}).error)) &&
+    /Nothing was erased/.test(String((erase.body || {}).error)));
+  check("the refusal quotes nobody - the bot said 'left' here and is " +
+    "not spoken for", !/Telegram says/
+      .test(String((erase.body || {}).error)));
+  check("the reviewer's probe, third line: that account's rows are all " +
+    "still there", belongingTo(db, NEAR_MISS) === before);
+  check("the reviewer's probe, SHARP line: the always_allow row that " +
+    "protects it is still there too, byte for byte - the erase no " +
+    "longer destroys the entry that was meant to stop it",
+    membershipNaming(db, NEAR_MISS) === rowsNaming &&
+    db.membership().some((row) => row.account_id === NEAR_MISS_ROW));
+  check("a refused erase over a near-miss row writes no log line",
+    db.adminLog.length === 0);
+  check("and the second member's rows are byte-identical afterwards",
+    belongingTo(db, STAYS) === staysBefore);
+}
+
+/*
+ * THE GUARD'S VIEW AND THE DELETE'S VIEW MUST AGREE, WHATEVER THE ROLE.
+ *
+ * The arm above is the always_allow case, where the verdict wall
+ * answers as well. This is the general one and the pre-check is the
+ * ONLY wall standing: an `admin` row in upper-case hex holds nobody
+ * open, so the bot is asked, the bot says left, and the verdict is
+ * departed. Before fix wave 3 the erase went through and took that row
+ * with it - the guard counted it as nothing (`grantsAnythingSql()`
+ * refuses the spelling) and the DELETE removed it anyway
+ * (`COLLATE NOCASE` matches it), so an operator's hand-written row
+ * vanished on an erase nobody meant to reach it.
+ *
+ * BOTH DIRECTIONS IN ONE BLOCK. The same fixture with the same row
+ * spelled the way this Worker writes it is erased, 200, and the row
+ * goes - so the refusal above is a branch and not a route that stopped
+ * working.
+ */
+{
+  const db = await fixture();
+  await seedNearMiss(db, "admin");
+  const env = envFor(db);
+  const before = belongingTo(db, NEAR_MISS);
+  const rowsNaming = membershipNaming(db, NEAR_MISS);
+
+  const { value: erase } = await withBot(botSaying("left"), () =>
+    call(env, "DELETE", "/admin-departed/" + NEAR_MISS,
+      { headers: ADMIN_BEARER }));
+  check("an account the bot says has LEFT is still refused when the " +
+    "table holds a row for it in another spelling - no allow-list row " +
+    "here, so the pre-check is the only wall", erase.status === 409 &&
+    /different letter case/.test(String((erase.body || {}).error)));
+  check("that refusal deleted nothing of that account's",
+    belongingTo(db, NEAR_MISS) === before);
+  check("and the hand-written admin row survived it",
+    membershipNaming(db, NEAR_MISS) === rowsNaming);
+  check("no log line for a refused erase", db.adminLog.length === 0);
+}
+
+{
+  const db = await fixture();
+  await seedNearMiss(db, "admin");
+  /* The same row, respelled the way this Worker writes one. Nothing
+     else about the fixture moves. */
+  for (const row of db.membership()) {
+    if (row.account_id === NEAR_MISS_ROW) row.account_id = NEAR_MISS;
+  }
+  const env = envFor(db);
+
+  const { value: erase } = await withBot(botSaying("left"), () =>
+    call(env, "DELETE", "/admin-departed/" + NEAR_MISS,
+      { headers: ADMIN_BEARER }));
+  check("THE OTHER DIRECTION: the same row spelled the way this Worker " +
+    "writes it is erased, 200 - the pre-check refuses a disagreement " +
+    "and not an erase", erase.status === 200 &&
+    Boolean(erase.body && erase.body.ok === true));
+  check("and the row it names is gone, so the 409s above are a branch " +
+    "rather than a route that stopped working",
+    membershipNaming(db, NEAR_MISS) === "[]");
+  check("so are its submissions, its directory row and its sessions",
+    JSON.stringify(countsFor(db, NEAR_MISS)) ===
+      JSON.stringify({ submissions: 0, directory: 0, membership: 0,
+        sessions: 0 }));
+  check("that erase wrote its one log line", db.adminLog.length === 1);
 }
 
 /*
@@ -1604,7 +1915,7 @@ for (const [who, headers] of [
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 124;
+const EXPECTED = 165;
 if (failures) {
   console.log("\nfailing checks:");
   for (const label of failed) console.log("  - " + label);
