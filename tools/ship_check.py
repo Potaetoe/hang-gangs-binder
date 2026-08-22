@@ -447,7 +447,8 @@ def _run_captured(argv, cwd, label):
     three misreports this ticket exists to end already were."""
     try:
         done = subprocess.run(argv, cwd=cwd, capture_output=True,
-                              text=True, timeout=GATE_TIMEOUT,
+                              text=True, encoding="utf-8", errors="replace",
+                              timeout=GATE_TIMEOUT,
                               stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return False, ["%s did not answer within %ss and was killed."
@@ -988,14 +989,29 @@ def _has_browser_evidence(text):
 # against 0.9-M3-S20's real server/schema.sql, whose comment block grew
 # 15 -> 17 lines and wrongly printed `differs` before this fix.
 #
-# MARKDOWN AND DOCS ARE PROSE BY NATURE
+# MARKDOWN AND DOCS ARE PROSE BY NATURE - AND THE WAIVER IS BY FAMILY,
+# NOT BY CONTENT (0.9-M3-S29 fix wave, #449 F3, correcting this
+# comment's own former claim)
 #
-# A `.md` file carries no executable code to protect - mutation
-# batteries and browser passes exist to guard CODE changes, not prose
-# changes. Its "stripped" content is therefore always empty on both
-# sides of the comparison, which is a real equality (not a special-
-# cased skip) computed by the exact same "compare the stripped text"
-# rule every other family uses.
+# A `.md`/`.markdown` file carries no executable code to protect -
+# mutation batteries and browser passes exist to guard CODE changes,
+# not prose changes. Unlike every other family above, the `doc` branch
+# of `_prose_file_eligible()` does NOT read the file's content at
+# base or head at all: it sets `identical = True` on the extension
+# alone. That is a deliberate, undocumented-until-now exception to this
+# stage's own "byte-faithful" claim (0.9-M3-S29's own scope item 3,
+# which is about every OTHER family's comparison) - a whole markdown
+# file is prose by definition, so there is nothing left for a stripper
+# to strip and nothing a byte-level guard would be protecting. The
+# trade-off this buys: two `.md` files that differ ONLY in which
+# invalid UTF-8 byte they carry (the exact byte-faithful scenario this
+# ticket's guard exists to catch for `.js`/`.css`/`.sql`/`.toml`) still
+# read as IDENTICAL here, because the doc family is waived without ever
+# comparing their bytes. Accepted rather than closed: a markdown file
+# holding an invalid byte is not a case this repository's own gate
+# needs to catch by family design, and comparing raw bytes here would
+# cost a real read of every declared doc file for no code this stage
+# protects.
 #
 # THE DIST/ HALF, FOR A DECLARED PAGE FILE
 #
@@ -1178,7 +1194,8 @@ def _js_or_css_identical(node, family, text_a, text_b):
             done = subprocess.run(
                 [node, "--input-type=module", "-e", _PROSE_JS_BRIDGE, "--",
                  family, path_a, path_b, build_web_url],
-                capture_output=True, text=True, timeout=GATE_TIMEOUT,
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=GATE_TIMEOUT,
                 stdin=subprocess.DEVNULL)
         except subprocess.TimeoutExpired:
             return False, None, None, ("the JS/CSS tokenizer did not "
@@ -1216,6 +1233,44 @@ def _git_show(repo, ref, path):
     return out, None
 
 
+# Built via chr() rather than a literal character in this source file -
+# not a hard ASCII rule (`tools/check_live.py` and `tools/check_web.py`
+# both already carry a real non-ASCII character), just a plain-to-grep
+# spelling for the one character `errors="replace"` ever produces, which
+# `_prose_file_eligible()`'s byte-faithful guard below checks for.
+_REPLACEMENT_CHAR = chr(0xFFFD)
+
+
+def _git_show_bytes(repo, ref, path):
+    """The RAW, undecoded bytes for `path` at `ref`, or None on any
+    problem - the byte-faithful fallback `_prose_file_eligible()` reaches
+    for whenever `_git_show()`'s decoded text carries a replacement
+    character (0.9-M3-S29, #449, scope item 3).
+
+    `claim_vs_diff.git()` now decodes with `errors="replace"` (this
+    ticket's own first fix, so a non-UTF-8 byte in a declared file can
+    never crash the gate) - but replacement is lossy BY DESIGN: every
+    invalid byte, whatever its value, becomes the same U+FFFD. Two
+    files that differ ONLY in which invalid byte they carry therefore
+    decode to IDENTICAL text, and the comment-stripped comparison in
+    `_prose_file_eligible()` would read them as the same file even
+    though their real bytes are not. This function is run standalone
+    (not through `claim_vs_diff.git()`) precisely so it never performs
+    that decode at all - the comparison it backs is byte equality,
+    which no replacement character can fool.
+    """
+    try:
+        done = subprocess.run(
+            ["git", "-C", repo, "show", "%s:%s" % (ref, path)],
+            capture_output=True, timeout=GATE_TIMEOUT,
+            stdin=subprocess.DEVNULL, env=claim_vs_diff.git_environment())
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if done.returncode != 0:
+        return None
+    return done.stdout
+
+
 def _git_blob(repo, ref, path):
     """The blob SHA for `path` at `ref`, or None when it does not
     resolve (missing at that ref)."""
@@ -1249,6 +1304,11 @@ def _prose_file_eligible(repo, base, path, node):
                        "not eligible." % path]
 
     if family == "doc":
+        # Waived by FAMILY, not by content (#449 F3, see this section's
+        # own module comment "MARKDOWN AND DOCS ARE PROSE BY NATURE"
+        # above) - base_text/head_text are never read for a doc-family
+        # path, so this is the one family the byte-faithful guard below
+        # never reaches.
         lines = ["  prose  %s  markdown/docs - prose by nature, no "
                  "stripping needed." % path]
         identical = True
@@ -1285,6 +1345,27 @@ def _prose_file_eligible(repo, base, path, node):
             lines = ["  prose  %s  base=%s head=%s  %s"
                     % (path, hash_a, hash_b,
                        "identical" if identical else "differs")]
+
+        # Byte-faithful guard (0.9-M3-S29, #449, scope item 3): a
+        # replacement character (U+FFFD) in EITHER decoded text means
+        # some byte in that file was not valid UTF-8, and
+        # `claim_vs_diff.git()`'s `errors="replace"` maps every such
+        # byte to the SAME U+FFFD regardless of its real value - so two
+        # files differing only in WHICH invalid byte they carry can
+        # decode (and then strip-and-compare) as identical text above
+        # even though they are not the same bytes. Only fires on the
+        # decode-error path; an ordinary identical/differs verdict from
+        # clean UTF-8 text never pays this extra pair of git calls.
+        if identical and (_REPLACEMENT_CHAR in base_text
+                          or _REPLACEMENT_CHAR in head_text):
+            raw_base = _git_show_bytes(repo, base, path)
+            raw_head = _git_show_bytes(repo, "HEAD", path)
+            if raw_base is None or raw_head is None or raw_base != raw_head:
+                identical = False
+                lines.append(
+                    "  prose  %s  a replacement character (U+FFFD) shows "
+                    "up after decoding - raw bytes checked directly and "
+                    "they differ, not identical." % path)
 
     if not identical:
         return False, lines
@@ -2133,6 +2214,27 @@ def build_parser():
 
 
 def main(argv=None):
+    # Encoding-safe stdout/stderr (0.9-M3-S29, #449, the other side of
+    # this same ticket's fix): every stage's captured text now comes
+    # through claim_vs_diff.git()'s real UTF-8 decode, so a stage that
+    # captured a genuine non-ASCII character (the old gate's own
+    # checkmark, U+2714, prints one on every passing stage) can now hold
+    # it for real - and this console's own default codepage on Windows
+    # (cp1252) cannot RE-encode that character on the way back out,
+    # which crashed render()'s own print(line) with UnicodeEncodeError
+    # the moment the read-side fix stopped mojibake-ing it into
+    # something cp1252 could round-trip by accident. reconfigure()
+    # (Python 3.7+) swaps the stream's encoding in place; errors=
+    # "replace" so an exotic character degrades on screen rather than
+    # crashing the run - the same trade-off this ticket's read-side fix
+    # already made. Guarded by hasattr(), and done only here, never at
+    # import time: tools/ship_check_suite.py imports this module and
+    # captures with `contextlib.redirect_stdout(io.StringIO())`, which
+    # is not a real stream and carries no reconfigure() to call.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     args = build_parser().parse_args(argv)
     repo = os.path.abspath(args.repo or REPO)
 

@@ -279,6 +279,7 @@ def git(repo, *args):
         done = subprocess.run(
             ["git", "-C", repo, *args],
             capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
             stdin=subprocess.DEVNULL,
             timeout=GIT_TIMEOUT,
             env=git_environment(),
@@ -1338,6 +1339,19 @@ def render(items, inert, primary, state, roots, acting, repo):
 
 
 def main(argv=None):
+    # Encoding-safe stdout/stderr (0.9-M3-S29 fix wave, #449 F2 - the
+    # write-side twin ship_check.py's main() already carries): the
+    # read-side UTF-8 fix in this fleet's git() calls can now hand back a
+    # real non-ASCII character or a replacement character (U+FFFD) - this
+    # console's own cp1252 stdout cannot re-encode either one, and
+    # printing either crashes print() with UnicodeEncodeError, which is
+    # exactly what this reconfigure block exists to prevent. Guarded by
+    # hasattr() so a caller with no real stream (a StringIO capture, as
+    # some suites use) is untouched.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(
         prog="py -3 tools/reaper.py",
         description="Prove which worktrees and branches on this machine "

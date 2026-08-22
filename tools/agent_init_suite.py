@@ -71,6 +71,16 @@ from contextlib import redirect_stdout
 # the entry point launches this from the repository root.
 import agent_init
 
+# Encoding-safe stdout/stderr (0.9-M3-S29 fix wave, #449 F2): this
+# suite's own fixtures write invalid-UTF-8 bytes on purpose, and its
+# checks print the results - the same exposure ship_check.py's main()
+# guards against. This file runs at import time (no __main__ guard, by
+# this fleet's own convention - see the module docstring), and nothing
+# imports it, so reconfiguring here is always the real run.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 failures = 0
 performed = 0
 
@@ -97,6 +107,7 @@ def git(repo, *args):
         ["git", "-C", repo, "-c", "user.email=suite@example.invalid",
          "-c", "user.name=suite", *args],
         capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
     )
     return done.returncode, done.stdout + done.stderr
 
@@ -262,7 +273,8 @@ def link_dir(target, link):
         pass
     if os.name == "nt":
         done = subprocess.run(["cmd", "/c", "mklink", "/J", link, target],
-                              capture_output=True, text=True)
+                              capture_output=True, text=True,
+                              encoding="utf-8", errors="replace")
         if done.returncode == 0:
             return "junction"
     return None
@@ -1191,7 +1203,8 @@ try:
             [sys.executable, "-c",
              "from fontTools.ttLib.woff2 import haveBrotli\n"
              "print(haveBrotli)"],
-            capture_output=True, text=True)
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace")
         check("the shim actually removes brotli - fontTools' own "
               "haveBrotli flag reads False under it, the fact this "
               "arm's simulation rests on",

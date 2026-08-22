@@ -2109,6 +2109,16 @@ BUILTIN_CALLS = frozenset({
     "ascii", "startswith", "is_dir", "len", "exit", "strip", "abspath",
     "require", "which", "mix", "TemporaryDirectory", "SystemExit",
     "splitlines",
+    # chr(), hasattr(), StringIO and TextIOWrapper.reconfigure() -
+    # surfaced by 0.9-M3-S29 (#449): tools/ship_check.py's own
+    # _REPLACEMENT_CHAR comment names the first (a builtin, why the
+    # replacement character is built rather than written as a literal
+    # in the source), and main()'s stdout/stderr encoding fix comment
+    # names the rest (hasattr() to guard the reconfigure() call,
+    # io.StringIO to explain why tools/ship_check_suite.py's own
+    # redirect_stdout() capture never reaches this code path) - all
+    # four are Python builtins or stdlib, never a repo definition.
+    "chr", "hasattr", "StringIO", "reconfigure",
     # Array.prototype.filter() - surfaced by 0.9-M3-S24 (#438), and the
     # way it surfaced is the argument for it being here. This name
     # resolved until that slice only because server/charts-agg.js
