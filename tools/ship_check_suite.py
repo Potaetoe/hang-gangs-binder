@@ -124,7 +124,7 @@ performed = 0
 # Asserted at the end, not merely printed - the floor every suite in
 # this fleet holds itself to: a hand-counted total nothing compares
 # against still prints a confident pass when a check stops running.
-EXPECTED = 206
+EXPECTED = 210
 
 
 def check(label, condition):
@@ -1003,6 +1003,92 @@ try:
           and any("dist" in line and "changed" in line
                   and "unchanged" not in line for line in stage.lines))
 
+    print("\n--- browser-note waiver, fix wave (0.9-M3-S22, #435, "
+         "review comment following 5376851627): a page file "
+         "individually proven prose-only owes no browser note even "
+         "when a DIFFERENT declared file breaks the whole-batch "
+         "waiver - S20's exact shape ---")
+
+    git(repo, "branch", "mixed-waiver-base", base_sha)
+    git(repo, "checkout", "-q", "mixed-waiver-base")
+    write(os.path.join(repo, "apps", "web", "waived.js"),
+         "const X = 1;\n// a note\n")
+    write(os.path.join(repo, "dist", "waived.js"), "const X = 1;\n")
+    write(os.path.join(repo, "server", "other.sql"),
+         "CREATE TABLE t (id INTEGER);\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "mixed-waiver fixture: base state")
+    mixed_base_sha = sha(repo, "HEAD")
+
+    git(repo, "branch", "mixed-waiver-red", "mixed-waiver-base")
+    git(repo, "checkout", "-q", "mixed-waiver-red")
+    write(os.path.join(repo, "tests", "mixed-waiver-fixture.test.mjs"),
+         "// fixture arm, never run by a real suite\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m",
+       "RED: fixture contract for mixed-waiver")
+    write(os.path.join(repo, "apps", "web", "waived.js"),
+         "const X = 1;\n// a different note\n")
+    write(os.path.join(repo, "server", "other.sql"),
+         "CREATE TABLE t (id INTEGER, name TEXT);\n")
+    # dist/waived.js untouched - proves the individually-eligible page
+    # file's own waiver, same shape the top-level prose-only fixture
+    # above already proves for the whole-batch case.
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m",
+       "comment-only reword in waived.js, a real statement change in "
+       "other.sql")
+
+    mixed_declared = os.path.join(root, "declared-mixed-waiver.txt")
+    write(mixed_declared, "apps/web/waived.js\nserver/other.sql\n")
+    completion_mixed_waiver = os.path.join(
+        root, "completion-mixed-waiver.txt")
+    write(completion_mixed_waiver,
+         "mutation battery: broke it, watched it fail, restored it, "
+         "watched it pass.\nbrowser: not performed - waived.js's only "
+         "change is a comment and its dist/ blob is unchanged.\n")
+    stage = ship_check.stage_tier(repo, mixed_declared, mixed_base_sha,
+                                  completion_mixed_waiver)
+    check("a page file individually proven prose-only (comment-only + "
+         "dist/ unchanged) owes NO browser note even though a "
+         "different declared file (server/other.sql, a real statement "
+         "change) broke the whole-batch waiver - passes on real "
+         "mutation evidence alone, with an honest 'not performed' "
+         "browser note that is never itself a reason to refuse",
+          stage.ok
+          and "browser note waived for apps/web/waived.js"
+              in "\n".join(stage.lines))
+    check("...and the tier is still sensitive (server/ dominates), "
+         "same as any other mixed declared list - the waiver changes "
+         "only what evidence is owed, never the tier",
+          "tier: sensitive" in stage.lines)
+
+    print("\n--- browser evidence, clause-scoped DENY, fix wave "
+         "(0.9-M3-S22, #435, review comment following 5376851627): an "
+         "honest 'not performed' clause about one thing must not "
+         "poison a DIFFERENT clause's real width/device evidence ---")
+
+    mixed_clause_text = (
+        "browser: apps/web/other.html not performed - unrelated, "
+        "already covered by CI.\n"
+        "browser: apps/web/page.html checked at phone width, "
+        "iPhone.\n")
+    check("a completion carrying an honest 'not performed' clause "
+         "about one file AND a real width/device clause about a "
+         "different file still counts as browser evidence overall - "
+         "before this fix, 'not performed' anywhere in the text "
+         "vetoed the whole check",
+          ship_check._has_browser_evidence(mixed_clause_text))
+
+    still_denied_text = (
+        "browser: not performed - only the 320px layout changed, and "
+        "nothing else was checked.\n")
+    check("...and a denial that happens to mention a width IN THE "
+         "SAME CLAUSE still does not count as evidence - the original "
+         "hazard DENY exists for is still caught, just scoped to the "
+         "clause instead of the whole text",
+          not ship_check._has_browser_evidence(still_denied_text))
+
     git(repo, "checkout", "-q", "0.9-m0-s22")
     for throwaway in ("prose-only-head", "prose-only-string-head",
                       "prose-only-base", "prose-only-sensitive-head",
@@ -1013,7 +1099,8 @@ try:
                       "prose-only-toml-base",
                       "prose-only-subdir-clean-head",
                       "prose-only-subdir-moved-head",
-                      "prose-only-subdir-base"):
+                      "prose-only-subdir-base",
+                      "mixed-waiver-red", "mixed-waiver-base"):
         git(repo, "branch", "-D", throwaway)
 
     print("\n--- stage_totals: hand-typed gate totals vs what THIS run "

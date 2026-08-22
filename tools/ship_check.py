@@ -686,10 +686,11 @@ RED_ARM_PATH = re.compile(r"^tests/|^dev/|^tools/[^/]*_suite\.py$")
 # already normalized to forward slashes by `claim_vs_diff.parse_declared`.
 #
 # Review F4, fix wave (0.9-M3-S22, #435 comment 5376851627): the
-# original pattern allowed no `/` after `apps/web/`, so a JS or CSS file
-# in a subdirectory (`apps/web/sub/thing.js`) would match neither this
-# stage's browser-evidence requirement NOR the prose-only path's dist/
-# blob guard below - a comment edit paired with a whitespace reflow
+# original pattern allowed no `/` after `apps/web/`, so a JS or CSS
+# file nested one or more directories under apps/web/ would match
+# neither this stage's browser-evidence requirement NOR the prose-only
+# path's dist/ blob guard below - a comment edit paired with a whitespace
+# reflow
 # there would take the prose-only waiver with the published bytes moved
 # and nobody checking. `(?:[\w.-]+/)*` allows any depth of subdirectory
 # under `apps/web/`, same character class as the filename itself.
@@ -867,17 +868,66 @@ def _has_mutation_evidence(text):
                or MUTATION_RESULT_PAIR.search(text))
 
 
+def _clause_around(text, position, window=60):
+    """The sentence-ish clause holding `text[position]`, trimmed to the
+    nearest of '\\n' or ';' within `window` characters on EACH side -
+    `_clause_before()` above looks only backward, which is enough for a
+    negation word that has to precede what it negates; a browser DENY
+    phrase can sit on either side of the word it is denying ("browser:
+    NOT PERFORMED" vs "not performed - no browser check"), so this
+    looks both ways. A bare '.' is deliberately NOT a boundary here,
+    unlike `_clause_before()` - a completion routinely names a path
+    inside the same clause as the word "browser" (a page path is a
+    dotted filename, "browser: <page path> not performed"), and
+    splitting on every dot would cut the clause off mid-filename,
+    before the DENY phrase or the width evidence it is meant to see
+    ever appears. Every fixture this file's own suite writes one
+    browser/mutation note per line, so '\\n' alone is the boundary
+    that matches how this text is actually written.
+
+    Fix wave, review comment following 5376851627 (0.9-M3-S22, #435):
+    scoping DENY to the clause each BROWSER_WORD match sits in, rather
+    than the whole completion text, is what lets an honest 'browser:
+    not performed' clause about a page file that genuinely owes no
+    check (already waived by the prose-only path, or covered a
+    different way) sit beside a DIFFERENT clause's real width/device
+    evidence for a different file without erasing it, since the label
+    'not performed' is the required honest report for a check that
+    truly did not run and a refusal keyed to that label rather than to
+    missing evidence punishes the report the rule demands. The clause
+    scope still catches the original hazard (a denial that happens to
+    mention a width in passing, "not performed - only the 320px
+    layout changed", does not count as evidence) because DENY and the
+    width mention share the same clause there."""
+    start = max(0, position - window)
+    end = min(len(text), position + window)
+    before = text[start:position]
+    after = text[position:end]
+    for boundary in ("\n", ";"):
+        index = before.rfind(boundary)
+        if index != -1:
+            before = before[index + 1:]
+        index = after.find(boundary)
+        if index != -1:
+            after = after[:index]
+    return before + after
+
+
 def _has_browser_evidence(text):
     """Whether `text` carries real browser-verification evidence - see
-    the BROWSER_* regexes' own comment above for the shape asked for.
-    Same masking as `_has_mutation_evidence()` above, for the same
-    reason and at the same cost of nothing real."""
+    the BROWSER_* regexes' own comment above for the shape asked for,
+    and `_clause_around()`'s own comment for why DENY is scoped to the
+    clause a BROWSER_WORD match sits in rather than vetoing the whole
+    text. Same masking as `_has_mutation_evidence()` above, for the
+    same reason and at the same cost of nothing real."""
     text = _mask_own_output(text)
-    if not BROWSER_WORD.search(text):
-        return False
-    if BROWSER_DENY.search(text):
-        return False
-    return bool(BROWSER_WIDTH_OR_DEVICE.search(text))
+    for match in BROWSER_WORD.finditer(text):
+        clause = _clause_around(text, match.start())
+        if BROWSER_DENY.search(clause):
+            continue
+        if BROWSER_WIDTH_OR_DEVICE.search(clause):
+            return True
+    return False
 
 
 # --------------------------------------------------------------------
@@ -1032,14 +1082,14 @@ def _strip_line_comments(text, marker, quotes):
 def _drop_blank_lines(text):
     """`text` with every blank or whitespace-only line removed.
 
-    F1, fix wave (0.9-M3-S22, #435 comment 5376851627): `_strip_line_
-    comments()` above replaces each stripped comment run with a single
-    bare `"\\n"`, so the stripped text still carries one blank line per
+    F1, fix wave (0.9-M3-S22, #435 comment 5376851627): the stripper
+    above replaces each stripped comment run with a single bare
+    `"\\n"`, so the stripped text still carries one blank line per
     REMOVED comment line - a comment edit that changes the comment LINE
     COUNT (never the code) therefore changes the stripped text's line
     POSITIONS even though every non-comment line is untouched. Measured
     against 0.9-M3-S20's real `server/schema.sql` (#424): its comment
-    block grew 15 -> 17 lines and `_strip_line_comments()` alone wrongly
+    block grew 15 -> 17 lines and the bare stripper alone wrongly
     printed `differs` for a slice that changed no code at all.
     Comparing the non-blank CONTENT, never where it sits, is the fix - a
     blank line carries no code in either family, so dropping every one
@@ -1258,20 +1308,29 @@ def _prose_file_eligible(repo, base, path, node):
 
 
 def _prose_only_verdict(repo, base, paths, node):
-    """(eligible, [line, ...]) for the whole declared list - eligible
-    only when EVERY declared file is (`_prose_file_eligible()`). One
-    non-identical or unsupported file turns the whole path off, per the
-    ticket's own rule."""
+    """(eligible, [line, ...], {path: file_eligible}) for the whole
+    declared list - the whole-batch `eligible` is True only when EVERY
+    declared file is (`_prose_file_eligible()`); one non-identical or
+    unsupported file turns the WHOLE-BATCH waiver off, per the ticket's
+    own rule. The third return value keeps each file's OWN verdict
+    too, computed once here rather than a second time by whoever needs
+    a single file's answer after the batch already failed - see
+    `stage_tier()`'s own use of it: a page file individually proven
+    prose-only still owes no browser note even when a DIFFERENT
+    declared file broke the whole-batch waiver (0.9-M3-S20, #424, via
+    the review's follow-up comment after 5376851627)."""
     lines = []
     all_ok = True
+    per_file = {}
     for path in paths:
         ok, file_lines = _prose_file_eligible(repo, base, path, node)
         lines.extend(file_lines)
         all_ok = all_ok and ok
+        per_file[path] = ok
     if all_ok and paths:
         lines.append("prose-only: %d file(s) identical under comment "
                      "stripping." % len(paths))
-    return (all_ok and bool(paths)), lines
+    return (all_ok and bool(paths)), lines, per_file
 
 
 def _read_completion_text(path):
@@ -1355,7 +1414,8 @@ def stage_tier(repo, declared_path, base, completion_path):
     # stripping (and, for a declared page file, an unchanged dist/ blob)
     # owes none of that evidence at all.
     node = agent_init.find_node()
-    prose_ok, prose_lines = _prose_only_verdict(repo, base, paths, node)
+    prose_ok, prose_lines, prose_per_file = _prose_only_verdict(
+        repo, base, paths, node)
     lines.append("")
     lines.extend(prose_lines)
     if prose_ok:
@@ -1416,16 +1476,37 @@ def stage_tier(repo, declared_path, base, completion_path):
                 "describing that same before-and-after, not just the "
                 "bare word 'mutation' (which also matches inside a "
                 "denial like 'no mutation table')." % tier_name)
-        page_files = [path for path, judged_tier, _why in judged
-                     if PAGE_FILE.match(path)]
+        all_page_files = [path for path, judged_tier, _why in judged
+                         if PAGE_FILE.match(path)]
+        # A page file individually proven prose-only (comment-only
+        # source AND an unchanged dist/ blob, `prose_per_file` above)
+        # owes no browser note on its own, even when the WHOLE slice
+        # fell out of the batch waiver because some OTHER declared file
+        # did not qualify - the code a browser check would exercise
+        # never moved for THIS file either way. 0.9-M3-S20 (#424) is
+        # the exact shape: two page files individually comment-only
+        # beside a server/ file that (before the F1 fix) wrongly read
+        # as differing. Review, comment following 5376851627.
+        page_files = [path for path in all_page_files
+                     if not prose_per_file.get(path)]
+        waived_page_files = [path for path in all_page_files
+                             if prose_per_file.get(path)]
+        if waived_page_files:
+            lines.append("")
+            lines.append("browser note waived for %s - comment-only "
+                         "source, dist/ blob unchanged."
+                         % ", ".join(waived_page_files))
         if page_files and not _has_browser_evidence(completion_text):
             problems.append(
                 "declared page file(s) changed (%s) and the "
                 "--completion text carries no real browser evidence - "
                 "a labeled 'browser' claim with a width or device "
-                "mention is owed before READY, and a phrase like 'not "
-                "performed' or 'no browser' is refused outright."
-                % ", ".join(page_files))
+                "mention is owed before READY. An honest 'not "
+                "performed' note is never itself the reason for this "
+                "refusal - AGENTS.md requires that exact label for a "
+                "check that genuinely was not run, and this refusal is "
+                "about the missing width/device evidence, not the "
+                "word." % ", ".join(page_files))
 
     if problems:
         lines.append("")
