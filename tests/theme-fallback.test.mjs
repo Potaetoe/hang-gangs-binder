@@ -318,6 +318,85 @@ function pressedOnly(buttons, name) {
 }
 
 /*
+ * THE NO-PICKER BRANCH (fix wave 1, review comment 5379013364 on #456,
+ * finding F2). driven() above always wires four palette buttons, so it
+ * never exercises theme.js's `if (!buttons.length)` branch - the one
+ * path 404.html actually runs, since it is the one shipped page with no
+ * palette control (see theme.js's own header comment on "the error page
+ * is the one page here with no palette control"). The reviewer replaced
+ * that branch's `paintChrome(stored || schemeDefault())` with
+ * `paintChrome("pink")` and every existing check stayed green. This
+ * drives the same two scripts, in the same order, with an empty button
+ * list, so the branch runs for real.
+ */
+async function drivenNoPicker(storedPalette, defaultTheme, darkMatches) {
+  const documentElement = documentElementStub();
+  const metas = [{ attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); } }];
+
+  const g = globalThis;
+  const initial = {};
+  if (storedPalette !== undefined) initial["hgb-palette"] = storedPalette;
+  if (defaultTheme !== undefined) initial["hgb-default-theme"] = defaultTheme;
+  g.localStorage = storage(initial);
+  g.document = {
+    documentElement,
+    querySelectorAll: (selector) => (selector === "[data-set-theme]"
+      ? [] : selector === 'meta[name="theme-color"]' ? metas : []),
+  };
+  if (darkMatches === undefined) {
+    g.window = {};
+    delete g.matchMedia;
+  } else {
+    const mm = matchMediaFor(darkMatches);
+    g.window = { matchMedia: mm };
+    g.matchMedia = mm;
+  }
+
+  await import("data:text/javascript," +
+    encodeURIComponent(themeInitSrc) + "#theme-init-nopicker-" +
+    Math.random());
+  await import("data:text/javascript," +
+    encodeURIComponent(themeSrc) + "#theme-nopicker-" + Math.random());
+
+  return { documentElement, metas };
+}
+
+{
+  const { metas } = await drivenNoPicker(undefined, undefined, true);
+  check("the no-picker branch (404.html): nothing stored, dark phone -> " +
+    "the browser-chrome color follows the plain dark palette, not a " +
+    "hardcoded value",
+    metas[0].attrs.content === "#120d10");
+}
+
+{
+  const { metas } = await drivenNoPicker(undefined, undefined, false);
+  check("the no-picker branch: nothing stored, light phone -> the " +
+    "browser-chrome color follows the plain light palette",
+    metas[0].attrs.content === "#f3eadb");
+}
+
+{
+  // The same regression the picker branch's own arm above (the one
+  // proving "a cached admin default no longer paints") guards against,
+  // fired here instead: S12's retired rule sneaking back into this
+  // branch specifically, since it is a second, separate read site.
+  const { metas } = await drivenNoPicker(undefined, "pink", true);
+  check("the no-picker branch: a cached admin default does not leak " +
+    "into the chrome color here either - dark phone still paints the " +
+    "scheme's own color, not the admin default's",
+    metas[0].attrs.content === "#120d10");
+}
+
+{
+  const { metas } = await drivenNoPicker("pink", "daylight", true);
+  check("the no-picker branch: a member's own stored choice still wins " +
+    "the chrome color here too, over both the phone's scheme and the " +
+    "admin default",
+    metas[0].attrs.content === "#1e141a");
+}
+
+/*
  * theme-init.js ALONE, without theme.js running after it - the window
  * theme-init.js's own header exists to cover ("so a saved theme does
  * not flash the default palette on the way in"). The combined driven()

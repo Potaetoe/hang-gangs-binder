@@ -3841,8 +3841,8 @@ NO_MODULE_EXPORT = {
     # 0.9-M2-S6 (#82) until 0.9-M2-S14 (#380 ruling 2) retired the custom
     # theme entirely - what remains is the pre-paint side effect alone,
     # which assigns nothing.
-    "theme-init.js": "paints the saved named palette before first paint "
-                      "and assigns no global",
+    "theme-init.js": "paints a resting palette before first paint and "
+                      "assigns no global",
 }
 
 # Globals that are deliberately not frozen namespaces. Narrow, named, and
