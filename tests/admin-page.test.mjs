@@ -498,6 +498,44 @@ check("departedSections copes with a malformed answer - a missing list " +
       view.sections.every((s) => s.rows.length === 0);
   })());
 
+/* -- The cap note (0.9-M3-S38, #471; the owner's ruling at #454 item 23  */
+/* - a capped list sends its total and the page says "showing 50 of N").  */
+/* GET /admin-departed asks the bot about at most DEPARTED_LIST_CAP       */
+/* accounts, so a group with more stale rows than that has a list which   */
+/* stops short; without this line an admin cannot tell it from a          */
+/* complete one, and the More button above can never reach past it. -- */
+
+check("apps/web/admin.js exports departedCapNote - the page's whole " +
+  "share of item 23, a pure function the card below renders",
+  typeof Admin.departedCapNote === "function");
+// Called through an alias so that a MISSING export is one red check
+// rather than a TypeError that takes the rest of this suite down with
+// it - the failure a reader most needs the other 200 checks visible
+// for. Where the export exists, this is the export.
+const capNote = typeof Admin.departedCapNote === "function"
+  ? Admin.departedCapNote : () => "(no departedCapNote export)";
+
+check("departedCapNote says the owner's own words when the total is " +
+  "past the cap - the numbers straight off the response",
+  capNote({ total: 120, cap: 50 }) === "showing 50 of 120");
+check("it reads the cap the Worker sent rather than a 50 of its own - " +
+  "a page holding its own copy of the constant would go on printing 50 " +
+  "after the Worker's moved",
+  capNote({ total: 120, cap: 7 }) === "showing 7 of 120");
+check("nothing renders when the cap did not truncate: at the cap " +
+  "exactly, under it, and at zero",
+  capNote({ total: 50, cap: 50 }) === "" &&
+  capNote({ total: 49, cap: 50 }) === "" &&
+  capNote({ total: 0, cap: 50 }) === "");
+check("a Worker that sent no counts at all draws no line - the two " +
+  "fields are read as numbers or not at all, so an older answer, a " +
+  "missing payload and a string are all silent rather than " +
+  "'showing undefined of NaN'",
+  capNote({}) === "" &&
+  capNote(null) === "" &&
+  capNote({ total: "120", cap: "50" }) === "" &&
+  capNote({ departed: [], unknown: [], allowed: [] }) === "");
+
 /* -- The idle timer, unchanged in shape from every other signed-in page -- */
 
 check("idleVerdict is active well before the warning window",
@@ -2166,6 +2204,65 @@ function departedRowByLabel(list, label) {
     list.children.length === 26 && buttonByText(list, "More") === undefined);
 }
 
+/* -- The cap footer on the card itself (0.9-M3-S38, #471; #454 item 23). */
+/* The fixtures above carry no counts at all - which is why every one of  */
+/* them still ends where it did, and is the arm that no line appears      */
+/* uninvited. -- */
+
+{
+  const ROW = { accountId: "d1", label: "Departed One",
+    lastSeenAt: "2026-07-01T00:00:00.000Z", status: "left" };
+  const capped = (total, cap) => Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true, departed: [ROW],
+      unknown: [], allowed: [], total: total, cap: cap }),
+  });
+
+  {
+    const { byId } = await driven(capped(120, 50), { isAdmin: true });
+    const list = byId.get("departed-list");
+    const last = list.children[list.children.length - 1];
+    check("a truncated read ends the card with the owner's own line, " +
+      "carrying the Worker's two numbers",
+      last.tag === "p" && last.textContent === "showing 50 of 120");
+    check("the line is the LAST thing in the card - a footer, under the " +
+      "rows it is about", list.children.indexOf(last) === 2);
+    check("it is written as text and holds no markup of its own - one " +
+      "text-only node, set through textContent",
+      last.children.length === 0 &&
+      serializeSubtree(list).includes(">showing 50 of 120<"));
+    check("the rows above it are untouched by the line", list.children[0]
+      .textContent === "Departed" &&
+      list.children[1].children[0].children[0].textContent ===
+        "Departed One");
+  }
+
+  {
+    const { byId } = await driven(capped(50, 50), { isAdmin: true });
+    const list = byId.get("departed-list");
+    check("a read the cap did not truncate draws nothing new - the card " +
+      "ends on its rows, with no line anywhere in it",
+      list.children.length === 2 &&
+      !/showing/.test(list.textContent));
+  }
+
+  {
+    const routes = Object.assign({}, BASE_ROUTES, {
+      "GET /admin-departed": () => ok({ ok: true, departed: [], unknown: [],
+        allowed: [], total: 120, cap: 50 }),
+    });
+    const { byId } = await driven(routes, { isAdmin: true });
+    const list = byId.get("departed-list");
+    check("a truncated read whose fifty candidates are all still " +
+      "members says BOTH things: nobody has left, and only fifty of a " +
+      "hundred and twenty were asked about - the empty sentence alone " +
+      "would read as the whole group checked",
+      list.children.length === 2 &&
+      list.children[0].textContent ===
+        "Nobody has left - nothing to clean up." &&
+      list.children[1].textContent === "showing 50 of 120");
+  }
+}
+
 {
   // Confirm IN PLACE (item 9): Remove reveals the sentence, Cancel sends
   // nothing, and a DELETE goes out only after Yes - never before it.
@@ -2589,7 +2686,7 @@ check("no download/export id survives in the real shipped markup - the " +
 // (Departed-tab arms vs. wrap-row-wiring arms) and both are kept in
 // full, so the union is the base plus both sides' own additions:
 // 171 + 36 + 8 = 215.
-const EXPECTED = 215;
+const EXPECTED = 226;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

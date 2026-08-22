@@ -423,14 +423,36 @@ function makeDb(seed) {
       const found = directory.get(args[0]);
       return found ? { ciphertext: found.ciphertext } : null;
     }
-    if (sql.startsWith("SELECT account_id, last_seen_at FROM directory")) {
+    /*
+     * THE CANDIDATE READ, AND THE WINDOW COUNT IT CARRIES (0.9-M3-S38,
+     * #471, serving the owner's ruling at #454 item 23).
+     *
+     * `COUNT(*) OVER ()` is evaluated over every row the WHERE clause
+     * admits and BEFORE `LIMIT` truncates, so the count on each
+     * returned row is how many candidates there were - which is the
+     * whole reason ONE read answers both questions. The steps below
+     * are in that order on purpose: filter, count, sort, truncate. A
+     * stub that counted after slicing would report `min(total, cap)`
+     * as the total and let every arm below pass against a Worker that
+     * could never say "showing 50 of 120".
+     *
+     * Proven against a real engine rather than assumed: SQLite 3.53.3
+     * over 120 stale rows returns 50 rows each carrying 120, and 50
+     * over exactly 50 rows (0.9-M3-S38's own probe). D1 running that
+     * evaluation order on a real `directory` table is what
+     * tools/check_live.py's own row for this route holds as live-only.
+     */
+    if (sql.startsWith("SELECT account_id, last_seen_at, " +
+        "COUNT(*) OVER () AS candidates FROM directory")) {
       const limit = Number(/LIMIT (\d+)/.exec(sql)[1]);
-      return { results: [...directory.values()]
-        .filter((row) => row.last_seen_at < args[0])
+      const matching = [...directory.values()]
+        .filter((row) => row.last_seen_at < args[0]);
+      return { results: matching
+        .slice()
         .sort((a, b) => String(a.last_seen_at).localeCompare(b.last_seen_at))
         .slice(0, limit)
         .map((row) => ({ account_id: row.account_id,
-          last_seen_at: row.last_seen_at })) };
+          last_seen_at: row.last_seen_at, candidates: matching.length })) };
     }
 
     /* -------- membership labels, for the list -------- */
@@ -1914,8 +1936,279 @@ async function seedNearMiss(db, role) {
 }
 
 /* ------------------------------------------------------------------ */
+/* 7. THE TOTAL BESIDE THE CAP (0.9-M3-S38, #471; the owner's ruling at */
+/*    #454 item 23 - a capped list sends its total).                    */
+/*                                                                      */
+/* The cap is not new and does not move: DEPARTED_LIST_CAP bounds how   */
+/* many accounts one request asks the bot about. What the route was     */
+/* missing is any way for a reader to tell a list that stopped short    */
+/* from a complete one, so the page's "more" could never reach past the */
+/* cap and nothing said so (0.9-M3-S34's review, #458 finding F2).      */
+/*                                                                      */
+/* THE ORDER IS NOT ON TRIAL AND MUST NOT MOVE - gone-longest-first,    */
+/* by the same owner's item 13. Every arm below reads counts, and the   */
+/* one that reads position asserts the oldest row is still first.       */
 
-const EXPECTED = 165;
+const CAP_IN_SOURCE = Number(
+  /const DEPARTED_LIST_CAP = (\d+);/.exec(workerSrc)[1]);
+
+/* Stale by minutes-apart timestamps, so "oldest first" is a total order
+   and the arms can say exactly which candidates the cap reaches. */
+const staleAt = (i) =>
+  new Date(Date.UTC(2020, 0, 1) + i * 60000).toISOString();
+
+const ADMIN_ONLY_MEMBERSHIP = () => [{ account_id: ADMIN, role: "admin",
+  label: "the-eraser", added_at: OLD, added_by: ADMIN }];
+
+const ADMIN_SESSION = () => [
+  sessionRow("admin-token", ADMIN, { is_admin: 1, admin_via: "flag" })];
+
+/* `count` stale rows and nothing else. Every record is written without
+   a sealed numeric id - the ordinary state of every directory row in
+   the live database - so each is UNKNOWN without a bot call, and the
+   list's length is the candidate count the cap let through and nothing
+   about what Telegram said. */
+async function candidatesDb(count) {
+  const directory = [];
+  for (let i = 0; i < count; i += 1) {
+    directory.push(await directoryRow(
+      accountFor(String(760000000 + i)), null, staleAt(i)));
+  }
+  return makeDb({ directory: directory, submissions: [],
+    membership: ADMIN_ONLY_MEMBERSHIP(), sessions: ADMIN_SESSION() });
+}
+
+{
+  check("the cap the response sends is the Worker's own constant, read " +
+    "out of the shipped source rather than typed here - a response that " +
+    "hard-coded 50 would go on saying 50 after the constant moved",
+    CAP_IN_SOURCE === 50);
+  check("and the candidate read asks D1 for that same constant, so the " +
+    "number sent and the number enforced cannot drift apart",
+    new RegExp("ORDER BY last_seen_at ASC LIMIT \" \\+ DEPARTED_LIST_CAP")
+      .test(workerSrc));
+}
+
+for (const count of [0, 1, 50, 51, 120]) {
+  const db = await candidatesDb(count);
+  const env = envFor(db);
+  const { value: list } = await withBot(botSaying("member"), () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+  const body = list.body || {};
+  const served = ((body.departed) || []).length +
+    ((body.unknown) || []).length + ((body.allowed) || []).length;
+
+  check("with " + count + " candidates the response's total is " + count +
+    " - the count BEFORE the cap, which is the only number that can " +
+    "tell a short list from a complete one", body.total === count);
+  check("with " + count + " candidates the response's cap is the " +
+    "constant's own value", body.cap === CAP_IN_SOURCE);
+  check("with " + count + " candidates the list holds min(total, cap) = " +
+    Math.min(count, CAP_IN_SOURCE) + " rows - the cap still truncates " +
+    "and the total still does not", served === Math.min(count, CAP_IN_SOURCE));
+}
+
+{
+  /* The oldest candidate is still the first row served: the count is
+     added beside the list, never in front of the ORDER BY. */
+  const db = await candidatesDb(120);
+  const env = envFor(db);
+  const { value: list } = await withBot(botSaying("member"), () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+  const unknown = ((list.body || {}).unknown) || [];
+  check("gone-longest-first survives the count (#454 item 13): the " +
+    "oldest candidate is the first row and the fiftieth-oldest is the " +
+    "last, with none of the seventy beyond the cap served",
+    unknown.length === CAP_IN_SOURCE &&
+    unknown[0].accountId === accountFor("760000000") &&
+    unknown[49].accountId === accountFor(String(760000000 + 49)) &&
+    !unknown.some((row) => row.accountId === accountFor(String(760000050))));
+}
+
+{
+  /*
+   * ALL FOUR OUTCOMES AT ONCE, PAST THE CAP. Fifty-five candidates: the
+   * fifty the cap reaches are ten departed, ten current members, ten
+   * held by the operator's list and twenty unknown, and five more sit
+   * beyond it. A current member is the one outcome that is served on no
+   * list at all, so the three states add up to the candidates examined
+   * only when it is counted as the dropped row it is.
+   */
+  const DEPARTED_N = 10;
+  const CURRENT_N = 10;
+  const ALLOWED_N = 10;
+  const UNKNOWN_N = 20;
+  const BEYOND_N = 5;
+  const directory = [];
+  const membership = ADMIN_ONLY_MEMBERSHIP();
+  const bot = {};
+  const beyond = [];
+  let seq = 0;
+  const seed = async (kind) => {
+    const i = seq;
+    seq += 1;
+    const numericId = String(770000000 + i);
+    const accountId = accountFor(numericId);
+    if (kind === "departed" || kind === "current") {
+      bot[numericId] = kind === "departed" ? "left" : "member";
+    }
+    if (kind === "allowed") {
+      membership.push({ account_id: accountId, role: "always_allow",
+        label: null, added_at: OLD, added_by: ADMIN });
+    }
+    if (kind === "beyond") beyond.push(accountId);
+    directory.push(await directoryRow(accountId,
+      kind === "unknown" || kind === "beyond" ? null : numericId,
+      staleAt(i)));
+  };
+  for (let i = 0; i < DEPARTED_N; i += 1) await seed("departed");
+  for (let i = 0; i < CURRENT_N; i += 1) await seed("current");
+  for (let i = 0; i < ALLOWED_N; i += 1) await seed("allowed");
+  for (let i = 0; i < UNKNOWN_N; i += 1) await seed("unknown");
+  for (let i = 0; i < BEYOND_N; i += 1) await seed("beyond");
+
+  const db = makeDb({ directory: directory, submissions: [],
+    membership: membership, sessions: ADMIN_SESSION() });
+  const env = envFor(db);
+  const { value: list } = await withBot(botPerPerson(bot), () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+  const body = list.body || {};
+  const departedRows = (body.departed) || [];
+  const unknownRows = (body.unknown) || [];
+  const allowedRows = (body.allowed) || [];
+
+  check("the mixed fixture is real before it is counted - ten of the " +
+    "fifty the cap reaches really are departed, twenty really are " +
+    "unknown and ten really are held by the operator's list, so the " +
+    "arithmetic below is over a populated answer",
+    departedRows.length === DEPARTED_N &&
+    unknownRows.length === UNKNOWN_N &&
+    allowedRows.length === ALLOWED_N);
+  check("the total counts every candidate, including the five past the " +
+    "cap and the ten current members that appear on no list",
+    body.total === DEPARTED_N + CURRENT_N + ALLOWED_N + UNKNOWN_N +
+      BEYOND_N);
+  check("the three states plus the current members the route drops add " +
+    "up to exactly min(total, cap) - the candidates it examined",
+    departedRows.length + unknownRows.length + allowedRows.length +
+      CURRENT_N === Math.min(body.total, body.cap));
+  check("nothing past the cap is served on any of the three lists",
+    ![...departedRows, ...unknownRows, ...allowedRows]
+      .some((row) => beyond.includes(row.accountId)));
+
+  /* THE NEW FIELDS CARRY NUMBERS AND NOTHING ELSE. The whole-answer
+     sweep in section 5 covers every numeric id on its own fixture; this
+     is the other direction - the answer's shape, so a later field that
+     smuggled a per-member datum in beside the counts is a red rather
+     than a thing the sweep happens to catch. */
+  check("the answer's top-level keys are exactly the three lists, ok, " +
+    "and the two counts - no new field beside them",
+    Object.keys(body).sort().join(",") ===
+      "allowed,cap,departed,ok,total,unknown");
+  check("both new fields are plain numbers, so neither can hold a " +
+    "handle, an id, or any per-member datum at all",
+    typeof body.total === "number" && typeof body.cap === "number");
+  check("the two counts, serialized alone, carry no numeric Telegram id " +
+    "and no sealed handle from the fixture",
+    !Object.keys(bot).some((numericId) =>
+      JSON.stringify({ total: body.total, cap: body.cap })
+        .includes(numericId)) &&
+    !JSON.stringify({ total: body.total, cap: body.cap })
+      .includes("sealed-handle"));
+}
+
+{
+  /*
+   * THE COUNT READ IS NOT ON THE ERASE PATH, PROVEN BY COUNTING IT.
+   * S15's rule - the erasing path fails closed on every read it makes -
+   * is about the reads that path makes, and this slice adds none to it:
+   * the candidate read belongs to the list route alone. A prose claim
+   * would be exactly the kind nothing falsifies, so the statement is
+   * counted as it is issued.
+   */
+  const db = await fixture();
+  const base = db.DB;
+  let candidateReads = 0;
+  const watched = Object.assign({}, base, {
+    prepare: (sql) => {
+      if (/COUNT\(\*\) OVER \(\)/.test(sql)) candidateReads += 1;
+      return base.prepare(sql);
+    },
+  });
+  const env = envFor(db, { DB: watched });
+  const before = countsFor(db, GONE);
+
+  await withBot(botSaying("left"), () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+  check("the list route makes the candidate read exactly once - one " +
+    "read answers the list and the count, and no second read can " +
+    "disagree with it", candidateReads === 1);
+
+  candidateReads = 0;
+  const { value: erase } = await withBot(botSaying("left"), () =>
+    call(env, "DELETE", "/admin-departed/" + GONE,
+      { headers: ADMIN_BEARER }));
+  check("the erase still erases - the fixture had rows in all four " +
+    "classes and the transaction took them",
+    erase.status === 200 && before.submissions === 2 &&
+    countsFor(db, GONE).submissions === 0 &&
+    countsFor(db, GONE).directory === 0 &&
+    countsFor(db, GONE).membership === 0 &&
+    countsFor(db, GONE).sessions === 0);
+  check("and it made the candidate read ZERO times: the count is not a " +
+    "read the erasing path makes, so S15's fail-closed rule has nothing " +
+    "new to cover", candidateReads === 0);
+  check("the erase's own answer carries neither count - they belong to " +
+    "the list and nothing else",
+    (erase.body || {}).total === undefined &&
+    (erase.body || {}).cap === undefined);
+}
+
+{
+  /*
+   * A COUNT CELL THAT COMES BACK UNUSABLE. This is a display number and
+   * not a guard - nothing is erased on it - so the route falls back to
+   * the rows already in its hand rather than failing closed: NaN would
+   * serialize as null and tell the page less than it could see itself.
+   * The floor is what makes the fallback safe to state: the total is
+   * never smaller than the list it stands beside.
+   */
+  for (const [label, bogus] of [["null", null], ["a string", "lots"],
+      ["missing", undefined], ["below the list", 3]]) {
+    const db = await candidatesDb(51);
+    const base = db.DB;
+    const spoil = (bound) => Object.assign({}, bound, {
+      all: async () => {
+        const answer = await bound.all();
+        return { results: (answer.results || []).map((row) =>
+          Object.assign({}, row, { candidates: bogus })) };
+      },
+    });
+    const watched = Object.assign({}, base, {
+      prepare: (sql) => {
+        const statement = base.prepare(sql);
+        if (!/COUNT\(\*\) OVER \(\)/.test(sql)) return statement;
+        return Object.assign({},
+          spoil(statement),
+          { bind: (...args) => spoil(statement.bind(...args)) });
+      },
+    });
+    const env = envFor(db, { DB: watched });
+    const { value: list } = await withBot(botSaying("member"), () =>
+      call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+    const body = list.body || {};
+    check("a count cell that arrives as " + label + " leaves a usable " +
+      "total: a real number, never below the rows the same read " +
+      "returned, and never null in the JSON",
+      typeof body.total === "number" && Number.isFinite(body.total) &&
+      body.total >= ((body.unknown) || []).length &&
+      /"total":\s*\d+/.test(list.text));
+  }
+}
+
+/* ------------------------------------------------------------------ */
+
+const EXPECTED = 198;
 if (failures) {
   console.log("\nfailing checks:");
   for (const label of failed) console.log("  - " + label);
