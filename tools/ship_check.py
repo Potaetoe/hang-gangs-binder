@@ -684,7 +684,16 @@ RED_ARM_PATH = re.compile(r"^tests/|^dev/|^tools/[^/]*_suite\.py$")
 # (its own rule 6: a builder order naming these paths must say
 # "browser") - reused here rather than re-invented, on a declared path
 # already normalized to forward slashes by `claim_vs_diff.parse_declared`.
-PAGE_FILE = re.compile(r"^apps/web/[\w.-]+\.(html|js|css)$")
+#
+# Review F4, fix wave (0.9-M3-S22, #435 comment 5376851627): the
+# original pattern allowed no `/` after `apps/web/`, so a JS or CSS file
+# in a subdirectory (`apps/web/sub/thing.js`) would match neither this
+# stage's browser-evidence requirement NOR the prose-only path's dist/
+# blob guard below - a comment edit paired with a whitespace reflow
+# there would take the prose-only waiver with the published bytes moved
+# and nobody checking. `(?:[\w.-]+/)*` allows any depth of subdirectory
+# under `apps/web/`, same character class as the filename itself.
+PAGE_FILE = re.compile(r"^apps/web/(?:[\w.-]+/)*[\w.-]+\.(html|js|css)$")
 
 
 def _red_commit_shas(repo, base):
@@ -770,6 +779,60 @@ BROWSER_WIDTH_OR_DEVICE = re.compile(
     r"\bphone\s+width\b|\b\d{3,4}\s*px\b|\bmobile\b|\bdesktop\s+width\b"
     r"|\biphone\b|\bandroid\b|\bviewport\b", re.I)
 
+# Review F2, fix wave (0.9-M3-S22, #435 comment 5376851627): every
+# completion is REQUIRED to paste ship-check's own rendered block back
+# into the ticket (this module's own rule: "Paste this whole block into
+# the completion comment"), and that block's own rows read exactly like
+# "old gate (py -3 tools/check.py)    PASS     (33 total, 33 ok, 0
+# FAILED)" - a PASS sitting near a FAILED within 60 characters, the
+# identical shape MUTATION_RESULT_PAIR looks for, with no mutation
+# battery anywhere near it. A draft consisting of a "mutation" heading,
+# one sentence, and nothing else but that mandatory paste satisfied the
+# check with zero real evidence - which also means the check has been
+# effectively inert for every ordinary completion since the paste
+# became mandatory (#421), not just prose-only ones.
+#
+# `_SHIP_CHECK_ROW` is ship-check's own printed row shape, and nothing
+# else's: `render()` prints "%-*s %s" % (name, status_word) and
+# `render_completion_block()` prints "%-*s %-7s  (%s)" % (name,
+# status_word, detail) - both are a name, 2+ spaces, one of exactly
+# three status words (PASS/FAIL/REPORT, optionally "REPORT (gap)"), and
+# an optional parenthetical, with nothing else on the line. A real
+# sentence describing a mutation never ends a line in that exact shape,
+# so masking it out before the evidence regexes see the text can only
+# ever remove ship-check's OWN output, never a completion author's
+# words - proven by the self-satisfaction sweep in
+# tools/ship_check_suite.py, which feeds the real render() output back
+# through this same mask and confirms nothing else in it changes.
+_SHIP_CHECK_ROW = re.compile(
+    r"^.{1,80}?[ \t]{2,}(?:PASS|FAIL|REPORT(?: \(gap\))?)"
+    r"(?:[ \t]+\(.*\))?[ \t]*$", re.M)
+_SHIP_CHECK_HEADER = re.compile(r"^=+$|^=== .*ship-check.* ===[ \t]*$",
+                                re.M)
+# `stage_old_gate()`/`stage_new_gate()` (this file's own `%d stages, %d
+# ok, %d FAILED` / `%d arms, %d green, %d FAILED` format strings) each
+# APPEND a synthesized count line of this exact two-shape vocabulary to
+# the verbatim capture, standalone (never inside a row) - the first
+# reproduction of this finding tripped MUTATION_RESULT_PAIR on "green,
+# 0 FAILED" sitting in exactly this line, which `_SHIP_CHECK_ROW` above
+# does not reach because it is not name-padding-status shaped. Derived
+# straight from the two format strings that print it, not guessed.
+_SHIP_CHECK_COUNT_LINE = re.compile(
+    r"^\d+ (?:stages|arms), \d+ (?:ok|green), \d+ FAILED[ \t]*$", re.M)
+
+
+def _mask_own_output(text):
+    """`text` with every line matching ship-check's own printed row,
+    banner or count-line shape blanked out - see `_SHIP_CHECK_ROW`'s
+    and `_SHIP_CHECK_COUNT_LINE`'s own comments above for why this is
+    safe to run before the evidence regexes see the text. Never
+    touches a markdown table row (starts with `|`, a different shape
+    entirely) or ordinary prose."""
+    text = _SHIP_CHECK_ROW.sub("", text)
+    text = _SHIP_CHECK_HEADER.sub("", text)
+    text = _SHIP_CHECK_COUNT_LINE.sub("", text)
+    return text
+
 
 def _clause_before(text, position, window=40):
     """The text immediately before `position`, trimmed back to the last
@@ -787,7 +850,12 @@ def _clause_before(text, position, window=40):
 
 def _has_mutation_evidence(text):
     """Whether `text` carries real mutation-battery evidence - see the
-    MUTATION_* regexes' own comment above for the shape asked for."""
+    MUTATION_* regexes' own comment above for the shape asked for.
+    Scanned with ship-check's own printed rows masked out first (review
+    F2, #435 comment 5376851627) - see `_mask_own_output()`'s own
+    comment for why the mandatory pasted block can never manufacture
+    evidence this way."""
+    text = _mask_own_output(text)
     matches = list(MUTATION_WORD.finditer(text))
     if not matches:
         return False
@@ -801,7 +869,10 @@ def _has_mutation_evidence(text):
 
 def _has_browser_evidence(text):
     """Whether `text` carries real browser-verification evidence - see
-    the BROWSER_* regexes' own comment above for the shape asked for."""
+    the BROWSER_* regexes' own comment above for the shape asked for.
+    Same masking as `_has_mutation_evidence()` above, for the same
+    reason and at the same cost of nothing real."""
+    text = _mask_own_output(text)
     if not BROWSER_WORD.search(text):
         return False
     if BROWSER_DENY.search(text):
@@ -859,7 +930,13 @@ def _has_browser_evidence(text):
 # be misread as a comment opener - rare in this repository's own TOML
 # (single-line key/value pairs), and the failure mode is SAFE (a false
 # "not identical" falls through to the normal evidence path, never a
-# false waiver).
+# false waiver). `_drop_blank_lines()` runs on the stripped output of
+# both families before they are compared (F1, fix wave, #435): the
+# stripper leaves one bare blank line per removed comment run, so a
+# comment edit that changes the comment LINE COUNT would otherwise read
+# as a code change even though nothing but a comment moved - proven
+# against 0.9-M3-S20's real server/schema.sql, whose comment block grew
+# 15 -> 17 lines and wrongly printed `differs` before this fix.
 #
 # MARKDOWN AND DOCS ARE PROSE BY NATURE
 #
@@ -950,6 +1027,28 @@ def _strip_line_comments(text, marker, quotes):
         out.append(ch)
         i += 1
     return "".join(out)
+
+
+def _drop_blank_lines(text):
+    """`text` with every blank or whitespace-only line removed.
+
+    F1, fix wave (0.9-M3-S22, #435 comment 5376851627): `_strip_line_
+    comments()` above replaces each stripped comment run with a single
+    bare `"\\n"`, so the stripped text still carries one blank line per
+    REMOVED comment line - a comment edit that changes the comment LINE
+    COUNT (never the code) therefore changes the stripped text's line
+    POSITIONS even though every non-comment line is untouched. Measured
+    against 0.9-M3-S20's real `server/schema.sql` (#424): its comment
+    block grew 15 -> 17 lines and `_strip_line_comments()` alone wrongly
+    printed `differs` for a slice that changed no code at all.
+    Comparing the non-blank CONTENT, never where it sits, is the fix - a
+    blank line carries no code in either family, so dropping every one
+    of them (the ones the source always had and the ones the stripper
+    just inserted alike) before comparing is the same "err toward
+    differs, never toward a false waiver" bias this section's own module
+    comment already argues for: a real code line can only ever MOVE by
+    having its surrounding blank lines dropped, never disappear."""
+    return "\n".join(line for line in text.split("\n") if line.strip())
 
 
 def _sha_of(text):
@@ -1116,8 +1215,13 @@ def _prose_file_eligible(repo, base, path, node):
         if family in ("sql", "toml"):
             marker, quotes = (("--", {"'"}) if family == "sql"
                               else ("#", {'"', "'"}))
-            stripped_base = _strip_line_comments(base_text, marker, quotes)
-            stripped_head = _strip_line_comments(head_text, marker, quotes)
+            # _drop_blank_lines() (F1, fix wave, #435): compares the
+            # non-comment CONTENT, not the line positions the comment
+            # strip leaves behind - see that function's own comment.
+            stripped_base = _drop_blank_lines(
+                _strip_line_comments(base_text, marker, quotes))
+            stripped_head = _drop_blank_lines(
+                _strip_line_comments(head_text, marker, quotes))
             identical = stripped_base == stripped_head
             lines = ["  prose  %s  base=%s head=%s  %s"
                     % (path, _sha_of(stripped_base), _sha_of(stripped_head),

@@ -312,8 +312,10 @@ guards, never as the pattern for a new one.
   ship-check`'s slice-tier stage proves this itself - comment- or
   token-stripped source identical to the base for every declared file,
   plus an unchanged dist/ blob for any declared page file - and prints
-  the per-file hashes it compared, never the claim on the word "prose"
-  alone.
+  its own per-file comparison for every declared file: a hash pair for
+  code (JS, CSS, SQL, TOML), and, for a `.md` file, the plain fact that
+  markdown is prose by nature with no code to hash - never the claim on
+  the word "prose" alone.
 - **A new check is registered where its apparatus registers checks**,
   and **confirmed armed by mutation, in both directions**: break it,
   watch it fail, restore it, watch it pass, and state the mutations in

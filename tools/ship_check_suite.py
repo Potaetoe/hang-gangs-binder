@@ -124,7 +124,7 @@ performed = 0
 # Asserted at the end, not merely printed - the floor every suite in
 # this fleet holds itself to: a hand-counted total nothing compares
 # against still prints a confident pass when a check stops running.
-EXPECTED = 197
+EXPECTED = 206
 
 
 def check(label, condition):
@@ -871,10 +871,149 @@ try:
           stage.ok and "tier: sensitive" in stage.lines
           and "prose-only" in "\n".join(stage.lines))
 
+    print("\n--- F1, fix wave (0.9-M3-S22, #435 comment 5376851627): SQL "
+         "and TOML get the same blank-line-drop the JS/CSS tokenizer "
+         "gets for free, so a comment edit that changes the comment "
+         "LINE COUNT is still prose-only - 0.9-M3-S20's real "
+         "server/schema.sql (#424) is this exact shape, no fixture "
+         "existed for either family before this fix wave ---")
+
+    git(repo, "branch", "prose-only-sql-base", base_sha)
+    git(repo, "checkout", "-q", "prose-only-sql-base")
+    write(os.path.join(repo, "server", "schema.sql"),
+         "-- one line of note\nCREATE TABLE t (id INTEGER);\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "prose-only fixture: sql base")
+    prose_sql_base_sha = sha(repo, "HEAD")
+
+    git(repo, "branch", "prose-only-sql-linecount-head",
+       "prose-only-sql-base")
+    git(repo, "checkout", "-q", "prose-only-sql-linecount-head")
+    write(os.path.join(repo, "server", "schema.sql"),
+         "-- one line of note,\n-- now split across two lines\n"
+         "CREATE TABLE t (id INTEGER);\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m",
+       "comment-only reword that grows the comment from one line to two")
+    prose_sql_declared = os.path.join(root, "declared-prose-sql.txt")
+    write(prose_sql_declared, "server/schema.sql\n")
+    stage = ship_check.stage_tier(repo, prose_sql_declared,
+                                  prose_sql_base_sha, None)
+    check("a .sql comment-only reword that CHANGES THE LINE COUNT (one "
+         "comment line splits into two, S20's exact defect) is still "
+         "prose-only - the bare _strip_line_comments() output would "
+         "have differed only in blank-line positions",
+          stage.ok and "prose-only" in "\n".join(stage.lines))
+    check("...and the per-file base/head hashes are printed for the "
+         ".sql file, same as every other family",
+          any(line.strip().startswith("prose") and "schema.sql" in line
+              and "base=" in line and "head=" in line
+              for line in stage.lines))
+
+    git(repo, "branch", "prose-only-sql-statement-head",
+       "prose-only-sql-base")
+    git(repo, "checkout", "-q", "prose-only-sql-statement-head")
+    write(os.path.join(repo, "server", "schema.sql"),
+         "-- one line of note\nCREATE TABLE t (id INTEGER, name TEXT);\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a real statement change, not a comment")
+    stage = ship_check.stage_tier(repo, prose_sql_declared,
+                                  prose_sql_base_sha, None)
+    check("a .sql change that ALTERS A STATEMENT (a column added) still "
+         "reads as differs - dropping blank lines never hides a real "
+         "code change, only a comment's own line-count churn",
+          not stage.ok
+          and any(line.strip().startswith("prose") and "schema.sql" in line
+                  and line.rstrip().endswith("differs")
+                  for line in stage.lines))
+
+    git(repo, "branch", "prose-only-toml-base", base_sha)
+    git(repo, "checkout", "-q", "prose-only-toml-base")
+    write(os.path.join(repo, "config", "site.toml"), "# one line\nkey = 1\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "prose-only fixture: toml base")
+    prose_toml_base_sha = sha(repo, "HEAD")
+
+    git(repo, "branch", "prose-only-toml-linecount-head",
+       "prose-only-toml-base")
+    git(repo, "checkout", "-q", "prose-only-toml-linecount-head")
+    write(os.path.join(repo, "config", "site.toml"),
+         "# one line,\n# now split across two lines\nkey = 1\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m",
+       "comment-only reword that grows the comment from one line to two")
+    prose_toml_declared = os.path.join(root, "declared-prose-toml.txt")
+    write(prose_toml_declared, "config/site.toml\n")
+    stage = ship_check.stage_tier(repo, prose_toml_declared,
+                                  prose_toml_base_sha, None)
+    check("a .toml comment-only reword that changes the comment line "
+         "count is prose-only too - TOML shares _strip_line_comments() "
+         "with SQL and had the identical defect",
+          stage.ok and "prose-only" in "\n".join(stage.lines))
+
+    print("\n--- F4, fix wave (0.9-M3-S22, #435 comment 5376851627): "
+         "PAGE_FILE now matches a JS/CSS file in an apps/web/ "
+         "SUBDIRECTORY, so its dist/ mirror is still checked ---")
+
+    git(repo, "branch", "prose-only-subdir-base", base_sha)
+    git(repo, "checkout", "-q", "prose-only-subdir-base")
+    write(os.path.join(repo, "apps", "web", "sub", "util.js"),
+         "const X = 1;\n// a note\n")
+    write(os.path.join(repo, "dist", "sub", "util.js"), "const X = 1;\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "prose-only fixture: subdirectory base")
+    prose_subdir_base_sha = sha(repo, "HEAD")
+    prose_subdir_declared = os.path.join(root, "declared-prose-subdir.txt")
+    write(prose_subdir_declared, "apps/web/sub/util.js\n")
+
+    git(repo, "branch", "prose-only-subdir-clean-head",
+       "prose-only-subdir-base")
+    git(repo, "checkout", "-q", "prose-only-subdir-clean-head")
+    write(os.path.join(repo, "apps", "web", "sub", "util.js"),
+         "const X = 1;\n// a different note\n")
+    # dist/sub/util.js untouched - same blob prose-only-subdir-base
+    # committed, proving PAGE_FILE reached this nested path at all.
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "comment-only reword in a subdirectory")
+    stage = ship_check.stage_tier(repo, prose_subdir_declared,
+                                  prose_subdir_base_sha, None)
+    check("a comment-only reword to a JS file NESTED under apps/web/ "
+         "(apps/web/sub/util.js) is prose-only with its dist/ mirror "
+         "checked - PAGE_FILE no longer stops at the top level",
+          stage.ok and any("dist" in line and "unchanged" in line
+                           for line in stage.lines))
+
+    git(repo, "branch", "prose-only-subdir-moved-head",
+       "prose-only-subdir-base")
+    git(repo, "checkout", "-q", "prose-only-subdir-moved-head")
+    # The SOURCE is untouched (token-identical to base, trivially) but
+    # the PUBLISHED bytes moved - the exact hazard PAGE_FILE's dist/
+    # guard exists for, now reachable one directory down.
+    write(os.path.join(repo, "dist", "sub", "util.js"), "const X = 1 ;\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "dist/ reflow only, source untouched")
+    stage = ship_check.stage_tier(repo, prose_subdir_declared,
+                                  prose_subdir_base_sha, None)
+    check("...and when the nested file's dist/ mirror moves while the "
+         "source stays token-identical, the waiver is refused - before "
+         "this fix PAGE_FILE never matched the nested path, so this "
+         "dist/ move would have gone unchecked and prose-only would "
+         "have wrongly passed",
+          not stage.ok
+          and any("dist" in line and "changed" in line
+                  and "unchanged" not in line for line in stage.lines))
+
     git(repo, "checkout", "-q", "0.9-m0-s22")
     for throwaway in ("prose-only-head", "prose-only-string-head",
                       "prose-only-base", "prose-only-sensitive-head",
-                      "prose-only-sensitive-base"):
+                      "prose-only-sensitive-base",
+                      "prose-only-sql-linecount-head",
+                      "prose-only-sql-statement-head", "prose-only-sql-base",
+                      "prose-only-toml-linecount-head",
+                      "prose-only-toml-base",
+                      "prose-only-subdir-clean-head",
+                      "prose-only-subdir-moved-head",
+                      "prose-only-subdir-base"):
         git(repo, "branch", "-D", throwaway)
 
     print("\n--- stage_totals: hand-typed gate totals vs what THIS run "
@@ -1637,6 +1776,44 @@ try:
         check("%s: its own refusal text does not self-satisfy browser "
              "evidence when pasted back in as a --completion" % label,
               not ship_check._has_browser_evidence(text))
+
+    print("\n--- F2, fix wave (0.9-M3-S22, #435 comment 5376851627): a "
+         "completion that is nothing but the MANDATORY pasted ship-check "
+         "block must not satisfy the mutation check by itself - every "
+         "completion is required to paste this block (AGENTS.md: 'paste "
+         "the stdout... never abridged'), and it alone read as evidence "
+         "before this fix ---")
+
+    buffer_f2 = io.StringIO()
+    with PatchInitProblems([]), redirect_stdout(buffer_f2):
+        ship_check.main(["--repo", repo, "--declared", declared_good,
+                         "--base", "origin/accounts", "--completion",
+                         completion_full, "--completion-block"])
+    own_output = buffer_f2.getvalue()
+    check("sanity: the captured run's own completion-block row carries "
+         "a PASS sitting near a FAILED, the exact shape "
+         "MUTATION_RESULT_PAIR looks for - otherwise this arm would "
+         "prove nothing about the fix",
+          ship_check.MUTATION_RESULT_PAIR.search(own_output) is not None)
+
+    pasted_only_text = ("## Mutation battery\n\nRan clean, nothing more "
+                        "to add.\n\n```\n" + own_output + "\n```\n")
+    check("F2: a draft that is only a 'mutation' heading, one sentence, "
+         "and the mandatory pasted ship-check block does NOT satisfy "
+         "the mutation check on its own - before this fix, the pasted "
+         "block's own PASS/FAILED row was enough",
+          not ship_check._has_mutation_evidence(pasted_only_text))
+
+    pasted_only_path = os.path.join(root, "completion-pasted-block-only.txt")
+    write(pasted_only_path, pasted_only_text)
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  pasted_only_path)
+    check("...and stage_tier() itself refuses the same draft, naming "
+         "the missing mutation-battery evidence - the mandatory paste "
+         "can never manufacture the evidence a completion is required "
+         "to sit beside it",
+          not stage.ok
+          and "mutation-battery evidence" in "\n".join(stage.lines))
 
     del os.environ["SHIP_CHECK_STUB_SCENARIO"]
     del os.environ["BINDER_GH_CMD"]
