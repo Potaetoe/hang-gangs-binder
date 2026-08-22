@@ -1477,22 +1477,31 @@ check("Fields never fetches per-member counts - no /charts-data call " +
     /No changes yet/.test(byId.get("log-list").textContent));
 }
 
-/* -- Wiring for #463: the wrap-row squeeze - a long label beside a     */
-/* short id renders the id at 0px on a phone, because `.row.wrap-row`   */
-/* stayed side-by-side (flex row) at every width. This suite has no     */
-/* layout engine (the Node DOM stub cannot compute a rendered width),   */
-/* so it proves the two things it CAN: theme.css carries the stacking   */
-/* rule as a PARSED rule inside the site's phone breakpoint (never a    */
-/* string match on a comment - the same discipline tools/check_web.py's */
+/* -- Wiring for #463: the wrap-row squeeze - a long, unbroken run in   */
+/* one `.row.wrap-row` child could crowd a shorter sibling down to 0px, */
+/* at ANY width, because `.wrap-row-value`'s `flex: 1` (basis 0%) gave  */
+/* it zero weight in the shrink math a deficit row runs (fix wave 1,    */
+/* #463, F1 - the review's own 1280px Roles-row fixture, CONFIRMED).    */
+/* This suite has no layout engine (the Node DOM stub cannot compute a  */
+/* rendered width), so it proves the three things it CAN: theme.css     */
+/* carries the phone-width stacking rule (`flex-direction: column` AND  */
+/* `align-items: stretch`, both read from the SAME parsed rule body -   */
+/* fix wave 1, F2 - dropping either one alone must fail this check,     */
+/* never just the first) inside the site's phone breakpoint; it carries */
+/* the desktop-width fix (`.wrap-row-value { flex: 1 1 auto; }`,        */
+/* OUTSIDE any breakpoint - basis `auto` rather than `0%`, so a width    */
+/* deficit shrinks every child by its own size instead of routing all   */
+/* of it away from this one); and that a wrap-row site this suite had   */
+/* not yet covered (the numeric-field read-only row) still emits the    */
+/* classes both rules key on. Every check below is a PARSED rule, never */
+/* a string match on a comment - the same discipline tools/check_web.py's */
 /* own media_block_bodies()/rule_bodies() hold reviewing CSS to,        */
-/* reimplemented here in JS since this apparatus is Node, not Python),  */
-/* and that a wrap-row site this suite had not yet covered (the         */
-/* numeric-field read-only row) still emits the classes the rule keys   */
-/* on. The real geometry proof - the id actually widening above 0px at  */
-/* 375/360, and the desktop rects staying byte-for-byte the same - is a */
-/* real-browser measurement, printed in the completion, exactly as      */
-/* #433 F1's own pixel claim was (a Node stub proves wiring, never      */
-/* pixels). -- */
+/* reimplemented here in JS since this apparatus is Node, not Python.   */
+/* The real geometry proof - the squeezed cell legible at 375/360/1280, */
+/* and short-content desktop rects staying byte-for-byte the same       */
+/* before and after fix wave 1 - is a real-browser measurement, printed */
+/* in the completion, exactly as #433 F1's own pixel claim was (a Node  */
+/* stub proves wiring, never pixels). -- */
 
 // Comments only - a rule inside a comment ("/* .row.wrap-row { ... */")
 // must not satisfy either check below, so both strip them first.
@@ -1588,11 +1597,44 @@ function wrapRowStacksUnderPhoneBreakpoint(rawCss) {
   return stacked.some((body) => /flex-direction\s*:\s*column/.test(body));
 }
 
-function wrapRowValueStillFlexOneOutsideAnyBreakpoint(rawCss) {
+// F2 (#463 fix wave 1, CONFIRMED): the stacking rule alone does not
+// give each stacked child the row's full width - `.row`'s own
+// `align-items: center` (unscoped, above) keeps a child at its own
+// content width unless the cross axis says otherwise, and
+// `align-items: stretch` is what says otherwise. Read from the SAME
+// rule body the flex-direction check above reads (both conditions on
+// one `.some()` pass), not a second rule found anywhere in the file,
+// so a stray `align-items: stretch` elsewhere cannot pass this by
+// coincidence. Deleting just this declaration left the suite at
+// 148/148 green before this check existed - the id cell rendered
+// 13px wide, centred, instead of the row's full width.
+function wrapRowStretchesUnderPhoneBreakpoint(rawCss) {
+  const css = stripCssComments(rawCss);
+  const phone = phoneBreakpointBody(css);
+  if (phone === null) return false;
+  const stacked = ruleBodies(phone, ".row.wrap-row");
+  return stacked.some((body) => /flex-direction\s*:\s*column/.test(body) &&
+    /align-items\s*:\s*stretch/.test(body));
+}
+
+// F1 (#463 fix wave 1, CONFIRMED): `.wrap-row-value` needs a real,
+// content-sized flex-basis (`auto`), not `0%` (what plain `flex: 1`
+// means) - a 0% basis gives this cell zero weight in the shrink math
+// a flex row runs once its children's combined width exceeds the
+// row's own, so 100% of any squeeze routed onto whichever sibling was
+// not this one, and this one could render 0px wide holding nothing
+// longer than a two-character id. That happened at 1280 with a
+// 62-character unbroken Roles label (the review's own fixture) -
+// nothing here was ever scoped to a width, so the desktop rule needed
+// the same fix as the phone one. Read outside every @media block: the
+// phone breakpoint below switches the whole row to a column, where
+// this same declaration still applies but does nothing observable
+// (fix wave 1, F3 - measured, not assumed).
+function wrapRowValueFlexBasisAutoOutsideAnyBreakpoint(rawCss) {
   const css = stripCssComments(rawCss);
   const top = outsideMediaBlocks(css);
   const rows = ruleBodies(top, ".row.wrap-row > .wrap-row-value");
-  return rows.some((body) => /flex\s*:\s*1\s*;/.test(body));
+  return rows.some((body) => /flex\s*:\s*1\s+1\s+auto\s*;/.test(body));
 }
 
 check("apps/web/theme.css: .row.wrap-row stacks (flex-direction: " +
@@ -1603,12 +1645,22 @@ check("apps/web/theme.css: .row.wrap-row stacks (flex-direction: " +
 check("dist/theme.css carries the same stacking rule - the build is " +
   "apps/web with the comments removed, never a second source",
   wrapRowStacksUnderPhoneBreakpoint(distThemeCss));
-check("apps/web/theme.css: .row.wrap-row > .wrap-row-value still gets " +
-  "flex: 1 OUTSIDE any breakpoint - the side-by-side desktop layout is " +
-  "untouched, and this is the same unscoped rule #416's fix wave wrote",
-  wrapRowValueStillFlexOneOutsideAnyBreakpoint(themeCss));
-check("dist/theme.css: same unscoped flex: 1 rule survives the build",
-  wrapRowValueStillFlexOneOutsideAnyBreakpoint(distThemeCss));
+check("apps/web/theme.css: the same stacking rule also carries " +
+  "align-items: stretch - without it a stacked child keeps its own " +
+  "content width, centred, instead of the row's full width (#463 fix " +
+  "wave 1, F2)",
+  wrapRowStretchesUnderPhoneBreakpoint(themeCss));
+check("dist/theme.css: same stretch declaration, same rule body, " +
+  "survives the build",
+  wrapRowStretchesUnderPhoneBreakpoint(distThemeCss));
+check("apps/web/theme.css: .row.wrap-row > .wrap-row-value gets " +
+  "flex: 1 1 auto OUTSIDE any breakpoint - basis auto rather than 0%, " +
+  "so a desktop width deficit shrinks this cell by its own size " +
+  "instead of routing the whole squeeze onto a sibling (#463 fix " +
+  "wave 1, F1)",
+  wrapRowValueFlexBasisAutoOutsideAnyBreakpoint(themeCss));
+check("dist/theme.css: same desktop flex-basis fix survives the build",
+  wrapRowValueFlexBasisAutoOutsideAnyBreakpoint(distThemeCss));
 
 {
   // The numeric-field read-only row (readOnlyFieldBlock, e.g. "Weight")
@@ -1690,7 +1742,7 @@ check("no download/export id survives in the real shipped markup - the " +
 // tests/charts-page.test.mjs and dev/xlsx.test.mjs both hold to: the
 // checks that ran are the whole claim this file makes, and a reader
 // loop that silently ran fewer of them would still print "OK".
-const EXPECTED = 148;
+const EXPECTED = 150;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
