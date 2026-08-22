@@ -43,7 +43,7 @@ const UI = globalThis.BinderUI;
  * a confident summary over the checks that still reached. See
  * dev/harness.mjs.
  */
-const { check, report } = nodeTestSuite("ui.js", 22);
+const { check, report } = nodeTestSuite("ui.js", 31);
 
 check("the shipped file exposes one frozen helper object",
   UI && Object.isFrozen(UI));
@@ -82,6 +82,74 @@ UI.setStatus(status, "");
 check("setStatus clears and hides an empty status",
   status.textContent === "" && status.hidden === true &&
   status.className === "status");
+
+/*
+ * fadeIn and showToast (0.9-M3-S33, #457) - lifted here from admin.js's
+ * own first build (0.9-M3-S30, #452) so every signed-in page shares one
+ * copy. #toast is added to the same `elements` stub the rest of this
+ * suite already reads through byId/getElementById.
+ */
+const toast = { textContent: "", hidden: true, className: "" };
+elements.set("toast", toast);
+
+UI.fadeIn(null);
+check("fadeIn tolerates a missing element", true);
+
+const fadeTarget = { className: "" };
+UI.fadeIn(fadeTarget);
+check("fadeIn adds and removes the fade-in class around one forced " +
+  "reflow, leaving no trace once it returns",
+  fadeTarget.className === "");
+
+const fadeTargetWithClass = { className: "card" };
+UI.fadeIn(fadeTargetWithClass);
+check("fadeIn preserves a class already on the element",
+  fadeTargetWithClass.className === "card");
+
+// The dismissal timer, captured rather than awaited for real - 3s is
+// real wall time this suite should not spend, and what matters is the
+// contract (message, reveal, an eventual hide, one timer at a time)
+// rather than the literal clock.
+let capturedCallback = null;
+let capturedDelay = null;
+let clearedTimer = null;
+const realSetTimeout = globalThis.setTimeout;
+const realClearTimeout = globalThis.clearTimeout;
+globalThis.setTimeout = (cb, ms) => {
+  capturedCallback = cb;
+  capturedDelay = ms;
+  return "timer-id";
+};
+globalThis.clearTimeout = (id) => { clearedTimer = id; };
+
+UI.showToast("Saved.");
+check("showToast writes the message and reveals #toast",
+  toast.textContent === "Saved." && toast.hidden === false);
+check("showToast times its own dismissal at three seconds",
+  capturedDelay === 3000);
+
+capturedCallback();
+check("and the timer hides the toast when it fires - the toast clears " +
+  "itself, not merely stays readable",
+  toast.hidden === true);
+
+UI.showToast("First.");
+UI.showToast("Second.");
+check("showToast replaces the previous message rather than stacking " +
+  "two toasts",
+  toast.textContent === "Second.");
+check("and a second toast clears the first one's pending timer rather " +
+  "than leaving it to hide the second toast early",
+  clearedTimer === "timer-id");
+
+elements.delete("toast");
+UI.showToast("gone");
+check("showToast tolerates a missing #toast element rather than " +
+  "throwing", true);
+elements.set("toast", toast);
+
+globalThis.setTimeout = realSetTimeout;
+globalThis.clearTimeout = realClearTimeout;
 
 let booted = 0;
 let bootError = null;
