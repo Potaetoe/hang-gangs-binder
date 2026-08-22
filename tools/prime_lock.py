@@ -27,15 +27,50 @@ is the one every other mechanism on this machine already trusts.
 THE ATOMICITY THIS SCRIPT DOES OWN
 
 The one new primitive here is the acquire race on a lock nobody holds
-yet, and it is closed exactly the way `agent_init.take_lease` closes the
-equivalent race for a port block: the lock file is created with
-`O_CREAT | O_EXCL`, which the operating system guarantees at most one
-caller wins. Two Prime sessions racing to open with neither lock present
-cannot both succeed - one gets the descriptor, the other gets
-`FileExistsError` and reads what the winner wrote. A read-then-write
-without that flag would let both sessions read "no lock", both decide
-they are first, and both write last - which is the exact failure this
-ticket exists to close, reintroduced by the tool meant to close it.
+yet, and `publish_lock` below closes it by installing a record that is
+already COMPLETE rather than by creating an empty file and then filling
+it: the whole record is written to a private name in the same directory
+and that name is then hard-linked onto the lock path. `os.link` is the
+single-winner step - the operating system refuses it with
+`FileExistsError` when anything already holds the destination - and
+because the record was finished before the destination existed, no
+contender can observe the lock path holding half a record and no loser
+has written anything to it. A loser is a loser, full stop: it reads what
+the winner published.
+
+An exclusive create followed by a fill is just as single-winner but
+leaves that second gap open, and the gap is not theoretical. With a
+0.6 s stall injected between those two calls, five contended acquires
+out of five produced TWO callers that both exited 0 and a lock file left
+permanently unreadable, which wedges every later `check` at exit 2 until
+a human forces it (S23 fix wave, #436, 2026-08-21). A read-then-write
+with no exclusive step at all would be worse still - both sessions read
+"no lock", both decide they are first, both write last - which is the
+exact failure this ticket exists to close, reintroduced by the tool
+meant to close it.
+
+The one thing publishing this way requires of the filesystem is hard
+links. The fleet's state directory is an ordinary directory on the
+machine's own disk, so this holds on NTFS and on every POSIX filesystem
+a checkout is likely to sit on; somewhere it does not hold, `acquire`
+fails loudly at the link rather than quietly falling back to a shape
+this section just argued is unsafe.
+
+WHY THE LATER WRITES ARE NOT PUBLISHED THE SAME WAY
+
+`write_lock` still rewrites the record in place, and that is a measured
+choice rather than an omission. Every caller of it is already inside
+`mutation_lock`, so no other MUTATOR can see a half-written record - the
+takeover decision this module has to keep single-winner reads under the
+mutex and therefore never observes one. The only reader that can is
+`check`, which takes no mutex by design, and a torn read there already
+fails closed to exit 2 rather than doing anything. Publishing those
+writes through `os.replace` would close that transient window and open a
+worse one: measured on this platform, `os.replace` over a file another
+process merely has OPEN FOR READING fails with `PermissionError`, and
+against a reader in a hot loop it failed 243 times out of 400. That
+trades a transient fail-closed read for a transient failed takeover,
+which is the wrong direction.
 
 STALENESS IS NEVER SILENT
 
@@ -109,10 +144,16 @@ WINDOWS CAN REPORT A DELETE RACE AS PermissionError, NOT FileExistsError
 (S23, #436, 2026-08-21)
 
 Every `os.open(..., O_CREAT | O_EXCL | O_WRONLY)` in this module - the
-mutex's own exclusive create in `mutation_lock`, and the primary lock's
-fast-path create in `do_acquire` - catches `PermissionError` alongside
-`FileExistsError`. Reproduced live: a 100-iteration loop of the
-release/takeover storm scenario crashed once (about 1 in 100) with an
+mutex's own exclusive create in `mutation_lock`, and the private-name
+create in `fill_private` - catches `PermissionError` alongside
+`FileExistsError`, and so does every other filesystem call on the
+acquire path: `publish_lock`'s link, `discard_private`'s remove,
+`settle_unreadable`'s stat, `mutex_is_stale`'s stat, and `steal_mutex`'s
+replace and remove. Each catch names its two errors; none of them is a
+blanket `except`, because a blanket one would swallow the invariant
+violations this module exists to make loud. Reproduced live: a
+100-iteration loop of the release/takeover storm scenario crashed once
+(about 1 in 100) with an
 uncaught `PermissionError: [Errno 13] Permission denied` from
 `mutation_lock`'s exclusive create, where the module only caught
 `FileExistsError`. The cause is NTFS's own delete semantics, not the
@@ -130,9 +171,23 @@ so the conservative answer ("not stale, retry") is unchanged either way.
 None of this widens what counts as a real invariant violation - a
 caught `PermissionError` re-enters the exact same stale-check, steal and
 retry path `FileExistsError` already used, bounded by the same
-`MUTEX_TIMEOUT_SECONDS` and `ACQUIRE_ATTEMPTS`, so a genuinely stuck
-permission problem still surfaces as a `TimeoutError` or a refusal
-rather than looping forever.
+`MUTEX_TIMEOUT_SECONDS` and `ACQUIRE_ATTEMPTS`.
+
+EVERY ARM OF A RETRY LOOP TESTS ITS OWN DEADLINE (S23 fix wave, #436)
+
+That last sentence is only true if the bound is tested on every arm, and
+the first version of this change is what proved it. Catching the error
+on the steal arm WITHOUT testing the deadline there turned a loud crash
+into a sleepless hot loop: whenever a live process held a mutex whose
+mtime had already aged past the steal threshold, `mutex_is_stale` kept
+answering True, `steal_mutex` kept failing to move a file somebody else
+still had open, and the arm that tests the deadline was never reached at
+all - measured still spinning at 25 s against a 20 s timeout. "Nothing
+here waits forever" is a property of a loop's SHAPE, not of which arm
+its inputs happen to select, so the deadline is now the first thing
+every pass tests and every arm sleeps before retrying. A genuinely stuck
+permission problem surfaces as a `TimeoutError` naming the error that
+kept it out.
 """
 
 import argparse
@@ -171,13 +226,15 @@ def lock_path(state=None):
 def read_lock(path):
     """The lock record at `path`: None if absent, {} if unreadable.
 
-    The same distinction agent_init.read_lease draws, and for the same
-    reason: `O_CREAT | O_EXCL` guarantees the file exists before its
-    contents do, so a reader arriving in that gap sees a real file with
-    nothing parseable in it. Answering None there would read as "no
-    lock" and let a second acquire step straight past a session that is
-    mid-write - the opposite error, and the one this mechanism exists to
-    rule out.
+    The same distinction agent_init.read_lease draws, and answering None
+    for an unreadable record would read as "no lock" and let a second
+    acquire step straight past a session that is mid-write - the opposite
+    error, and the one this mechanism exists to rule out. `publish_lock`
+    means this module's own writes never produce that state, so what
+    reaches `{}` here is a corrupt record, a crashed writer's, or another
+    program's two-step write; `settle_unreadable` below is the only thing
+    that tries to tell the last one apart, and only on the path that can
+    write over what it read.
     """
     if not os.path.exists(path):
         return None
@@ -192,25 +249,34 @@ WRITE_SETTLE_SPIN_SECONDS = 0.005
 
 
 def settle_unreadable(path, existing):
-    """Give a just-created, still-filling lock a moment to finish, before
-    a takeover decision reads its unreadable gap as staleness.
+    """Give a still-filling lock a moment to finish, before a takeover
+    decision reads its unreadable gap as staleness.
 
-    FOUND LIVE (S23, #436): a 200-trial storm of do_acquire's own
-    fast-path create (`write_new_lock`, below) racing a mutation_lock-
-    protected takeover decision hit this twice - the fast-path winner's
-    file existed but was not yet filled (the exact gap `read_lock`'s own
-    docstring names: "the gap between the file existing and the file
-    being readable is real on this platform ... cannot be closed from
-    this end, only narrowed"), the takeover reader saw `{}` (unreadable),
-    `staleness()` reported "its started-at (None) could not be read" and,
-    under an active `--take-stale`, unconditionally overwrote the winner
-    it had not finished announcing - two acquire callers both exited 0,
-    and the second one's write is what survived. A genuinely corrupt or
-    crashed record (the suite's own hand-written-garbage arm) is not
-    mid-write and never settles, so it falls through unchanged to the
-    existing STALE / --take-stale path exactly as before; the budget only
-    ever costs time on the rare unreadable case, never on an ordinary
-    read.
+    THIS IS A NARROWING, AND `publish_lock` IS THE GUARANTEE. Read the
+    two the wrong way round and you will believe an invariant that does
+    not hold. Since the S23 fix wave (#436) this module never opens the
+    create-then-fill gap itself: a record it writes is published whole,
+    so a contender sees the finished record or no file at all. What is
+    left for this function is a writer this module does NOT control
+    filling the same path in two steps - an older copy of this file
+    running out of a parallel checkout is the ordinary case on a machine
+    that keeps many worktrees around, and that shape is exactly what was
+    FOUND LIVE: a 200-trial storm hit it twice, where the fast-path
+    winner's file existed but was not yet filled, the takeover reader saw
+    `{}` (unreadable), `staleness()` reported "its started-at (None)
+    could not be read" and, under an active `--take-stale`,
+    unconditionally overwrote the winner it had not finished announcing -
+    two acquire callers both exited 0, and the second one's write is what
+    survived. A time budget is all that can be done about somebody else's
+    two-step write, and a time budget is never a closed race: with the
+    stall raised past this budget it went back to failing five times out
+    of five, which is why the module's own writes stopped relying on it.
+
+    A genuinely corrupt or crashed record (the suite's own hand-written-
+    garbage arm) is not mid-write and never settles, so it falls through
+    unchanged to the existing STALE / --take-stale path exactly as
+    before; the budget only ever costs time on the rare unreadable case,
+    never on an ordinary read.
 
     Deliberately narrower than the mutex's own equivalent
     (`mutex_is_stale`, which is mtime-only and never re-reads): `check`
@@ -225,13 +291,21 @@ def settle_unreadable(path, existing):
         return existing
     try:
         age = time.time() - os.stat(path).st_mtime
-    except FileNotFoundError:
-        return existing  # genuinely gone now; the caller's own "gone in
-                        # the gap" path (existing is None) applies instead
+    except (FileNotFoundError, PermissionError):
+        # Genuinely gone, or in the mid-delete window Windows reports as
+        # access-denied rather than not-found (the module docstring's
+        # WINDOWS CAN REPORT A DELETE RACE section). Either way this call
+        # cannot date the record, so it hands back exactly what it was
+        # given and the caller's own paths decide unchanged - "gone in
+        # the gap" for None, STALE / --take-stale for {}. Widened in the
+        # S23 fix wave: catching only the first error let the second one
+        # escape `do_acquire` as an uncaught traceback, in the one
+        # function the slice that widened its siblings had just added.
+        return existing
     if age >= WRITE_SETTLE_SECONDS:
-        # Old enough that "still being filled" is implausible - a real
-        # write_new_lock call finishes in microseconds, not a quarter
-        # second. Presumptively corrupt or crashed, same as before.
+        # Old enough that "still being filled" is implausible - writing
+        # one small record takes microseconds, not a quarter second.
+        # Presumptively corrupt or crashed, same as before.
         return existing
     deadline = time.monotonic() + WRITE_SETTLE_SECONDS
     while time.monotonic() < deadline:
@@ -248,22 +322,96 @@ def lock_record(session, host, started_at):
 
 
 def write_lock(path, session, host, started_at):
+    """Rewrite an existing record in place. Callers hold `mutation_lock`.
+
+    In place rather than published, which is the module docstring's WHY
+    THE LATER WRITES ARE NOT PUBLISHED THE SAME WAY - the short of it is
+    that the mutex already keeps every other MUTATOR out, and publishing
+    through `os.replace` would fail against a lock-free reader far more
+    often than the torn read it would prevent.
+    """
     write_json(path, lock_record(session, host, started_at))
 
 
-def write_new_lock(handle, session, host, started_at):
-    """Fill a lock through the descriptor an exclusive create returned.
+# How many private names a publish tries before it gives up. A name
+# built from this process's id and six random bytes does not collide
+# with another caller's; the retry exists for the NTFS window in which a
+# name this process itself just deleted is still reported as taken, and
+# a fresh name is the whole remedy there.
+PRIVATE_NAME_ATTEMPTS = 3
 
-    One open, not an open-close-reopen: agent_init.write_new_lease makes
-    the same argument for a port lease and it holds here unchanged - the
-    gap between the file existing and the file being readable is real on
-    this platform, and `read_lock` above exists because that gap cannot
-    be closed from this end, only narrowed.
+
+def fill_private(path, tag, session, host, started_at):
+    """Write a COMPLETE lock record to a private sibling of `path`.
+
+    Returns the name it wrote, or None when no private name could be
+    created at all - which is the only failure a caller has to handle,
+    because nothing has been published at that point.
     """
-    with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as file:
-        json.dump(lock_record(session, host, started_at), file, indent=2,
-                  sort_keys=True)
-        file.write("\n")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    for _ in range(PRIVATE_NAME_ATTEMPTS):
+        candidate = "%s.%s-%d-%s" % (path, tag, os.getpid(),
+                                     os.urandom(6).hex())
+        try:
+            handle = os.open(candidate,
+                             os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except (FileExistsError, PermissionError):
+            continue
+        with os.fdopen(handle, "w", encoding="utf-8",
+                       newline="\n") as file:
+            json.dump(lock_record(session, host, started_at), file,
+                      indent=2, sort_keys=True)
+            file.write("\n")
+        return candidate
+    return None
+
+
+def discard_private(name):
+    """Remove a private name, or leave it: it is inert either way.
+
+    Nothing reads a name with these suffixes - every reader in this
+    module asks for the lock path itself - and the next publish makes its
+    own, so a cleanup that loses to the same Windows delete window the
+    module docstring describes costs a stray file and nothing else.
+    """
+    try:
+        os.remove(name)
+    except (FileNotFoundError, PermissionError):
+        pass
+
+
+def publish_lock(path, session, host, started_at):
+    """Install a complete record at `path`; True if this caller won it.
+
+    THE ACQUIRE RACE'S SINGLE-WINNER STEP (module docstring, THE
+    ATOMICITY THIS SCRIPT DOES OWN). `os.link` refuses a destination that
+    already exists, so at most one publisher wins - and it refuses it
+    AFTER the record is whole, so the destination never exists in a
+    half-written state for a contender to misread as a crashed holder's.
+
+    A caller that gets False LOST, full stop. It has written nothing to
+    `path` and must go read what the winner published rather than retry
+    the link, which is the difference between this and a budget: there is
+    no interval during which a second caller may decide the first one's
+    record is unusable.
+    """
+    temp = fill_private(path, "filling", session, host, started_at)
+    if temp is None:
+        return False
+    try:
+        os.link(temp, path)
+        return True
+    except (FileExistsError, PermissionError):
+        # Somebody else holds the name. On Windows the same fact arrives
+        # as access-denied instead during the narrow window a concurrent
+        # release's delete is still pending, and the answer is the same
+        # either way: this caller did not win it.
+        return False
+    finally:
+        # A successful link leaves the record reachable through both
+        # names; dropping the private one leaves the lock path holding
+        # it alone.
+        discard_private(temp)
 
 
 def age_hours(started_at):
@@ -422,7 +570,7 @@ def mutation_lock(state):
     """Serialize the read-modify-write of a lock that already exists.
 
     THE ATOMICITY THE STALE TAKEOVER AND THE RELEASE BOTH OWN (2nd-audit
-    MAJOR2). The initial acquire is single-winner because O_CREAT|O_EXCL
+    MAJOR2). The initial acquire is single-winner because `publish_lock`
     is, but taking over a stale lock and releasing one are read-modify-
     writes, and two of those interleave into the exact double-holder this
     module exists to prevent: a stale takeover that read-then-uncondition-
@@ -437,10 +585,12 @@ def mutation_lock(state):
     nobody else mutating meanwhile.
 
     Held only across the read and the write, never across stdout or the
-    O_EXCL fast path, so the section is microseconds. A mutex older than
+    publish fast path, so the section is microseconds. A mutex older than
     MUTEX_STALE_SECONDS is a crashed holder and is stolen single-winner;
     a call that cannot acquire within MUTEX_TIMEOUT_SECONDS raises rather
-    than hang.
+    than hang, on every arm of the loop below - see EVERY ARM OF A RETRY
+    LOOP TESTS ITS OWN DEADLINE in the module docstring for the version
+    of this loop that did not, and what it cost.
 
     WHY THE EXCLUSIVE CREATE ALSO CATCHES PermissionError (S23, #436,
     2026-08-21): reproduced live in a 100-iteration storm loop on
@@ -459,8 +609,9 @@ def mutation_lock(state):
     open lands. Treating PermissionError as ordinary contention here
     costs nothing extra: it re-enters the exact same stale-check/steal/
     retry loop FileExistsError already does, bounded by the same
-    MUTEX_TIMEOUT_SECONDS, so a genuine (non-transient) permission
-    problem still surfaces as a TimeoutError rather than looping forever.
+    MUTEX_TIMEOUT_SECONDS on every arm, so a genuine (non-transient)
+    permission problem surfaces as a TimeoutError naming it rather than
+    looping forever.
     """
     path = mutex_path(state)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -468,16 +619,24 @@ def mutation_lock(state):
     while True:
         try:
             handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except (FileExistsError, PermissionError):
-            if mutex_is_stale(path):
-                steal_mutex(path)
-            elif time.monotonic() > deadline:
+        except (FileExistsError, PermissionError) as collision:
+            # The deadline is tested FIRST, before any arm, and every arm
+            # sleeps: see EVERY ARM OF A RETRY LOOP TESTS ITS OWN DEADLINE
+            # in the module docstring for the loop this shape replaced and
+            # what it did. The failure that got past here is named in the
+            # message, because "a holder is wedged" alone does not tell
+            # the next reader whether the mutex could not be created or
+            # could not be stolen.
+            if time.monotonic() > deadline:
                 raise TimeoutError(
                     "could not acquire the prime-lock mutex at %s within "
-                    "%.0f s - a holder is wedged; investigate before "
-                    "forcing" % (path, MUTEX_TIMEOUT_SECONDS))
-            else:
-                time.sleep(MUTEX_SPIN_SECONDS)
+                    "%.0f s - a holder is wedged; the last attempt failed "
+                    "with %s: %s. Investigate before forcing"
+                    % (path, MUTEX_TIMEOUT_SECONDS,
+                       type(collision).__name__, collision))
+            if mutex_is_stale(path):
+                steal_mutex(path)
+            time.sleep(MUTEX_SPIN_SECONDS)
             continue
         with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as file:
             json.dump({"pid": os.getpid(), "host": socket.gethostname(),
@@ -499,10 +658,10 @@ def mutation_lock(state):
             pass
 
 
-# A lock file that vanished between a failed exclusive create and the
-# read that follows it means a release raced this call in the gap - real,
-# but narrow, and worth one more attempt rather than either an infinite
-# retry (nothing here waits forever) or reporting a race as a refusal.
+# A lock file that vanished between a lost publish and the read that
+# follows it means a release raced this call in the gap - real, but
+# narrow, and worth one more attempt rather than either an infinite retry
+# (nothing here waits forever) or reporting a race as a refusal.
 ACQUIRE_ATTEMPTS = 3
 
 
@@ -514,65 +673,54 @@ def do_acquire(args):
     os.makedirs(locks_dir(state), exist_ok=True)
 
     for _ in range(ACQUIRE_ATTEMPTS):
-        try:
-            handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except (FileExistsError, PermissionError):
-            # A lock already exists (or did a moment ago) - or, on Windows,
-            # is a moment from not existing: a concurrent release's
-            # os.remove(path) can leave this exclusive create seeing
-            # ERROR_ACCESS_DENIED (PermissionError) rather than
-            # ERROR_FILE_EXISTS for the same narrow NTFS delete-pending
-            # window mutation_lock's own exclusive create documents (S23,
-            # #436) - the two errors are the same fact reported through
-            # different Windows codes, and read_lock below already treats
-            # "gone in this exact gap" as a retry regardless of which one
-            # brought it here. Deciding what to do about it is a
-            # read-modify-write, so it runs under the mutation lock - the
-            # section that makes the takeover single-winner and keeps a
-            # release from deleting a replacement. Only the read and the
-            # write are inside it; the message is printed after it is
-            # dropped.
-            retry = False
-            with mutation_lock(state):
-                existing = settle_unreadable(path, read_lock(path))
-                if existing is None:
-                    # Released in the gap between the failed create and this
-                    # read; loop and let the exclusive create try again.
-                    retry = True
-                elif existing.get("session") == session:
-                    write_lock(path, session, host, now())
-                    rc, message = 0, ("re-acquired: %s - refreshed "
-                                      "started-at" % describe(existing))
-                else:
-                    reason = staleness(existing, args.stale_hours)
-                    if reason is None:
-                        rc, message = 1, (
-                            "REFUSED: %s holds a fresh lock (%s) - one "
-                            "Prime at a time; STOP and surface to the "
-                            "owner instead of working"
-                            % (existing.get("session", "<unnamed>"),
-                               describe(existing)))
-                    elif not args.take_stale:
-                        rc, message = 1, (
-                            "STALE: %s (%s) - acquirable only with "
-                            "--take-stale, never silently"
-                            % (describe(existing), reason))
-                    else:
-                        # Safe under the mutex: no other session can slip a
-                        # second takeover or a release between this decision
-                        # and this write.
-                        write_lock(path, session, host, now())
-                        rc, message = 0, (
-                            "acquired: took over a stale lock - %s (%s)"
-                            % (describe(existing), reason))
-            if retry:
-                continue
-            print(message)
-            return rc
-        else:
-            write_new_lock(handle, session, host, now())
+        if publish_lock(path, session, host, now()):
             print("acquired: new lock for session %s" % session)
             return 0
+        # Somebody else holds the name - either a lock was already there,
+        # or this call lost the publish race by microseconds. The two are
+        # the same situation from here: read what is in the slot and
+        # decide. That decision is a read-modify-write, so it runs under
+        # the mutation lock - the section that makes the takeover single-
+        # winner and keeps a release from deleting a replacement. Only the
+        # read and the write are inside it; the message is printed after
+        # it is dropped.
+        retry = False
+        with mutation_lock(state):
+            existing = settle_unreadable(path, read_lock(path))
+            if existing is None:
+                # Released in the gap between the lost publish and this
+                # read; loop and let the publish try again.
+                retry = True
+            elif existing.get("session") == session:
+                write_lock(path, session, host, now())
+                rc, message = 0, ("re-acquired: %s - refreshed "
+                                  "started-at" % describe(existing))
+            else:
+                reason = staleness(existing, args.stale_hours)
+                if reason is None:
+                    rc, message = 1, (
+                        "REFUSED: %s holds a fresh lock (%s) - one "
+                        "Prime at a time; STOP and surface to the "
+                        "owner instead of working"
+                        % (existing.get("session", "<unnamed>"),
+                           describe(existing)))
+                elif not args.take_stale:
+                    rc, message = 1, (
+                        "STALE: %s (%s) - acquirable only with "
+                        "--take-stale, never silently"
+                        % (describe(existing), reason))
+                else:
+                    # Safe under the mutex: no other session can slip a
+                    # second takeover or a release between this decision
+                    # and this write.
+                    write_lock(path, session, host, now())
+                    rc, message = 0, (
+                        "acquired: took over a stale lock - %s (%s)"
+                        % (describe(existing), reason))
+        if retry:
+            continue
+        print(message)
+        return rc
 
     print("REFUSED: could not establish %s's state after %d attempt(s) - "
           "something is racing this call" % (path, ACQUIRE_ATTEMPTS))
