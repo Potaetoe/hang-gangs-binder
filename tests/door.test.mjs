@@ -311,8 +311,9 @@ function localStorageStub() {
     welcome.childNodes[0].text === "Line one." &&
     welcome.childNodes[1].tagName === "BR" &&
     welcome.childNodes[2].text === "Line two.");
-  check("...and caches the admin's default theme for theme-init.js's " +
-    "next load",
+  check("...and caches the admin's default theme for theme.js's own " +
+    "picker pre-selection on a later load (0.9-M3-S32, #456: theme-" +
+    "init.js no longer reads this key)",
     localStore._values.get("hgb-default-theme") === "daylight");
 
   check("cacheDefaultTheme accepts a name theme.js's own BG object " +

@@ -93,7 +93,8 @@ def barrier_trial(state, specs):
         procs.append((session, subprocess.Popen(
             [sys.executable, "-c", _WORKER, TOOLS_DIR, state, verb,
              session, go, *flags], stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE, text=True)))
+            stderr=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace")))
     # Let every worker reach its spin loop before firing the barrier, so
     # the contention is real. Correctness does not depend on perfect
     # simultaneity - the single-winner invariant holds under any
@@ -732,7 +733,8 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
              "    print('HELD', flush=True)\n"
              "    time.sleep(2.0)\n",
              steal_path],
-            stdout=subprocess.PIPE, text=True)
+            stdout=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace")
         holder.stdout.readline()  # blocks until the subprocess has it open
         old = time.time() - (prime_lock.MUTEX_STALE_SECONDS + 5)
         os.utime(steal_path, (old, old))
@@ -892,7 +894,8 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
              "    print('HELD', flush=True)\n"
              "    time.sleep(30.0)\n",
              held_path],
-            stdout=subprocess.PIPE, text=True)
+            stdout=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace")
         live.stdout.readline()  # blocks until the subprocess has it open
         old = time.time() - (prime_lock.MUTEX_STALE_SECONDS + 5)
         os.utime(held_path, (old, old))
@@ -1068,7 +1071,8 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
          "os.link = die\n"
          "prime_lock.main(['acquire', 'doomed', '--state', sys.argv[2]])\n",
          TOOLS_DIR, crash_state],
-        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+        encoding="utf-8", errors="replace")
     check("a publisher killed between filling and publishing exits "
           "nonzero without a traceback",
           dying.returncode != 0 and "Traceback" not in (dying.stderr or ""))

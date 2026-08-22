@@ -1,9 +1,10 @@
 /*
  * Palette picker, shared by every page in this directory - one copy so
- * the pages cannot drift. The saved palette is applied before first
- * paint by theme-init.js in each page's <head>; this file wires the
- * palette buttons, keeps the browser-chrome color (meta theme-color) in
- * step with the palette, and persists the choice.
+ * the pages cannot drift. The saved palette, or the phone's own light/
+ * dark scheme when nothing is saved, is applied before first paint by
+ * theme-init.js in each page's <head>; this file wires the palette
+ * buttons, keeps the browser-chrome color (meta theme-color) in step
+ * with the palette, and persists a member's own choice.
  *
  * There is one control to wire and it does not open: four swatches that
  * are simply there, in every page's footer, on the owner's ruling
@@ -35,11 +36,13 @@
   // nobody has written is a clean one.
   const KEY = "hgb-palette";
   // The admin's configured resting palette, cached by apps/web/site-content.js
-  // from GET /config and read here for the same reason theme-init.js
-  // reads it (see that file's header for why this script cannot fetch it
-  // directly). Consulted only when KEY holds nothing usable, exactly
-  // where theme-init.js's own pre-paint read sits, so the two scripts
-  // never confirm two different palettes on one load.
+  // from GET /config. Owner ruling, UX record #454 item 15 (2026-08-22;
+  // 0.9-M3-S32, #456, superseding 0.9-M3-S12's #418 "admin default from
+  // the second load" rule): this key no longer paints a page on its
+  // own. It is read only below, to decide which swatch the picker shows
+  // as pre-selected for a member who has made no choice of their own;
+  // the pre-paint script this page's <head> loads first never touches
+  // it any more.
   const DEFAULT_THEME_KEY = "hgb-default-theme";
   const BG = {
     pink: "#1e141a", daylight: "#f3eadb", midnight: "#120d10",
@@ -60,32 +63,38 @@
     );
   }
 
-  function apply(name) {
-    document.documentElement.setAttribute("data-theme", name);
-    paintChrome(name);
+  // paintName is what gets painted - the documentElement attribute and
+  // the browser chrome. pressedName, when it differs, is which swatch
+  // shows as pressed without repainting anything: the picker pre-
+  // selecting the admin's configured default (see adminDefault below)
+  // while the page itself keeps the resting palette theme-init.js
+  // already painted is exactly this split, and it is the only reason
+  // apply() takes two names instead of one. The click handler below
+  // passes a single name, so a member's own pick paints and marks the
+  // same swatch, as it always has.
+  function apply(paintName, pressedName) {
+    document.documentElement.setAttribute("data-theme", paintName);
+    paintChrome(paintName);
+    const mark = pressedName || paintName;
     Array.prototype.forEach.call(buttons, function (b) {
       b.setAttribute("aria-pressed",
-        String(b.getAttribute("data-set-theme") === name));
+        String(b.getAttribute("data-set-theme") === mark));
     });
   }
 
-  // What the stylesheet gives a page carrying no data-theme attribute,
-  // AND no admin default has ever been learned (see adminDefault below).
-  // This function is a mirror of the two :root:not([data-theme]) media
-  // blocks in theme.css and has to stay one: apply() writes the
-  // attribute, which outranks both of them, so a disagreement here does
-  // not degrade quietly - the page paints the palette the CSS chose and
-  // then repaints to this one the moment this file runs.
-  //
-  // Contrast is tested first for the same reason it sits last in
-  // theme.css: a system asking for more contrast AND for light matches
-  // both blocks, and contrast is the need while lightness is the
-  // preference.
-  function preferred() {
-    if (!window.matchMedia) return "midnight";
-    if (matchMedia("(prefers-contrast: more)").matches) return "contrast";
-    if (matchMedia("(prefers-color-scheme: light)").matches) return "daylight";
-    return "midnight";
+  // What a member with no saved choice of their own gets, on this load
+  // and every one before they ever pick: the phone's own light/dark
+  // scheme, nothing more (owner ruling, UX record #454 item 15). A
+  // mirror of theme-init.js's own synchronous pre-paint read, on
+  // purpose - apply() below writes the same attribute theme-init.js
+  // already wrote, and a disagreement here would repaint the page the
+  // instant this script ran, which is the flash both files exist to
+  // prevent. "No preference" - no matchMedia support, or the query not
+  // matching - resolves to light, the ruling's own words.
+  function schemeDefault() {
+    return (window.matchMedia &&
+      matchMedia("(prefers-color-scheme: dark)").matches)
+      ? "midnight" : "daylight";
   }
 
   let stored = null;
@@ -94,24 +103,21 @@
   // A stored value naming a palette this file does not paint - "custom"
   // from before the ruling retired it, or anything else hand-edited or
   // from a future version - is not a choice this file can honor. Falls
-  // through to adminDefault or preferred() instead, the same resting
-  // state a first-time visitor gets: no crash, no half-applied state,
-  // and BG[name] above already guards paintChrome() the same way for
-  // the browser chrome.
+  // through to the resting scheme-based palette instead (schemeDefault()
+  // below), the same resting state a first-time visitor gets: no crash,
+  // no half-applied state, and BG[name] above already guards
+  // paintChrome() the same way for the browser chrome.
   if (stored && !Object.prototype.hasOwnProperty.call(BG, stored)) {
     stored = null;
   }
 
   // The admin's configured resting palette (site.defaultTheme from
   // GET /config), read from the cache apps/web/site-content.js writes -
-  // see this file's DEFAULT_THEME_KEY comment above and theme-init.js's
-  // header for why neither script fetches it directly. Sits between a
-  // member's own choice and the system-preference fallback, exactly
-  // where theme-init.js's own pre-paint read puts it, so the palette
-  // this file CONFIRMS is always the one theme-init.js already PAINTED -
-  // an admin default this file ignored here would repaint the page the
-  // instant this script ran, which is the flash both files exist to
-  // prevent.
+  // see this file's DEFAULT_THEME_KEY comment above for why this script
+  // does not fetch it directly. Used ONLY below, to decide which swatch
+  // the picker pre-selects when a member has made no choice of their
+  // own - never to decide what paints, which is schemeDefault()'s job
+  // alone now.
   let adminDefault = null;
   try { adminDefault = localStorage.getItem(DEFAULT_THEME_KEY); } catch (e) {}
   if (adminDefault && !Object.prototype.hasOwnProperty.call(BG, adminDefault)) {
@@ -125,9 +131,9 @@
    * what pins which pages those are.
    *
    * It still has browser chrome to keep honest: theme-init.js paints
-   * the saved palette before first paint, and without this the address
-   * bar on a phone would stay Midnight's near-black above a parchment
-   * page.
+   * the saved palette, or the phone's own resting scheme when none is
+   * saved, before first paint, and without this the address bar on a
+   * phone would stay out of step with the page under it.
    *
    * data-theme is deliberately NOT written there. The attribute
    * outranks both :root:not([data-theme]) blocks in theme.css, so
@@ -136,14 +142,22 @@
    * following it.
    */
   if (!buttons.length) {
-    paintChrome(stored || adminDefault || preferred());
+    paintChrome(stored || schemeDefault());
     return;
   }
 
-  // Reflected without persisting: a visitor who has never touched a
-  // control has not made a choice, and writing one would freeze today's
-  // system setting into storage.
-  apply(stored || adminDefault || preferred());
+  // resting: the same value theme-init.js already painted - a member's
+  // own stored choice, or the phone's light/dark scheme when there is
+  // none. pressed: which swatch the picker shows as pressed - a
+  // member's own choice still wins outright, otherwise the admin's
+  // configured default when one is known (the picker pre-selecting it,
+  // per the owner's ruling), and only when neither exists does it fall
+  // back to matching whatever is actually painted. A visitor who has
+  // never touched a control has not made a choice, so nothing here is
+  // written to storage.
+  const resting = stored || schemeDefault();
+  const pressed = stored || adminDefault || resting;
+  apply(resting, pressed);
 
   // No document-level listener here, and that is the whole difference
   // the ruling on #274 made. Escape and outside-click both belonged to

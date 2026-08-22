@@ -750,6 +750,48 @@ LEDGER = [
         "status": "never",
     },
     {
+        "id": "GET /admin-departed",
+        "surface": "route",
+        "claim": "the list an admin sees is built from the bot's live "
+                 "verdict and not from staleness, so a member who has "
+                 "simply been quiet for a month is absent from it "
+                 "while a real leaver is present. No stub can reach "
+                 "this: the verdict comes from Telegram's own "
+                 "getChatMember against a real group, and the whole "
+                 "point of the route is that the answer is theirs "
+                 "rather than this Worker's",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
+    {
+        "id": "DELETE /admin-departed/{}",
+        "surface": "route",
+        "claim": "erasing one departed member on a real deployment "
+                 "removes that account's submissions, directory row, "
+                 "membership rows and sessions and nothing of anybody "
+                 "else's, in one D1 transaction - the half a stub "
+                 "cannot reach is the atomicity, since a batch that "
+                 "half-applied would leave a member's entries gone and "
+                 "their session still opening the site. A call this "
+                 "route refuses erases nothing, and the refusal names "
+                 "whichever of the route's several guards stopped it "
+                 "rather than answering one bare no: the bot's own "
+                 "word quoted back for a member Telegram says is still "
+                 "there, the operator's-list sentence for an account "
+                 "an always_allow entry holds open - about which the "
+                 "bot is never asked, so nobody is quoted - the named "
+                 "failure for an account whose standing could not be "
+                 "settled at all, and the ones that never reach a "
+                 "verdict: a malformed id, the caller's own account, "
+                 "the last granting admin row, a membership pre-check "
+                 "that did not answer, and a membership row spelled in "
+                 "a letter case the guard and the delete disagree "
+                 "about. Counting them is this row's job on any slice "
+                 "that adds one",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
+    {
         "id": "GET /membership",
         "surface": "route",
         "claim": "the listing separates membership from malformed and "
@@ -2092,7 +2134,8 @@ def changed_since(sha, paths):
         done = subprocess.run(
             ["git", "log", "--format=", "--name-only", "%s..HEAD" % sha,
              "--", *paths],
-            cwd=REPO, capture_output=True, text=True, timeout=30)
+            cwd=REPO, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
     if done.returncode != 0:
@@ -2174,7 +2217,8 @@ def commits_since(sha):
     try:
         done = subprocess.run(
             ["git", "rev-list", "--count", "%s..HEAD" % sha],
-            cwd=REPO, capture_output=True, text=True, timeout=30)
+            cwd=REPO, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
     if done.returncode != 0:
@@ -2338,6 +2382,19 @@ def problems():
 
 
 def main():
+    # Encoding-safe stdout/stderr (0.9-M3-S29 fix wave, #449 F2 - the
+    # write-side twin ship_check.py's main() already carries): the
+    # read-side UTF-8 fix in changed_since()/commits_since() can now
+    # hand back a real non-ASCII character or a replacement character
+    # (U+FFFD) - this console's own cp1252 stdout cannot re-encode
+    # either one, and printing either crashes print() with
+    # UnicodeEncodeError, which is exactly what this reconfigure block
+    # exists to prevent. Guarded by hasattr() so a caller with no real
+    # stream (a StringIO capture, as some suites use) is untouched.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     found = problems()
     for problem in found:
         print("FAIL  %s" % problem)

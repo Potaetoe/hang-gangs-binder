@@ -472,14 +472,32 @@ CREATE TABLE IF NOT EXISTS site_content (
 -- inventing an account id would attribute an act to somebody who did
 -- not do it.
 --
--- NOTHING A MEMBER TYPED GOES HERE. The values this table summarizes
--- are site copy and settings, which GET /content already serves without
--- a credential; entry rows are not written through any route that
--- appends here, and the one admin action over a member's own data -
--- removing a submission - deliberately does not append, because a line
--- naming which row was taken down is a fact about a member rather than
--- about the site. That action is the departed-member cleanup slice's,
--- and it takes its own security review (#385 rule 4).
+-- NOTHING A MEMBER TYPED GOES HERE, and the two admin actions over a
+-- member's own data are where that rule is decided rather than assumed
+-- (0.9-M3-S15, #420, which #385 rule 4 gives its own security review).
+--
+-- Most of what this table summarizes is site copy and settings, which
+-- GET /content already serves without a credential. The two exceptions
+-- are ruled separately, because they are not the same act:
+--
+--   * ERASING A DEPARTED MEMBER (DELETE /admin-departed/:id) DOES
+--     append. The line carries who erased, twelve characters of the
+--     account id, Telegram's own verdict, and the COUNT of rows
+--     removed in each class - never a row, never a label, never a
+--     handle. What makes it writable is the counting: "four entries
+--     and a directory row came down" is a fact about an administrative
+--     act, and the subject is somebody the group's own bot has said is
+--     gone. #385 rule 5 makes a log line part of every admin change,
+--     and this is the largest one an admin can make.
+--   * REMOVING ONE SUBMISSION (DELETE /submission/:id) does NOT, in
+--     either direction. A member deleting their own row is the
+--     member's own act rather than an admin change, so rule 5 does not
+--     reach it at all; and an admin removing a single row belongs to a
+--     member who is still here, where a line naming the act is a fact
+--     about a present member's data sitting in the clear beside that
+--     member's remaining rows. The erase above can be counted without
+--     naming anybody's data because the account is being emptied; one
+--     row out of a live account cannot.
 --
 -- `summary` is BOUNDED by server/worker.js rather than by this column,
 -- and the bound is the point: a value may be kilobytes of site copy,
@@ -600,11 +618,28 @@ CREATE TABLE IF NOT EXISTS membership (
 -- directory INSIDE what is encrypted rather than beside it: a clear-text
 -- roster of handles next to `submissions` answers "did @foo submit?"
 -- without opening a single entry, and a hash of a handle is the same
--- oracle over a smaller alphabet. So the handle, the display name and the
--- role live in `ciphertext`, sealed by the Worker under purpose 'dir'
--- (server/store-crypto.js's sealDirectory; 0.9-M1-S11, #340), and the only
--- things this table shows a dump are the account-id HMAC that keys the row
--- and two timestamps.
+-- oracle over a smaller alphabet. So the handle, the display name, the
+-- role AND THE NUMERIC TELEGRAM ID live in `ciphertext`, sealed by the
+-- Worker under purpose 'dir' (server/store-crypto.js's sealDirectory;
+-- 0.9-M1-S11, #340), and the only things this table shows a dump are the
+-- account-id HMAC that keys the row and two timestamps.
+--
+-- THE NUMERIC ID IS IN THAT BLOB BY OWNER RULING (2026-08-21, at
+-- 0.9-M3-S15, #420), and it is there for one reason rather than for
+-- convenience: #385 rule 4 lets an admin erase a DEPARTED member's rows,
+-- only the bot may say who is departed, and getChatMember takes a numeric
+-- id - which a one-way HMAC cannot yield and no by-username call
+-- replaces. The ruled power and the stored id are one decision.
+--
+-- What bounds it, all enforced rather than promised: the id is never a
+-- column here, never an index, never served by any route and never
+-- logged; it is sealed under the same key, purpose and AAD binding as the
+-- handle beside it, so a dump of this table is unchanged by its presence;
+-- and departedVerdict() in server/worker.js is the ONLY thing that
+-- unseals it, to ask the bot and drop it. A second reader is a new
+-- decision rather than a refactor. Rows written before that ruling carry
+-- no id and read as "unknown until next sign-in" - never guessed in
+-- either direction - and gain one when their member next signs in.
 --
 -- `account_id` is the SAME value `submissions` and `membership` carry - an
 -- HMAC of the Telegram numeric id under ACCOUNT_SECRET - and it is the
