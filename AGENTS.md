@@ -58,7 +58,11 @@ brief that names one is quoting them.
 ruling 2026-08-21, the M3 delivery shape, #402). A slice is
 **sensitive** if any declared file is under `server/`, is an
 auth/session module, is deploy configuration (`wrangler.toml`,
-`.github/workflows/`, the deployed `_headers` layer) or crypto;
+`.github/workflows/`, the deployed `_headers` layer), crypto, or (Prime's
+ruling on #460, 2026-08-22, amending this list) `tools/reaper.py` or
+`tools/prime_lock.py` by themselves — the reaper deletes worktrees and
+branches, the lock gates Prime sessions, and neither file matched any
+existing sensitive pattern before this;
 **trivial** if every declared file is documentation, a test ARM
 (`tests/*.test.mjs`), or site-configuration text; **normal**
 otherwise — including the 0.9 gate's own runner, preflight and
@@ -358,7 +362,16 @@ guards, never as the pattern for a new one.
   is expected under five minutes; a run that routinely misses that on
   an otherwise-idle machine is a slice worth cutting the way 0.9-M3-S35
   cut `tests/reaper.test.mjs`, not a budget
-  worth silently raising.
+  worth silently raising. **A single arm that never finishes is a
+  separate failure from a slow one** (0.9-M3-S35 fix wave 1, #460, F3):
+  the whole-run budget above only fires after every arm has already
+  returned, so a hung arm — a deadlock, a wedged subprocess — used to
+  hang the gate forever with no budget line ever printed. Each arm now
+  carries its own timeout (`tests/run.mjs`'s own header names the
+  environment variable that overrides it, the same one-home-per-fact
+  rule as the pool and budget levers above); past it, the arm's whole
+  process tree is killed and the gate reds by the arm's name and the
+  timeout in seconds, rather than waiting on it.
 - **A sensitive slice's fix wave is re-fired by an agent who did not
   author the fix, before any landing order issues** (owner ruling A1,
   audit finding F1, 2026-08-14; narrowed to the sensitive tier by
