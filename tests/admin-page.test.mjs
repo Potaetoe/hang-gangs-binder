@@ -138,15 +138,13 @@ const Admin = globalThis.BinderAdmin;
 check("admin.js publishes BinderAdmin, frozen",
   Admin !== undefined && Object.isFrozen(Admin));
 
+const beforeDistParity = Object.keys(globalThis.BinderAdmin).sort().join(",");
+await import("data:text/javascript," + encodeURIComponent(distJs) +
+  "#dist-parity");
+const afterDistParity = Object.keys(globalThis.BinderAdmin).sort().join(",");
 check("admin.js's shipped bytes and dist's agree, functionally: both " +
   "publish the same frozen API surface",
-  (async () => {
-    const before = Object.keys(globalThis.BinderAdmin).sort().join(",");
-    await import("data:text/javascript," + encodeURIComponent(distJs) +
-      "#dist-parity");
-    const after = Object.keys(globalThis.BinderAdmin).sort().join(",");
-    return before === after;
-  })());
+  beforeDistParity === afterDistParity);
 
 /* -- Settings validation, mirroring S8's real server-side rules      */
 /* (#414 completion, comment 5370945709, the "contract, in full" block) -- */
