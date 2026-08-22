@@ -764,6 +764,39 @@ LEDGER = [
         "status": "never",
     },
     {
+        "id": "GET /admin-departed, the total beside the cap",
+        "surface": "route",
+        "claim": "the count of stale candidates the route sends beside "
+                 "its cap (0.9-M3-S38, #471, serving the owner's ruling "
+                 "at #454 item 23 - a capped list sends its total and "
+                 "the page says 'showing 50 of N') comes out of the SAME "
+                 "statement that builds the list, as `COUNT(*) OVER ()`. "
+                 "That construct is evaluated over every row the WHERE "
+                 "clause admits and BEFORE `LIMIT` truncates, which is "
+                 "the whole reason one read can answer both questions "
+                 "and no second read exists to disagree with it. "
+                 "tests/departed-cleanup.test.mjs section 7 decides "
+                 "every rule of it off-line against a stub that models "
+                 "that evaluation order - the total at 0, 1, 50, 51 and "
+                 "120 candidates, the cap read out of the shipped "
+                 "source, the list length at min(total, cap), the three "
+                 "states plus the current members the route drops adding "
+                 "up to the candidates examined, and a count cell that "
+                 "arrives unusable in four shapes. WHAT STAYS LIVE-ONLY "
+                 "is D1 itself doing that evaluation over a real "
+                 "`directory` table: the stub is this repository's own "
+                 "reading of the order, and a database that counted "
+                 "after the truncation instead would send the cap as the "
+                 "total and the page would read 'showing 50 of 50' "
+                 "forever - correct-looking and always wrong. Point a "
+                 "real deployment at a directory holding more stale rows "
+                 "than the cap, read the answer, and check `total` "
+                 "against a hand-run `SELECT COUNT(*)` over the same "
+                 "cutoff",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
+    {
         "id": "DELETE /admin-departed/{}",
         "surface": "route",
         "claim": "erasing one departed member on a real deployment "

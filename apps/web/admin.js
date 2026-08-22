@@ -666,6 +666,35 @@
       hasMore: shown < total };
   }
 
+  /* Item 23 ("a capped list sends its total and the page says 'showing
+   * 50 of N'"): GET /admin-departed asks the bot about at most its own
+   * DEPARTED_LIST_CAP accounts, so a group with more stale rows than
+   * that has an answer that stopped short - and the More button above
+   * windows what arrived, which is why it can never reach past the cap
+   * and why only the Worker's own counts can say so.
+   *
+   * BOTH NUMBERS COME OFF THE RESPONSE. A page holding its own copy of
+   * the cap would go on printing 50 after the Worker's constant moved,
+   * and a page deriving the total from the rows it received would
+   * print the cap twice.
+   *
+   * NOT departedSections()'s `total`, which counts the rows the Worker
+   * SENT and drives the More button. This one counts the candidates it
+   * read before the cap. Two different numbers about two different
+   * things, which is why neither is derived from the other.
+   *
+   * Numbers or nothing: an answer that carries no counts - one from a
+   * Worker without them, or a malformed read - draws no line at all
+   * rather than "showing undefined of NaN". */
+  function departedCapNote(payload) {
+    const total = payload && payload.total;
+    const cap = payload && payload.cap;
+    if (typeof total !== "number" || !Number.isFinite(total)) return "";
+    if (typeof cap !== "number" || !Number.isFinite(cap)) return "";
+    if (!(total > cap)) return "";
+    return "showing " + cap + " of " + total;
+  }
+
   /* ---------------------------------------------------------------- */
   /* Walking away from the machine (DESIGN.md, "Sessions": "Idle expiry */
   /* is one rule everywhere") - the same window every signed-in page   */
@@ -742,6 +771,7 @@
     eraseDepartedSentence: eraseDepartedSentence,
     DEPARTED_PAGE_SIZE: DEPARTED_PAGE_SIZE,
     departedSections: departedSections,
+    departedCapNote: departedCapNote,
     IDLE_WINDOW: IDLE_WINDOW,
     idleVerdict: idleVerdict,
     idleNotice: idleNotice,
@@ -1922,27 +1952,38 @@
         empty.className = "hint";
         empty.textContent = "Nobody has left - nothing to clean up.";
         list.appendChild(empty);
-        return;
-      }
-      for (const section of view.sections) {
-        if (!section.rows.length) continue;
-        const heading = document.createElement("h2");
-        heading.textContent = DEPARTED_TITLES[section.key];
-        list.appendChild(heading);
-        for (const entry of section.rows) {
-          list.appendChild(departedRow(entry, section.key));
+      } else {
+        for (const section of view.sections) {
+          if (!section.rows.length) continue;
+          const heading = document.createElement("h2");
+          heading.textContent = DEPARTED_TITLES[section.key];
+          list.appendChild(heading);
+          for (const entry of section.rows) {
+            list.appendChild(departedRow(entry, section.key));
+          }
+        }
+        if (view.hasMore) {
+          const more = document.createElement("button");
+          more.type = "button";
+          more.className = "secondary";
+          more.textContent = "More";
+          more.addEventListener("click", function () {
+            departedRevealed += DEPARTED_PAGE_SIZE;
+            renderDeparted();
+          });
+          list.appendChild(more);
         }
       }
-      if (!view.hasMore) return;
-      const more = document.createElement("button");
-      more.type = "button";
-      more.className = "secondary";
-      more.textContent = "More";
-      more.addEventListener("click", function () {
-        departedRevealed += DEPARTED_PAGE_SIZE;
-        renderDeparted();
-      });
-      list.appendChild(more);
+      /* The footer is the last line of the card in EVERY state,
+       * including the empty one: a group whose fifty candidates are all
+       * still members shows no rows at all, and the empty sentence on
+       * its own would read as the whole group checked and cleared. */
+      const capNote = departedCapNote(departedPayload);
+      if (!capNote) return;
+      const footer = document.createElement("p");
+      footer.className = "hint";
+      footer.textContent = capNote;
+      list.appendChild(footer);
     }
 
     async function loadDeparted() {

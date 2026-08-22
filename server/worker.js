@@ -5044,15 +5044,63 @@ async function eraseAccount(env, accountId) {
  * in this function: answering a non-admin at all - even with an empty
  * list - would tell them whether anybody has left, which is a fact
  * about the group's composition and not theirs to have.
+ *
+ * IT ALSO SAYS HOW MUCH IT DID NOT LOOK AT (#454 item 23, the owner's
+ * ruling of 2026-08-22). `total` is how many candidates the staleness
+ * filter found and `cap` is DEPARTED_LIST_CAP's own value, so a reader
+ * can tell a list that stopped short from a complete one - which
+ * nothing in the answer said, leaving the page's "more" unable to
+ * reach past the cap and unable to say so. Both are counts of rows:
+ * they name nobody, and every per-member rule above is untouched by
+ * them.
  */
 async function handleReadDeparted(env, origin) {
   const cutoff = new Date(
     Date.now() - DEPARTED_STALE_DAYS * 24 * 3600 * 1000).toISOString();
 
+  /*
+   * ONE READ ANSWERS BOTH QUESTIONS. `COUNT(*) OVER ()` is evaluated
+   * over every row the WHERE clause admits and BEFORE `LIMIT`
+   * truncates, so each returned row carries the count of candidates
+   * that existed. A separate `SELECT COUNT(*)` would be a second look
+   * at a table that sign-ins move, and two looks a moment apart can
+   * disagree - which is how a page ends up saying "showing 50 of 49".
+   *
+   * The ORDER BY is untouched and must stay untouched: oldest-stale
+   * first is the owner's ruling at #454 item 13, and the count sits
+   * beside the list rather than in front of it.
+   *
+   * WHAT THE COUNT COSTS: the read visits every stale row instead of
+   * stopping at the cap, which server/schema.sql's `directory_last_seen`
+   * index keeps a range scan over the stale window rather than a full
+   * table read. What the cap bounds is the outbound getChatMember call
+   * per candidate - the expensive half, and the reason the cap exists -
+   * and that is still capped at DEPARTED_LIST_CAP.
+   */
   const stale = await env.DB.prepare(
-    "SELECT account_id, last_seen_at FROM directory WHERE last_seen_at < ? " +
+    "SELECT account_id, last_seen_at, COUNT(*) OVER () AS candidates " +
+    "FROM directory WHERE last_seen_at < ? " +
     "ORDER BY last_seen_at ASC LIMIT " + DEPARTED_LIST_CAP
   ).bind(cutoff).all();
+
+  const candidates = ((stale && stale.results) || []);
+  /*
+   * ZERO CANDIDATES HAVE NOWHERE TO CARRY A COUNT - no rows come back
+   * at all - so the count is read off the first row when there is one
+   * and is zero otherwise, which is the same fact stated twice.
+   *
+   * AND IT NEVER UNDERSTATES THE ROWS IN ITS OWN HAND. A cell that
+   * arrives as null, as a string, or not at all would put NaN in the
+   * response, where JSON writes it as null and tells a reader less
+   * than the list beside it already shows. This is a display number
+   * and not a guard - eraseAccount() never reads it, and no erase
+   * turns on it - so a value that is not a number at least as large as
+   * the list falls back to the list, where failing closed would be
+   * theatre.
+   */
+  const counted = candidates.length ? Number(candidates[0].candidates) : 0;
+  const total = Number.isFinite(counted) && counted >= candidates.length
+    ? counted : candidates.length;
 
   const labels = new Map();
   const rows = await env.DB.prepare(
@@ -5065,7 +5113,7 @@ async function handleReadDeparted(env, origin) {
   const departed = [];
   const unknown = [];
   const allowed = [];
-  for (const row of ((stale && stale.results) || [])) {
+  for (const row of candidates) {
     const verdict = await departedVerdict(env, row.account_id);
     const entry = {
       accountId: row.account_id,
@@ -5116,7 +5164,8 @@ async function handleReadDeparted(env, origin) {
   }
 
   return json(
-    { ok: true, departed: departed, unknown: unknown, allowed: allowed },
+    { ok: true, departed: departed, unknown: unknown, allowed: allowed,
+      total: total, cap: DEPARTED_LIST_CAP },
     200, origin);
 }
 
