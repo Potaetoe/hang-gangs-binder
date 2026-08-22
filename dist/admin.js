@@ -330,8 +330,16 @@
   const FIELD_READ_ONLY_REASON = "Its units and chart bands are part " +
     "of a release somebody read, not something to edit here.";
 
+   
+   
+   
+   
+   
+   
+   
+   
   const VALUES_OUTSIDE_REASON = "This field's choices live outside " +
-    "the form spec, so they are not edited here. Its label still is.";
+    "the form spec, so they are not edited here.";
 
   
 
@@ -996,6 +1004,19 @@
      
      
      
+     
+    const STALE_AFTER_WRITE = "Saved, but the list could not be read " +
+      "back afterward - what is shown below may be out of date.";
+
+     
+     
+     
+     
+     
+     
+     
+     
+     
     async function sendFieldWrite(request, successMessage) {
       sayFields("Saving…", null);
       let response;
@@ -1004,16 +1025,23 @@
       } catch (error) {
         detail(why(error));
         sayFields("That could not be sent.", "bad");
-        return;
+        return false;
       }
-      if (sessionRefused(response, sayFields)) return;
+      if (sessionRefused(response, sayFields)) return false;
       if (!response.ok) {
         handleFieldsRefusal(response.status, await refusalBody(response));
-        return;
+        return false;
       }
-      await loadFields();
-      sayFields(successMessage, null);
-      loadLog();
+      const reread = await loadFields();
+      if (reread === "ok") {
+        sayFields(successMessage, null);
+        loadLog();
+      } else if (reread === "failed") {
+        sayFields(STALE_AFTER_WRITE, "bad");
+      }
+       
+       
+      return true;
     }
 
     function retireField(id) {
@@ -1084,15 +1112,28 @@
 
      
 
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
     function fieldHeaderRow(view) {
       const row = document.createElement("div");
       row.className = "row wrap-row";
       const name = document.createElement("span");
-      name.className = "wrap-row-value";
+      name.className = "hint";
       name.textContent = view.label + (view.active ? "" : " (retired)");
       row.appendChild(name);
       const id = document.createElement("span");
-      id.className = "hint";
+      id.className = "wrap-row-value";
       id.textContent = view.id;
       row.appendChild(id);
       return row;
@@ -1108,14 +1149,16 @@
       const block = document.createElement("div");
       block.className = "stack-tight";
 
+       
+       
       const labelRow = document.createElement("div");
       labelRow.className = "row wrap-row";
       const name = document.createElement("span");
-      name.className = "wrap-row-value";
+      name.className = "hint";
       name.textContent = value.label + (value.retired ? " (retired)" : "");
       labelRow.appendChild(name);
       const idSpan = document.createElement("span");
-      idSpan.className = "hint";
+      idSpan.className = "wrap-row-value";
       idSpan.textContent = value.id;
       labelRow.appendChild(idSpan);
       block.appendChild(labelRow);
@@ -1275,7 +1318,14 @@
         add.type = "button";
         add.className = "secondary";
         add.textContent = "Add value";
-        add.addEventListener("click", function () {
+         
+         
+         
+         
+         
+         
+         
+        add.addEventListener("click", async function () {
           const verdict = validateValueLabel(input.value);
           if (!verdict.ok) {
             sayFields(verdict.message, "bad");
@@ -1286,8 +1336,10 @@
               " values, retired ones counted.", "bad");
             return;
           }
-          addValue(view.id, verdict.value);
-          input.value = "";
+          add.disabled = true;
+          const written = await addValue(view.id, verdict.value);
+          add.disabled = false;
+          if (written) input.value = "";
         });
         addRow.appendChild(add);
         block.appendChild(addRow);
@@ -1348,6 +1400,11 @@
       }
     }
 
+     
+     
+     
+     
+     
     async function loadFields() {
       sayFields("Loading…", null);
       let payload;
@@ -1355,16 +1412,16 @@
         const response = await fetch(config.endpoint + "/spec", {
           headers: root.BinderSession.authorization(),
         });
-        if (sessionRefused(response, sayFields)) return;
+        if (sessionRefused(response, sayFields)) return "signed-out";
         if (!response.ok) {
           handleFieldsRefusal(response.status, await refusalBody(response));
-          return;
+          return "failed";
         }
         payload = await response.json();
       } catch (error) {
         detail(why(error));
         sayFields("The form's fields could not be read.", "bad");
-        return;
+        return "failed";
       }
       const spec = payload && payload.spec && typeof payload.spec === "object"
         ? payload.spec
@@ -1373,9 +1430,14 @@
       currentSpec = spec;
       renderFields();
       sayFields("", null);
+      return "ok";
     }
 
-    $("fields-new-add").addEventListener("click", function () {
+     
+     
+     
+     
+    $("fields-new-add").addEventListener("click", async function () {
       const idVerdict = validateFieldId($("fields-new-id").value);
       if (!idVerdict.ok) {
         sayFields(idVerdict.message, "bad");
@@ -1392,10 +1454,15 @@
           " values, retired ones counted.", "bad");
         return;
       }
-      addField(idVerdict.value, labelVerdict.value, lines);
-      $("fields-new-id").value = "";
-      $("fields-new-label").value = "";
-      $("fields-new-values").value = "";
+      $("fields-new-add").disabled = true;
+      const written = await addField(
+        idVerdict.value, labelVerdict.value, lines);
+      $("fields-new-add").disabled = false;
+      if (written) {
+        $("fields-new-id").value = "";
+        $("fields-new-label").value = "";
+        $("fields-new-values").value = "";
+      }
     });
 
      

@@ -497,6 +497,30 @@ check("every id this suite starts hidden really ships the hidden " +
     'id="' + id + '"[^>]*\\bhidden\\b|\\bhidden\\b[^>]*id="' + id + '"')
     .test(adminHtml)));
 
+// F5/F6 (#433 fix wave) are both source-level facts a Node DOM stub
+// cannot render (F5 removes a sentence from a constant buildDom() never
+// reads through admin.html; F6 adds one to admin.html's own static
+// markup, which buildDom() does not parse at all - see its own
+// comment). Reading the real files' text is the whole of what a suite
+// arm can do for either; the fact that an admin actually SEES the
+// sentence is a real-browser reading like every other prose claim on
+// this page.
+check("VALUES_OUTSIDE_REASON no longer promises a label editor this " +
+  "card does not draw for any field - F5, #433 fix wave (checked " +
+  "against the exported constant itself, not a raw text scan, since " +
+  "admin.js's own comment on the change now names the removed words; " +
+  "dist/admin.js carries no comments at all, so a raw scan is safe " +
+  "there and catches a stale mirror)",
+  !/label/i.test(Admin.VALUES_OUTSIDE_REASON) &&
+  !/Its label (still )?is\.?/.test(distJs));
+check("the Fields card states the session-scoped un-retire limit in " +
+  "its own visible prose, not only in a source comment - F6, #433 fix " +
+  "wave (an admin reads the card, never admin.js's block comment)",
+  /retired here this session/.test(adminHtml) &&
+  /new id/.test(adminHtml) &&
+  /retired here this session/.test(distHtml) &&
+  /new id/.test(distHtml));
+
 function buildDom() {
   const byId = new Map();
   for (const id of NEEDED) byId.set(id, node("div"));
@@ -875,13 +899,16 @@ const BASE_ROUTES = {
   const addRow = genderBlock.children[2];
   addRow.children[0].value = "Non-binary";
   addRow.children[1].dispatch("click");
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
   check("adding a value PUTs the current offered list plus the new " +
     "one, with no id on it - the Worker mints one",
     puts.length === 1 && JSON.stringify(puts[0].values) === JSON.stringify([
       { id: "male", label: "Male" }, { id: "female", label: "Female" },
       { label: "Non-binary" },
     ]));
+  check("adding a value clears the input on success (F2/F3, #433 fix " +
+    "wave - the paired refusal arm below asserts the opposite)",
+    addRow.children[0].value === "");
 }
 
 {
@@ -948,6 +975,42 @@ const BASE_ROUTES = {
       { id: "male", label: "Male" },
       { id: "female", label: "Female", retired: false },
     ]));
+}
+
+{
+  // F4 (#433 fix wave): the PUT answers 200, the GET /spec that
+  // follows it (loadFields's own re-read, ticket item 4) answers 500.
+  // Before the fix, sendFieldWrite always printed "Added." after
+  // `await loadFields()` no matter how the re-read went, so a real
+  // failure sat silently under the write's own success message and the
+  // card kept showing pre-write data with nothing saying so.
+  let specCalls = 0;
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /spec": () => {
+      specCalls += 1;
+      // First call is this test's own boot-time read (driven() always
+      // loads the card once before any click) - it has to succeed or
+      // there is no gender field to add a value to. The SECOND call is
+      // the re-read sendFieldWrite triggers after the PUT below.
+      return specCalls === 1
+        ? ok({ ok: true, spec: SPEC_FIXTURE })
+        : refused(500, {});
+    },
+    "PUT /admin-fields/gender": () => ok({ ok: true }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[2];
+  const addRow = genderBlock.children[2];
+  addRow.children[0].value = "Non-binary";
+  addRow.children[1].dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  const shown = byId.get("fields-status").textContent;
+  check("a write that succeeds but whose re-read then fails does not " +
+    "print the write's own success message over the read's failure",
+    shown !== "Added.");
+  check("...and says plainly that what is shown may now be stale, " +
+    "since the card still holds whatever the LAST successful read drew",
+    /stale|out of date/i.test(shown));
 }
 
 {
@@ -1122,7 +1185,7 @@ const BASE_ROUTES = {
   byId.get("fields-new-label").value = "Pronouns";
   byId.get("fields-new-values").value = "She/her\nHe/him\n\nThey/them";
   byId.get("fields-new-add").dispatch("click");
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
   check("adding a field PUTs the id, label and the starting values, " +
     "blank lines dropped, each with no id of its own",
     puts.length === 1 && JSON.stringify(puts[0]) === JSON.stringify({
@@ -1130,10 +1193,38 @@ const BASE_ROUTES = {
       values: [{ label: "She/her" }, { label: "He/him" },
         { label: "They/them" }],
     }));
-  check("the three inputs clear after a successful add",
+  check("the three inputs clear after a successful add - the SUCCESS " +
+    "leg of F2/F3 (#433 fix wave); the paired refusal block below " +
+    "asserts the opposite, so this arm can no longer pass on a refusal " +
+    "too (it did, before the fix)",
     byId.get("fields-new-id").value === "" &&
     byId.get("fields-new-label").value === "" &&
     byId.get("fields-new-values").value === "");
+}
+
+{
+  // F2/F3 (#433 fix wave): the failure leg the arm above never forced -
+  // before the fix, this same block would have shown the inputs empty
+  // too, since the old code cleared them unconditionally, synchronously,
+  // whether or not the write went through.
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "PUT /admin-fields/waist2": () => refused(400, {
+      error: "That id is already used by a field or a value.",
+    }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  byId.get("fields-new-id").value = "waist2";
+  byId.get("fields-new-label").value = "Waist";
+  byId.get("fields-new-values").value = "cm\nin";
+  byId.get("fields-new-add").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("a refused add-field keeps the admin's typed id, label and " +
+    "values, and the button is enabled again for another try",
+    byId.get("fields-new-id").value === "waist2" &&
+    byId.get("fields-new-label").value === "Waist" &&
+    byId.get("fields-new-values").value === "cm\nin" &&
+    byId.get("fields-new-add").disabled === false &&
+    /already used/.test(byId.get("fields-status").textContent));
 }
 
 {
@@ -1181,10 +1272,15 @@ const BASE_ROUTES = {
   const addRow = genderBlock.children[2];
   addRow.children[0].value = "Enby";
   addRow.children[1].dispatch("click");
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
   check("a write the Worker refuses shows the Worker's own words, on " +
     "this card's own status line",
     /choices live elsewhere/.test(byId.get("fields-status").textContent));
+  check("a refused add value keeps what the admin typed - F2 (#433 fix " +
+    "wave): the page's own Roles card precedent, not lost text over a " +
+    "Worker's reason, and the button is enabled again",
+    addRow.children[0].value === "Enby" &&
+    addRow.children[1].disabled === false);
 }
 
 check("Fields never fetches per-member counts - no /charts-data call " +
@@ -1208,8 +1304,26 @@ check("Fields never fetches per-member counts - no /charts-data call " +
     block.children[0].children[0]._text.includes("<img"));
 }
 
+/* -- Wiring for #433 fix wave, F1: the id cell (not the label cell)    */
+/* carries wrap-row-value, so it is the id - not the label - that gets  */
+/* flex:1 and overflow-wrap:anywhere and the label that keeps its own   */
+/* content width. This is wiring, not pixels: a Node DOM stub has no    */
+/* layout engine, so it can prove which class landed on which element   */
+/* and that neither string was cut - it CANNOT compute a rendered width */
+/* or height, which is exactly the property F1 was about (both cells    */
+/* were already un-truncated and un-overflowed before the fix; the      */
+/* label still rendered 0px wide). That measurement is a real-browser   */
+/* reading, printed in the completion on #433, not a suite arm -        */
+/* AGENTS.md's "Verify what renders" section says plainly that a DOM    */
+/* stub proves wiring, never pixels. -- */
+
 {
-  const LONG_ID = "x".repeat(64);
+  // 48, not 64: FIELD_ID_PATTERN/SPEC_ID (server/worker.js, read as
+  // source since this slice may not edit server/) cap a field id at
+  // `^[a-z0-9][a-z0-9_-]{0,47}$` - one char plus 47 more. A 64-char id
+  // was never reachable through this system; 48 is the real maximum
+  // and the fixture the review's F1 measured against.
+  const LONG_ID = "x".repeat(48);
   const LONG_LABEL = "A very long value label, repeated to overflow. ".
     repeat(3).trim();
   const routes = Object.assign({}, BASE_ROUTES, {
@@ -1220,13 +1334,21 @@ check("Fields never fetches per-member counts - no /charts-data call " +
   });
   const { byId } = await driven(routes, { isAdmin: true });
   const block = byId.get("fields-list").children[0];
-  check("a 64-character field id and a long value label both render " +
-    "whole, inside the wrap-row/wrap-row-value cells the geometry " +
-    "proof targets - the pixel measurement itself is a real-browser " +
-    "reading, printed in the completion on #433, not a suite arm",
-    block.children[0].children[1].textContent === LONG_ID &&
-    block.children[1].children[0].children[0].children[0].textContent ===
-      LONG_LABEL);
+  const header = block.children[0];
+  const valueRow = block.children[1].children[0].children[0];
+  check("a 48-character field id and a long value label both render " +
+    "whole, neither cut, inside the wrap-row/wrap-row-value cells the " +
+    "geometry proof targets",
+    header.children[1].textContent === LONG_ID &&
+    valueRow.children[0].textContent === LONG_LABEL);
+  check("the id cell carries wrap-row-value and the label cell carries " +
+    "hint - F1 (#433 fix wave): the id is the string with no natural " +
+    "break point, so it is the one that needs flex:1 to claim the " +
+    "row's slack instead of squeezing the label to nothing",
+    header.children[1].className === "wrap-row-value" &&
+    header.children[0].className === "hint" &&
+    valueRow.children[1].className === "wrap-row-value" &&
+    valueRow.children[0].className === "hint");
 }
 
 {
@@ -1237,10 +1359,10 @@ check("Fields never fetches per-member counts - no /charts-data call " +
   check("a Fields header row carries wrap-row/wrap-row-value, the same " +
     "overflow protection every other row on this page uses",
     header.className === "row wrap-row" &&
-    header.children[0].className === "wrap-row-value");
+    header.children[1].className === "wrap-row-value");
   check("a Fields value row carries the same classes",
     maleLabelRow.className === "row wrap-row" &&
-    maleLabelRow.children[0].className === "wrap-row-value");
+    maleLabelRow.children[1].className === "wrap-row-value");
 }
 
 /* -- Change log: newest first, actor id (never a label the Worker      */
@@ -1416,7 +1538,7 @@ check("no download/export id survives in the real shipped markup - the " +
 // tests/charts-page.test.mjs and dev/xlsx.test.mjs both hold to: the
 // checks that ran are the whole claim this file makes, and a reader
 // loop that silently ran fewer of them would still print "OK".
-const EXPECTED = 134;
+const EXPECTED = 142;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

@@ -314,13 +314,21 @@
       comment above mergeFieldsRoster/fieldsRosterView for why: GET
       /spec answers the EFFECTIVE spec (what a member reads), and a
       retired field or value is not in it at all, so this card can only
-      offer to bring back what IT has already shown THIS session.
+      offer to bring back what IT has already shown THIS session. F6
+      (#433 fix wave): this comment and the completion on #433 are not
+      where an admin reads the limit, so the ".hint" paragraph right
+      below states the same fact once, in the card's own visible prose.
     -->
     <div class="tool" id="fields-card">
       <p class="runner"><span>Fields</span></p>
       <p class="muted">
         The categorical questions the form asks. Numeric fields stay
         code-defined and are shown, not edited, below.
+      </p>
+      <p class="hint">
+        Bring back only works for a value retired here this session —
+        retyping a value retired earlier makes a new id, and stored
+        answers split between the two.
       </p>
       <p class="status" id="fields-status" role="status" aria-live="polite"
          hidden></p>

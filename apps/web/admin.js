@@ -442,8 +442,16 @@
   const FIELD_READ_ONLY_REASON = "Its units and chart bands are part " +
     "of a release somebody read, not something to edit here.";
 
+  // F5 (#433 fix wave): says nothing about a label editor, because
+  // fieldBlock draws none for any field. server/worker.js's own
+  // refusal for a choicesFrom write says its VALUES are not edited but
+  // its label is - true of the route; carrying that same shape onto
+  // this page made it a promise about the CARD, which is false, since
+  // no field's label is editable here. Not built, because renaming a
+  // field's label was never in this ticket's scope (#385 §6-§8 name
+  // values, not the field label itself).
   const VALUES_OUTSIDE_REASON = "This field's choices live outside " +
-    "the form spec, so they are not edited here. Its label still is.";
+    "the form spec, so they are not edited here.";
 
   /* A rename's two plain-words choices and the one-sentence
    * consequence of each (#385 §8) - the words THIS CARD shows before
@@ -1159,10 +1167,23 @@
         });
     }
 
+    // The write went through but the read that was meant to confirm it
+    // failed - F4, #433 fix wave. The card still shows whatever the
+    // LAST successful read drew, which is now stale, and the point of
+    // this sentence is to say so rather than let the write's own
+    // successMessage ("Added.", "Retired." …) print over the silence.
+    const STALE_AFTER_WRITE = "Saved, but the list could not be read " +
+      "back afterward - what is shown below may be out of date.";
+
     // Every field/value write on this card is: send, re-read /spec so
     // what is shown is what is stored (ticket item 4), say what
     // happened. One function so no call site invents its own order of
-    // those three steps.
+    // those three steps. Returns whether the WRITE itself was accepted
+    // (true/false) - never the re-read's own outcome - so a caller
+    // like addValue's click handler (F2/F3, #433 fix wave) knows
+    // whether to clear what the admin typed: only a write the Worker
+    // actually accepted earns that, a refusal keeps it exactly as the
+    // Roles card's own "Add" already does.
     async function sendFieldWrite(request, successMessage) {
       sayFields("Saving…", null);
       let response;
@@ -1171,16 +1192,23 @@
       } catch (error) {
         detail(why(error));
         sayFields("That could not be sent.", "bad");
-        return;
+        return false;
       }
-      if (sessionRefused(response, sayFields)) return;
+      if (sessionRefused(response, sayFields)) return false;
       if (!response.ok) {
         handleFieldsRefusal(response.status, await refusalBody(response));
-        return;
+        return false;
       }
-      await loadFields();
-      sayFields(successMessage, null);
-      loadLog();
+      const reread = await loadFields();
+      if (reread === "ok") {
+        sayFields(successMessage, null);
+        loadLog();
+      } else if (reread === "failed") {
+        sayFields(STALE_AFTER_WRITE, "bad");
+      }
+      // reread === "signed-out": loadFields already said so and is
+      // navigating away - nothing here should say anything more.
+      return true;
     }
 
     function retireField(id) {
@@ -1251,15 +1279,28 @@
 
     /* -- Drawing. -- */
 
+    // F1 (#433 fix wave): `wrap-row-value` belongs on the id, not the
+    // label. theme.css's own comment on ".row.wrap-row > .wrap-row-value"
+    // says what that class is for - "a value nobody bounded to a single
+    // word" - and that is the id, not the label: FIELD_ID_PATTERN never
+    // allows a space (lowercase letters, digits, hyphens, underscores
+    // only), so a field id near its 48-character maximum is one
+    // unbroken run with no natural break point, exactly like the
+    // 64-hex account id the comment names. A label is admin-typed
+    // prose that almost always wraps on its own spaces. Putting the id
+    // in the flex:1 slot (rather than in plain `.hint`, which does not
+    // grow to claim the row's slack) is what let the id spill: `.hint`
+    // took its own untouched max-content width, and the flex:1 label
+    // beside it - basis 0% - was left with nothing, rendering 0px wide.
     function fieldHeaderRow(view) {
       const row = document.createElement("div");
       row.className = "row wrap-row";
       const name = document.createElement("span");
-      name.className = "wrap-row-value";
+      name.className = "hint";
       name.textContent = view.label + (view.active ? "" : " (retired)");
       row.appendChild(name);
       const id = document.createElement("span");
-      id.className = "hint";
+      id.className = "wrap-row-value";
       id.textContent = view.id;
       row.appendChild(id);
       return row;
@@ -1275,14 +1316,16 @@
       const block = document.createElement("div");
       block.className = "stack-tight";
 
+      // Same swap as fieldHeaderRow, same reason (F1, #433 fix wave):
+      // the id is the one string here with no natural break point.
       const labelRow = document.createElement("div");
       labelRow.className = "row wrap-row";
       const name = document.createElement("span");
-      name.className = "wrap-row-value";
+      name.className = "hint";
       name.textContent = value.label + (value.retired ? " (retired)" : "");
       labelRow.appendChild(name);
       const idSpan = document.createElement("span");
-      idSpan.className = "hint";
+      idSpan.className = "wrap-row-value";
       idSpan.textContent = value.id;
       labelRow.appendChild(idSpan);
       block.appendChild(labelRow);
@@ -1442,7 +1485,14 @@
         add.type = "button";
         add.className = "secondary";
         add.textContent = "Add value";
-        add.addEventListener("click", function () {
+        // F2/F3 (#433 fix wave): clear ONLY on a write the Worker
+        // actually accepted - the Roles card's own "Add" precedent
+        // (member-telegram-id). The input surviving a refusal reopens a
+        // double-click race a synchronous clear would otherwise have
+        // closed by accident, so the button stays disabled for the
+        // write's whole duration: a second click before the first
+        // write lands would mint the same value twice under two ids.
+        add.addEventListener("click", async function () {
           const verdict = validateValueLabel(input.value);
           if (!verdict.ok) {
             sayFields(verdict.message, "bad");
@@ -1453,8 +1503,10 @@
               " values, retired ones counted.", "bad");
             return;
           }
-          addValue(view.id, verdict.value);
-          input.value = "";
+          add.disabled = true;
+          const written = await addValue(view.id, verdict.value);
+          add.disabled = false;
+          if (written) input.value = "";
         });
         addRow.appendChild(add);
         block.appendChild(addRow);
@@ -1515,6 +1567,11 @@
       }
     }
 
+    // Returns "ok", "failed" or "signed-out" rather than nothing (F4,
+    // #433 fix wave) - sendFieldWrite calls this to re-read after a
+    // write, and needs to tell a real refresh apart from a read that
+    // failed, so it never prints the write's own success message over
+    // a status line this function already set to something truer.
     async function loadFields() {
       sayFields("Loading…", null);
       let payload;
@@ -1522,16 +1579,16 @@
         const response = await fetch(config.endpoint + "/spec", {
           headers: root.BinderSession.authorization(),
         });
-        if (sessionRefused(response, sayFields)) return;
+        if (sessionRefused(response, sayFields)) return "signed-out";
         if (!response.ok) {
           handleFieldsRefusal(response.status, await refusalBody(response));
-          return;
+          return "failed";
         }
         payload = await response.json();
       } catch (error) {
         detail(why(error));
         sayFields("The form's fields could not be read.", "bad");
-        return;
+        return "failed";
       }
       const spec = payload && payload.spec && typeof payload.spec === "object"
         ? payload.spec
@@ -1540,9 +1597,14 @@
       currentSpec = spec;
       renderFields();
       sayFields("", null);
+      return "ok";
     }
 
-    $("fields-new-add").addEventListener("click", function () {
+    // F2/F3 (#433 fix wave): same clear-on-success-only shape as the
+    // "Add value" handler above, same reason - a refused add-field used
+    // to throw away an id, a label and a whole pasted value list at
+    // once, the worst case of the two.
+    $("fields-new-add").addEventListener("click", async function () {
       const idVerdict = validateFieldId($("fields-new-id").value);
       if (!idVerdict.ok) {
         sayFields(idVerdict.message, "bad");
@@ -1559,10 +1621,15 @@
           " values, retired ones counted.", "bad");
         return;
       }
-      addField(idVerdict.value, labelVerdict.value, lines);
-      $("fields-new-id").value = "";
-      $("fields-new-label").value = "";
-      $("fields-new-values").value = "";
+      $("fields-new-add").disabled = true;
+      const written = await addField(
+        idVerdict.value, labelVerdict.value, lines);
+      $("fields-new-add").disabled = false;
+      if (written) {
+        $("fields-new-id").value = "";
+        $("fields-new-label").value = "";
+        $("fields-new-values").value = "";
+      }
     });
 
     /* ------------------------------------------------------------ */
