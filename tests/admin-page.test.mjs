@@ -1217,7 +1217,11 @@ const SPEC_WITH_RETIRED_FIELD = Object.assign({}, SPEC_FIXTURE, {
 /* mirroring stub the round trip above uses (request order wins for     */
 /* everything listed; anything left out is carried over retired, past   */
 /* everything the request DID list - server/worker.js's own             */
-/* mergeValues). -- */
+/* mergeValues). "other" starts ALREADY retired, so the arm also checks */
+/* that fixing female's own marker never touches anyone else's - a fix  */
+/* that quietly reported every OTHER value active regardless of its own */
+/* read would pass every check above and un-retire "other" by accident. */
+/* -- */
 
 {
   const SPEC_FOR_POSITION = Object.assign({}, SPEC_FIXTURE, {
@@ -1226,7 +1230,7 @@ const SPEC_WITH_RETIRED_FIELD = Object.assign({}, SPEC_FIXTURE, {
         { id: "male", label: "Male" },
         { id: "female", label: "Female" },
         { id: "nb", label: "Non-binary" },
-        { id: "other", label: "Other" },
+        { id: "other", label: "Other", retired: true },
       ] })),
   });
   let spec = SPEC_FOR_POSITION;
@@ -1254,53 +1258,64 @@ const SPEC_WITH_RETIRED_FIELD = Object.assign({}, SPEC_FIXTURE, {
   const { byId } = await driven(routes, { isAdmin: true });
   let genderBlock = byId.get("fields-list").children[2];
   let femaleBlock = genderBlock.children[1].children[1];
-  check("female starts second of four, active",
+  check("female starts second of four, active; other starts fourth, " +
+    "already retired",
     genderBlock.children[1].children.length === 4 &&
-    femaleBlock.children[0].children[0].textContent === "Female");
+    femaleBlock.children[0].children[0].textContent === "Female" &&
+    genderBlock.children[1].children[3].children[0].children[0]
+      .textContent === "Other (retired)");
 
   buttonByText(femaleBlock, "Retire").dispatch("click");
   buttonByText(femaleBlock.children[3], "Yes").dispatch("click");
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
 
   check("retiring the second of four sends the WHOLE list, only " +
-    "female's marker changed - the request itself reorders nothing",
+    "female's marker changed - other's own already-retired marker " +
+    "carries through untouched, the request itself reorders nothing",
     puts.length === 1 && JSON.stringify(puts[0].values) === JSON.stringify([
       { id: "male", label: "Male", retired: false },
       { id: "female", label: "Female", retired: true },
       { id: "nb", label: "Non-binary", retired: false },
-      { id: "other", label: "Other", retired: false },
+      { id: "other", label: "Other", retired: true },
     ]));
 
   genderBlock = byId.get("fields-list").children[2];
   check("retired, the value's own block is STILL second - not pushed " +
-    "past the values that stayed active",
+    "past the values that stayed active - and other is still fourth " +
+    "and still retired, not silently brought back",
     genderBlock.children[1].children.length === 4 &&
     genderBlock.children[1].children[0].children[0].children[0]
       .textContent === "Male" &&
     genderBlock.children[1].children[1].children[0].children[0]
       .textContent === "Female (retired)" &&
     genderBlock.children[1].children[2].children[0].children[0]
-      .textContent === "Non-binary");
+      .textContent === "Non-binary" &&
+    genderBlock.children[1].children[3].children[0].children[0]
+      .textContent === "Other (retired)");
 
   femaleBlock = genderBlock.children[1].children[1];
   buttonByText(femaleBlock, "Bring back").dispatch("click");
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
 
   check("F1: bringing it back restores the place it held - second, " +
-    "not appended past the other three",
+    "not appended past the other three - and other, never touched, " +
+    "is still sent retired",
     puts.length === 2 && JSON.stringify(puts[1].values) === JSON.stringify([
       { id: "male", label: "Male", retired: false },
       { id: "female", label: "Female", retired: false },
       { id: "nb", label: "Non-binary", retired: false },
-      { id: "other", label: "Other", retired: false },
+      { id: "other", label: "Other", retired: true },
     ]));
 
   genderBlock = byId.get("fields-list").children[2];
   check("the re-rendered card shows Female active again, still second " +
-    "- the reviewer's own measurement, satisfied",
+    "- the reviewer's own measurement, satisfied - and Other still " +
+    "fourth and still retired",
     genderBlock.children[1].children.length === 4 &&
     genderBlock.children[1].children[1].children[0].children[0]
-      .textContent === "Female");
+      .textContent === "Female" &&
+    genderBlock.children[1].children[3].children[0].children[0]
+      .textContent === "Other (retired)");
 }
 
 {
