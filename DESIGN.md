@@ -86,9 +86,10 @@ carry — a private-group site is not meant to be crawled or linked from.
   think about, which was the owner's opening requirement.
 
 What the trade buys is the product: a member reads their own history
-back, corrects it and deletes it; an admin can backfill honestly and
-answer a takedown; charts are live rather than a ceremony. Every one of
-those was impossible while only a key file could read a row.
+back, corrects it and deletes it; an admin can erase a departed
+member's rows on the bot's own word rather than guessing; charts are
+live rather than a ceremony. Every one of those was impossible while
+only a key file could read a row.
 
 **0.9 starts empty.** No migration and no final ceremony — the old
 sealed rows are discarded, because nobody has used the site yet. The
@@ -138,24 +139,23 @@ implies verified adulthood, so nothing on this site re-derives it. The
 form's own over-18 attestation remains as the door's assertion in
 addition, not instead — exact register wording lands at the M4 sitting.
 
-**Admins mirror Telegram admins.** Whoever administers the Telegram
-group is a site Admin, automatically. All admins are equal and hold
-full powers including deletion. There are no tiers: Telegram's own
-owner-and-admin distinction is Telegram's, and the site neither models
-it nor mentions it. The casual-promotion risk — a group that hands out
-admin lightly hands out the directory with it — was put to the owner
-adversarially, and the mirror stands.
-
-**The directory** holds one row per user: handle, display name, role,
-joined date, last-active date. It is visible to admins only; members
-never see a roster.
+**Who holds admin, and what the directory now is, are both settled
+below rather than here.** "Admin accounts and deletion" states the
+three arms into the role; "The identifier is the whole problem" states
+what the sealed directory holds and who may read it. Both retired the
+model this section used to carry in full — a mirror-only admin grant
+and a plain roster table an admin could read — because #385 rule 4
+(owner ruling, 2026-08-20) closed even an admin's view of a current
+member's row. There are still no tiers: every arm into the role holds
+identical powers.
 
 **Bot failure stance: last-known-good cache.** When Telegram will not
 answer, the Worker trusts the last verified roster for a bounded
 window. Members never bounce off an API hiccup, and **"cannot check" is
 never treated as "not a member"** — that sentence governs every place
-the roster is consulted, including the leaver countdown under "Admin
-accounts and deletion". **The window is 24 hours by default, then the
+the roster is consulted, including the departed-member check under
+"Admin accounts and deletion", which reads the same failure as
+**unknown** and refuses to erase on it. **The window is 24 hours by default, then the
 cache fails closed** (#294 F6, ruled 2026-08-14): a new sign-in past the
 window is refused honestly rather than trusted on stale data, while a
 session already open lives on to its own idle expiry. A Setting, not a
@@ -216,10 +216,17 @@ member's status reads **unknown until their next sign-in** — never
 guessed in either direction.
 
 An account held open by an operator's always-allow list is a **third
-answer and not a quiet "still a member"**: the bot is never asked about
-it, so the cleanup surface reports the list — and says which entry to
-remove — rather than putting words in Telegram's mouth. Never attribute
-to the bot what the bot did not say.
+answer and not a quiet "still a member"**: an exact match is a bypass
+the bot is never asked about, so the cleanup surface reports the list —
+and says which entry to remove — rather than putting words in
+Telegram's mouth. A **near-miss** — the same account named on the list
+in a spelling the granting predicate below refuses — is a different
+case: the bot **is** asked, because a row nobody can prove was meant
+grants nothing. But its answer is still overridden and the account
+stays protected regardless of what Telegram says, because a row that
+only has to be found protects on being found, not on being granted.
+Never attribute to the bot what the bot did not say, in either
+direction.
 
 **A row in either letter case holds an account open**, and the reason
 is the erase and not the list. `wrangler d1 execute` writes upper-case
@@ -239,16 +246,17 @@ later branch added to one view and not the other is refused rather
 than discovered.
 
 **And a read that does not answer is unknown too.** The erasing path
-fails closed on every read it makes, not only on the bot. Five reads
+fails closed on every read it makes, not only on the bot. Seven reads
 stand between an erase request and a deleted row, and every one of them
 refuses when it does not answer — named here so the sentence can be
 checked rather than believed: the **directory row**, the **sealed
-record** it opens, the **operator's allow list**, the **bot**, and the
+record** it opens, the **operator's allow list**, the **bot**, the
 erase's own **membership pre-check**, which counts the rows the delete
-would remove. A read that throws, answers nothing, or answers a shape
-without the columns it named is the same fact to all five — the
-question could not be asked — and none of them is ever spent as an
-answer. The refusals say which read failed rather than which is
+would remove, the **session read** that resolves who is calling, and
+the **admin re-check** that read makes on every request. A read that
+throws, answers nothing, or answers a shape without the columns it
+named is the same fact to all seven — the question could not be asked —
+and none of them is ever spent as an answer. The refusals say which read failed rather than which is
 nearest, because the next action differs: a record with no usable id is
 fixed by that member signing in, and the other three waits are fixed by
 waiting on different systems. The list is the case worth writing down,
@@ -298,12 +306,13 @@ what exercises the rotation procedure above for the first time, on
 purpose, as a cutover step rather than an emergency.
 
 **The production bot is granted group-admin (#294 F5, ruled
-2026-08-14).** `chat_member` leave events are the primary membership
-signal; a per-id verification sweep is the fallback for whatever the
-event stream misses. Purge clocks arm only off a **verified** signal —
-an event or a sweep result — never off silence; "Bot failure stance"
-below is what that protects. M1's first slice verifies these platform
-claims against a live bot before anything is built on them.
+2026-08-14).** M1's first slice verifies this platform claim against a
+live bot before anything is built on it. Membership and departed
+status are both asked live, per request, rather than through an event
+stream and a sweep: a sign-in's `groupStanding()` call and an admin's
+departed check (0.9-M3-S15, #420) are the same `getChatMember` lookup,
+made fresh each time. "Cannot check" never reads as departed — see "The
+identifier is the whole problem" for the fail-closed rule that carries.
 
 ### Sessions
 
@@ -337,25 +346,31 @@ is a courtesy; the gate is the Worker refusing the write.
 
 ### Admin accounts and deletion
 
-**An admin is a Telegram group admin, or a member another admin flagged
-into the role** — two ways in, identical powers, and the second exists
-so a technical member can run the technical parts without holding
-group-admin in Telegram (owner ruling, 2026-08-20, recorded at #385).
-The root of trust is still the group: every admin is a signed-in
-member, and there is no outside-the-group superadmin. The flagged list
-therefore stays, and with it the last-admin guard that keeps a
-deployment from tidying its way into a lockout; the founding-admin
-secret is what the first flag starts from. `GET /me` reports which of
-the three an admin holds, because a person who cannot see why they are
-an admin cannot tell a flag another admin can remove from a group role
-that lives in Telegram.
+**An admin reaches the role three arms wide, one tier.** A Telegram
+group admin; a member another admin flagged into the role — the two
+ways a person is *put* into the role (owner ruling, 2026-08-20, #385
+rule 1) — and the founding-admin secret the first flag starts from.
+Identical powers on all three; `GET /me` reports which one an admin
+holds, because a person who cannot see why they are an admin cannot
+tell a flag another admin can remove from a group role that lives in
+Telegram. The root of trust is still the group: every admin is a
+signed-in member, and there is no outside-the-group superadmin, an
+earlier idea considered and dropped. The flagged list carries the
+last-admin guard that keeps a deployment from tidying its way into a
+lockout.
+
+**No admin surface exposes a current member's data (#385 rule 4).**
+Admins are members, so they see the members' side as members; the admin
+surfaces add settings, content, the role list, the change log, and
+cleanup — never a current member's rows, handle, or history. **Per-
+member actions are exactly two: flag or un-flag the admin role, and
+erase a departed member's rows.** Opening a member's own entries and
+backfilling one on their behalf are gone from the admin surfaces along
+with the roster table that used to make them possible.
 
 **Deletion is deletion.** A member corrects and deletes their own rows,
 in full self-service — no trace, no admin notice, and the charts move
-with it. Their data, their delete. A member owns **every** row about
-them, including one an admin backfilled (derived by Prime, reversible:
-the record rules self-service without carving out backfilled rows, and
-the ideology reads a row about a person as theirs).
+with it. Their data, their delete.
 
 A correction is a new row naming the row it supersedes rather than an
 edit in place, so the repeats are the history the binder exists to
@@ -364,41 +379,48 @@ replaced ones. The pointer is a column the Worker can read, because a
 pointer it cannot read is one it can neither check against the caller
 nor subtract from what a member is told they have.
 
-Admins can open any member's entries. That is not a convenience: an
-admin who cannot see the rows cannot backfill honestly, cannot fix a
-mistyped entry and cannot answer a takedown. **It is deliberately not
-stated to members** — an explicit owner ruling, taken over the
-recommendation to state it at the form, and a security review should
-read it as ruled rather than overlooked.
+**Departed-member cleanup is the one per-member erasing power (#385
+rule 4; built 0.9-M3-S15, #420).** "Departed" is never a guess: the
+bot's live `getChatMember` answer decides it, the same call a sign-in
+already makes, so an admin's list is departed, current, or **unknown**
+— unknown is the ordinary case for a directory row written before the
+id-sealing ruling below, until its member next signs in, and it is
+never erasable.
 
-**Leaver data purges after a window, guarded.** A confirmed departure
-starts a visible countdown on the member's row; an admin may delete
-sooner; re-adding the person in Telegram inside the window restores
-them and their data reattaches. Two guards, both of them about the
-failure modes rather than the happy path: **"cannot check" never starts
-a clock**, and a mass-departure anomaly freezes the countdowns rather
-than arming them all at once — **ruled 2026-08-14 (#294 F6) at 3 or
-more departures in one sweep, or more than 25% of the roster, whichever
-fires first, and raises `needs-owner` when it does.** Both the window
-and the mass-departure threshold are Settings, editable by an admin. The
-window's ruled default is 30 days, stated with the other Settings
-defaults under **Admin surfaces** below.
+An erase removes four row classes for one account in a single
+transaction — submissions, the directory row, every membership row,
+every session — with no cascade through a superseded row's pointer, and
+it refuses outright before touching anything if it would take the last
+admin who grants the role. **The erasing path fails closed on every
+read it makes, not only the bot's** — "The identifier is the whole
+problem" names the seven and the always-allow/near-miss distinction the
+checks make.
+
+The erase logs once — actor, twelve characters of the account id, the
+bot's verdict, and a count of rows removed per class, never a row, a
+label, a handle, or a numeric id. A member's own self-delete stays
+unlogged, since it is the member's own act; whether an admin's ordinary
+`DELETE /submission/:id` on a live member should log too is an open
+question for the batch security consult, not settled here.
 
 **A member sees a pre-leave notice before they act (#294 F3, ruled
-2026-08-14): delete your own rows before you leave, or ask an admin
-after.** This is a mechanism note, not the shipped copy — the exact
-wording is authored at the M4 register sitting, and this line only
-fixes that member surfaces carry the reminder and that the guarded
-window and restore-on-rejoin above are unchanged by it.
+2026-08-14): delete your own rows before you leave, or ask an admin to
+erase them after.** This is a mechanism note, not the shipped copy —
+the exact wording is authored at the M4 register sitting. What changed
+since the ruling: there is no guarded window and no restore-on-rejoin —
+an admin's erase is available as soon as the bot confirms a departure,
+and rejoining the group does not undo an erase already done.
 
-**Every admin deletion writes an append-only, admin-visible action
-line: who deleted what, when (#294 F4, ruled 2026-08-14).** M1 carries
-the line's schema; M3 carries its display. **Backups are a ruled
-obligation, not a suggestion**, on the same ruling: the first rehearsal
-happens before the first real entry is ever stored, and the cadence is
-displayed beside bot health on the Settings page rather than living
-only in `OPERATIONS.md`. No specific cadence number was ruled — the
-obligation and its visibility were.
+**Every admin write lands in the append-only change log — who, what,
+when** (#385 rule 5, generalizing #294 F4's deletion-only line to every
+admin action once M3 built `admin_log`, 0.9-M3-S8, #414). Members never
+see it; **Admin surfaces** below states what it shows for a departed-
+member erase specifically. **Backups are a ruled obligation, not a
+suggestion** (#294 F4): the first rehearsal happens before the first
+real entry is ever stored, and the cadence is displayed beside bot
+health on the Settings page rather than living only in
+`OPERATIONS.md`. No specific cadence number was ruled — the obligation
+and its visibility were.
 
 ## Your page
 
@@ -413,8 +435,11 @@ count, the Telegram-id line, the custody cards, the sealed-rows line.
   old pick-a-system-and-never-convert rule yields to the one-line
   picture: a chart that refuses to draw is worth less than a labeled
   conversion.
-- **No member backdating.** The form has no date field. Admins add
-  dated entries per member, and a bulk import follows as its own slice.
+- **No member backdating.** The form has no date field, and backfilling
+  a member's entry is not an admin action any more (#385 rule 4: exactly
+  two per-member actions, and adding an entry is not one). A historical
+  import, if the group ever wants one, is a bulk operator act outside
+  any per-member admin surface, and it is unbuilt.
 - **A download button exports the member's own rows** in the existing
   spreadsheet format.
 
@@ -428,14 +453,25 @@ shared browser's `localStorage` is a privacy cost buying nothing.
 
 ## Charts
 
-**One filter and one measure.** The filter is one of: everyone, a
-gender, an affiliation, a country. **The measures derive from the
-form's field spec** — every numeric field charts, weight and height and
-computed BMI today — so a fork that edits its fields gets matching
-charts with no chart code to write. The spec carries kind, unit and
-range metadata, which is what lets conversion, computed fields and the
-band edges derive too; it is `apps/web/site.config.js` and this page is
-one of the two things it exists for.
+**One measure, and a filter that composes.** A caller names any
+categorical field with any subset of its values — several values on one
+field **ORed** together, several fields **ANDed** together, and a field
+named not at all matches everybody (0.9-M3-S24/S31, #438/#455, the
+Worker half of the owner's multi-select chip ruling, #454 items 16-18).
+The floor is applied to the answer, per response, exactly as it is to
+an unfiltered group. **The answer echoes the caller's own filter
+pairs back, in the order asked, and never enumerates what the group
+holds** — the floored group-makeup block (below) is the one place a
+page learns which values have entries, and it withholds any value
+whose count sits under the floor, so presence obeys the floor exactly
+like every other number (0.9-M3-S31, #455). **The measures derive from
+the form's field spec** — every numeric field charts, weight and
+height and computed BMI today — so a fork that edits its fields gets
+matching charts with no chart code to write. The spec carries kind,
+unit and range metadata, which is what lets conversion, computed
+fields and the band edges
+derive too; it is `apps/web/site.config.js` and this page is one of the
+two things it exists for.
 
 - **Both pictures behind one toggle**: the trend over time, and the
   distribution now.
@@ -610,6 +646,21 @@ rulings, and this one, rest on a **members-only readership**, which the
 members-only rule above preserves — that premise is what to re-take if
 the readership ever widens.
 
+**Value sets open a channel the floor does not bound, held rather than
+closed — real only past a raised floor.** At the shipped floor of 0
+there is nothing to subtract back out, exactly as the cumulative
+channel above. Past 0, two **allowed** answers can still be subtracted:
+ask a broad union of values, then the same union missing one, both
+clear the floor, neither is ever refused, and the difference is that
+missing value's own count exactly — no small question is ever asked.
+The owner accepted the per-response floor and the combined-filter reach
+that sharpens it (#243, #384) with this cost named rather than hidden.
+Closing it is 0.9-M3-S36's candidate mitigation (#462,
+difference-aware flooring), awaiting the batch security consult before
+it is built — stated here, not designed here. Until it rules, the page
+gates both combining across fields and several values within one field
+behind that same open question (0.9-M3-S14).
+
 ## Roles and vocabulary
 
 - **Exactly two user-facing types: Member and Admin.** The collective
@@ -632,51 +683,161 @@ the readership ever widens.
   download acknowledgment, and every sentence about key checks and
   sealed rows is dead with the keys.
 
+## The UX record
+
+**Every page is built against one record, #454** (owner ruling,
+2026-08-22, five rounds under the standing rule that a UI decision is
+put to the owner before its slice is dispatched). This section carries
+it in the document's voice; #454 itself stays the source a builder
+cites by item number, and a UX choice this record does not answer is a
+STOP and ask, never a sensible-looking pick.
+
+**The page.** A focused page with a few clearly separated sections to
+scroll — not one thing per screen, not a dense dashboard. Controls are
+native first — the phone's own drop-downs, pickers and keyboards,
+styled in color only — and custom only where the site's identity lives:
+the chips, the theme picker, the charts. Every tap target is at least
+44 px, body text at least 16 px, and the primary action sits within
+one-hand reach, near the bottom on a phone. Transitions are gentle —
+roughly 150 ms fades and slides, charts settling into place — and
+honor the phone's reduce-motion setting. The phone's bottom bar carries
+3-4 items as icons with labels under them — your page, charts, sign
+out, the admin page for admins only — the same items in a top rail on
+desktop. Icons stand alone, without their label, only where space is
+genuinely tight.
+
+**Words and feedback.** The voice is plain and warm — "Saved." or
+"That didn't work - the Worker is down, try again in a minute." — never
+jargon. Feedback after an action is a brief toast that disappears on
+its own, never an inline status line, never a modal. A dangerous action
+(erasing a departed member, retiring a field) confirms in place: the
+button becomes a sentence with the real consequence — "This removes 14
+rows for <label>. Remove them?" — with Yes and Cancel right there. An
+empty state is one friendly sentence and the next step: "No entries yet
+- add your first one." with the button; a chart's is "The picture
+appears once N members have entered."
+
+**Forms.** A mistake is pointed out as the member leaves the field, in
+a short note under it — never on submit, never while typing. On a
+phone the label sits above a full-width control with one line of help
+or the error below. A long list — the change log, an admin's departed
+list, a big value list — shows the newest 20 with a "more" button; a
+search box only where a list can grow without bound.
+
+**The door and the first visit.** The door carries the group's name,
+the admin's welcome sentence, and the Telegram sign-in button — nothing
+else above the fold. The first visit paints only the phone's own
+light-or-dark choice; the phone's separate more-contrast setting is
+**not** honored while scripts run, a decision rather than an oversight
+(owner ruling, 2026-08-22, closing a needs-owner question raised by
+0.9-M3-S32's review, #456) — the CSS high-contrast fallback stays
+reachable only with scripts off. The admin's chosen palette applies
+once a member opens the theme picker, and the member's own choice wins
+from there on.
+
+**The charts filters** (refining #384). Chips are multi-select and feel
+natural: every option starts lit — everyone — tapping one turns it off
+and narrows, and at least one stays lit; there is no "All" chip,
+because everyone IS every option selected. Values of one field are
+ORed, fields are ANDed (see **Charts** above). A field renders as chips
+only if they fit two rows at the device's own width, measured on the
+device without a flicker; past that it becomes a drop list, offering
+only the values that have entries — the floor rule for presence too —
+with US/GB/CA pinned first. The status line still reads in plain words
+("male feeders, weight"), and combining across fields still carries the
+honest disabled sentence on a second row while the batch security
+consult decides it.
+
+**Admin surfaces.** Tabs, not stacked cards — Settings, Roles, Fields,
+the change log, and Departed — desktop-first, with one phone pass for
+legibility rather than the phone-first treatment a member page gets
+(#454 item 22, following a wrap-row defect 0.9-M3-S30's phone check
+found). Rename is one button meaning "the same thing, a new word";
+retiring a value is the separate action. Exports stay off the admin
+page.
+
+**Label/value rows stack on a phone** (#454 item 21, ruled from the
+same wrap-row defect): the label sits above its value at phone widths,
+nothing squeezed, a long label wrapping on its own line; side by side
+stays for desktop.
+
 ## Admin surfaces
 
-Two pages. The pre-0.9 `admin.html` dies with the keys and with
-Publish, and nothing inherits its shape.
+**Five tabs, one page** (owner ruling, 2026-08-22, #385/#454 item 20;
+built 0.9-M3-S10/S30, #416/#452): Settings, Roles, Fields, the change
+log, and Departed — one `[role="tablist"]`, desktop-first and checked
+at one phone width for legibility rather than the phone-first pass a
+member page gets (#454 item 22). The pre-0.9 `admin.html` dies with the
+keys, and nothing it carried survives unruled: **no entry exports**
+(bulk member data leaves only through the operator's own token-gated
+`/export` route, by hand — Prime's ruling on #416, amending #385 rule
+4), **no keyfile tool**, **no publish controls**. Bulk import is a
+future slice.
 
-**Members** is the directory as a table — handle, display name, role,
-joined, last-active, leaver countdown — with per-row actions: add an
-entry as a backfill, delete their data, edit their display name, open
-their entries. One line explains that membership and admin status
-follow the Telegram group. Bulk import arrives as its own slice.
+**Roles** lists the flagged admins with their labels (`GET
+/membership`) and is where flagging and un-flagging happen — the one
+identity-shaping per-member action #385 rule 4 gives an admin over
+another member. It is not a member directory: a row here says only
+that an account holds the role, never what the account entered.
 
-**Settings** is its own page with room to grow, and it carries exactly
-the three facts this design makes an admin responsible for: the
-suppression floor, the purge window's length, and bot health —
-"membership last verified N minutes ago".
+**Settings** carries exactly what this design makes an admin
+responsible for, one control per setting, each read from `site_content`
+(0.9-M3-S8, #414) and validated on write:
 
-Its two editable controls ship with **ruled defaults**, and they are
-written here because a builder implements this page from this document.
-The window comes from the design record (#228 comment 5287071398,
-Part 4); the floor's default was re-taken at the charts sitting and
-comes from #243 comment 5346978974.
+- **The suppression floor and the locked unit system are one control**,
+  not two — raising the floor above 0 carries the unit-lock choice with
+  it, because a floor-protected group must not be binned two ways at
+  once (see **One partition, not two** under **Charts**). Shipped
+  default: floor 0, the unit unlocked (the spec's own declared
+  default). Zero is a value of the setting rather than an off switch —
+  the machinery reads it on every request and applies it, so an admin
+  typing 5 gets exactly the regime the charts sitting described,
+  unchanged and still proven. The Worker holds the default in one
+  place, `server/charts-agg.js`'s `DEFAULT_FLOOR`, and this page edits
+  the setting that overrides it. **The page states when the floor is
+  active** ("groups smaller than N are hidden," #385 rule 11) — the
+  honest-empty-state rule extended to the setting itself.
+- **`site.groupName`, `site.welcomeText` and `site.defaultTheme`** are
+  the three editable content facts #385 rule 9 names for M3 — the
+  door's welcome text, the group's name and title, and the default
+  palette. Form explainer text stays code.
+- **Bot health** — "membership last verified N minutes ago".
 
-- **The suppression floor ships at 0, and it is a whole number an admin
-  raises.** The record's open item on the value was closed at the
-  2026-08-19 charts sitting, in the direction of visibility: this group
-  chose to show its own figures, and **Charts** above carries the
-  ruling and the consequence the owner accepted with it. Zero is a
-  value of the setting rather than an off switch — the machinery reads
-  it on every request and applies it, so an admin typing 5 gets exactly
-  the regime the earlier record described, unchanged and still proven.
-  The Worker holds the default in one place,
-  `server/charts-agg.js`'s `DEFAULT_FLOOR`, and this page edits the
-  setting that overrides it. **Raising it carries a second choice with
-  it: which unit system the charts are then served in**, because a
-  floor-protected group must not be binned two ways at once (see **One
-  partition, not two** under **Charts**). The two are one control on
-  this page, not two; at a floor of 0 the unit choice does nothing and
-  the page says so, since both systems are served then. An unset one is
-  the default `apps/web/site.config.js` already declares, so raising the
-  floor by itself never moves a member into another system.
-- **The purge window is 30 days by default.** It is the length of the
-  countdown a confirmed departure starts, and the two guards stated
-  with it above — a "cannot check" never starts a clock, a
-  mass-departure anomaly freezes rather than arms — hold whatever an
-  admin sets it to.
+**Fields is the categorical form builder** (#385 rules 6-8, built
+0.9-M3-S11's Worker half and S13/S25/S30's page). Admins add, rename and
+remove choice fields and their values; numeric fields (weight, height)
+stay code-defined, since admin-editable bins would collide with the
+fixed-bands comparability ruling. **Existing data always survives an
+edit: keep the data, adapt the display** — a removed field's answers
+stay sealed in members' rows and stop rendering; restoring the field
+brings them back, from any admin session, not only the one that retired
+it (0.9-M3-S25/S30, #440/#452). **Rename is one button, the smarter
+default** (owner ruling, 2026-08-22): a rename always means the same
+word for the same thing, so old entries follow it instantly; retiring a
+value to introduce a genuinely new option is the separate action it
+always was. New categorical fields flow automatically into the charts
+filter chips (#384) and the group-makeup block.
+
+**The change log** is `admin_log` (0.9-M3-S8): every admin write — a
+settings edit, a content edit, a flag, a field edit, an erase — appends
+one line (who, what, when), admin-only reading. Members see results,
+not the paper trail.
+
+**Departed** is the one per-member erasing power's own tab (#385 rule
+4; the Worker half at 0.9-M3-S15, #420; the page half at 0.9-M3-S34,
+#458): the newest 20 departed accounts with a "more" button, an unknown
+section with each reason in plain words, and an allowed section naming
+the operator's-list entry to remove first — never a handle, never a
+numeric id. Erase confirms in place, the button becoming the real
+sentence and consequence (#454 item 9), and the result is a toast.
+
+**Content lives as one admin-owned config the pages read** (#385 rule
+9, "content-as-data"). Nothing here bypasses **Where configuration
+lives** below: the categorical half of the field spec composes through
+`GET /spec`; the three content facts above are the same shape, one row
+per name in `site_content`, so a later milestone adding a whole page —
+a calendar, a socials-links page, both owner-floated futures — is a new
+config section rather than a rebuild.
 
 ## Where configuration lives
 
@@ -800,12 +961,12 @@ Worker's secret.
 
 - **No site-side ban list.** Removing somebody means removing them in
   Telegram; a second roster is a second thing to get wrong.
-- **No always-allow bypass.** A list that skips the membership check is
-  a way in that outlives the reason it was added.
 - **No published snapshot.** The Worker aggregates on request, so there
   is nothing to be stale.
-- **No member backdating.** Admins backfill; a member typing an old
-  date is a correctness problem nobody can check.
+- **No member backdating.** Nobody backfills a member's entry any more
+  (#385 rule 4 retired the admin power that used to); a member typing
+  an old date would be a correctness problem nobody could check either
+  way.
 - **No framework and no bundler, and one build step that meets the
   test below.** The test is the durable part: *can this tooling change
   what ships without the repository noticing?* Linters cannot — nothing

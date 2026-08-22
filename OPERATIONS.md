@@ -289,13 +289,14 @@ under a minute and never longer than the owner takes to act.
   it is re-checked against the bot, so a member already signed in
   through the gap notices nothing (`DESIGN.md`, "The bot is temporary",
   point 3).
-- **Roster and leaver checks that call the bot API fail the same way
+- **Roster and departed checks that call the bot API fail the same way
   for the same window**, and the Worker's own bot-failure stance
-  already covers it: it holds the last verified roster and arms no
-  purge countdown off a failed check, only off a verified one
-  (`DESIGN.md`, "Bot failure stance"). A gap measured in seconds is far
-  inside the 24-hour default that stance runs on — nothing here needs a
-  separate response.
+  already covers it: sign-in trusts the last verified roster for a
+  bounded window (`DESIGN.md`, "Bot failure stance"), and an admin's
+  departed check reads any failure as unknown, never as departed
+  (`DESIGN.md`, "The identifier is the whole problem"). A gap measured
+  in seconds is far inside the 24-hour default sign-in runs on, and it
+  changes nothing about a departed check, which asks fresh every time.
 - **No redeploy is part of this procedure.** `wrangler secret put`
   reaches the running Worker directly; the very next request after step
   3 reads the new value, not the next deploy.
@@ -673,17 +674,19 @@ ends at the idle window rather than running to a cap.
 
 Then, and only if it applies:
 
-1. **Their data starts a visible countdown** on their row on the
-   Members page. An admin may delete it sooner; re-adding them in
-   Telegram inside the window restores them and their data reattaches.
-   The window's length is on the Settings page.
-2. **Nothing here starts a clock on a failure to check.** If Telegram
-   will not answer, the Worker holds the last verified roster and no
-   countdown arms — see `DESIGN.md`, "Bot failure stance". A mass
-   departure freezes rather than arming every countdown at once.
-3. **Their entries are theirs.** Departure does not delete them and
-   neither does silence; the countdown is what eventually does, and an
-   admin who wants them gone sooner presses the row's own control.
+1. **Their data is not deleted automatically — there is no countdown.**
+   An admin's Departed tab lists the account once the bot confirms they
+   have left, and an erase from there is the one per-member erasing
+   power the design gives (`DESIGN.md`, "Admin accounts and deletion").
+2. **A failed check never reads as departed.** If Telegram will not
+   answer at the moment an admin checks, the account reads unknown, not
+   departed, and cannot be erased on that reading — see `DESIGN.md`,
+   "The identifier is the whole problem", for the fail-closed rule that
+   carries.
+3. **Their entries are theirs until an admin erases them.** Departure
+   does not delete them and neither does silence; only the erase does,
+   and it does not undo on a rejoin — see `DESIGN.md` for what the erase
+   removes and what it logs.
 
 **If the person leaving ran the deployment**, this is the wrong
 procedure — "Handing the project to someone else" is, and the Worker's

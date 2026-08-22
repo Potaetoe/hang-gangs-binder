@@ -343,60 +343,45 @@
 
   
 
-  const RENAME_CHOICES = Object.freeze([
-    { mode: "relabel", label: "Same thing, new word",
-      consequence: "Entries already saved follow the new word " +
-        "instantly." },
-    { mode: "replace", label: "A different thing",
-      consequence: "The old value retires under the word it had; " +
-        "entries keep it until someone re-picks." },
-  ]);
+  const RENAME_MODE = "relabel";
+  const RENAME_CONSEQUENCE = "Entries already saved follow the new word " +
+    "instantly.";
 
   
 
-  function mergeFieldsRoster(known, spec) {
-    const next = new Map(known);
-    for (const field of categoricalFields(spec).choice) {
-      const existing = next.get(field.name);
-      const values = new Map(existing ? existing.values : []);
-      for (const v of field.choices || []) {
-        if (v && typeof v.value === "string") values.set(v.value, v.label);
-      }
-      next.set(field.name, { label: field.label, values: values });
-    }
-    return next;
+  function retireValueSentence(label) {
+    return "Members stop being offered \"" + label + "\"; entries " +
+      "already saved keep it. Retire it?";
+  }
+
+  function retireFieldSentence(label) {
+    return "It leaves the form for members; entries already saved keep " +
+      "every value. Retire the \"" + label + "\" field?";
   }
 
   
 
-  function fieldsRosterView(known, spec) {
-    const active = categoricalFields(spec).choice;
-    const activeIds = new Set(active.map((f) => f.name));
-    const out = [];
+  function shortDate(iso) {
+    const parsed = Date.parse(iso);
+    return Number.isFinite(parsed)
+      ? new Date(parsed).toISOString().slice(0, 10)
+      : "an unknown date";
+  }
 
-    for (const field of active) {
-      const entry = known.get(field.name);
-      const knownValues = entry ? entry.values : new Map();
-      const offeredIds = new Set(
-        (field.choices || []).map((v) => v.value));
-      const values = (field.choices || []).map((v) =>
-        ({ id: v.value, label: v.label, retired: false }));
-      for (const [id, label] of knownValues) {
-        if (!offeredIds.has(id)) values.push({ id, label, retired: true });
-      }
-      out.push({ id: field.name, label: field.label, active: true,
-        outside: Boolean(field.choicesFrom), values: values });
-    }
+  
 
-    for (const [id, entry] of known) {
-      if (activeIds.has(id)) continue;
-      const values = [...entry.values].map(([vid, label]) =>
-        ({ id: vid, label: label, retired: true }));
-      out.push({ id: id, label: entry.label, active: false,
-        outside: false, values: values });
-    }
-
-    return out;
+  function fieldView(field) {
+    const values = (field.choices || []).map((v) => ({
+      id: v.id, label: v.label, retired: v.retired === true }));
+    return {
+      id: field.name,
+      label: field.label,
+      active: field.retired !== true,
+      outside: Boolean(field.choicesFrom),
+      retiredAt: field.retired === true &&
+        typeof field.retiredAt === "string" ? field.retiredAt : null,
+      values: values,
+    };
   }
 
    
@@ -520,9 +505,12 @@
     categoricalFields: categoricalFields,
     FIELD_READ_ONLY_REASON: FIELD_READ_ONLY_REASON,
     VALUES_OUTSIDE_REASON: VALUES_OUTSIDE_REASON,
-    RENAME_CHOICES: RENAME_CHOICES,
-    mergeFieldsRoster: mergeFieldsRoster,
-    fieldsRosterView: fieldsRosterView,
+    RENAME_MODE: RENAME_MODE,
+    RENAME_CONSEQUENCE: RENAME_CONSEQUENCE,
+    retireValueSentence: retireValueSentence,
+    retireFieldSentence: retireFieldSentence,
+    shortDate: shortDate,
+    fieldView: fieldView,
     logLine: logLine,
     IDLE_WINDOW: IDLE_WINDOW,
     idleVerdict: idleVerdict,
@@ -950,9 +938,7 @@
      
      
      
-     
     let currentSpec = null;
-    let fieldsKnown = new Map();
 
     function sayFields(message, tone) {
       UI.setStatus($("fields-status"), message, tone);
@@ -973,12 +959,45 @@
      
      
      
-    function liveChoices(fieldId) {
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+    function fieldWriteValues(fieldId, includeRetired) {
       const fields = (currentSpec && currentSpec.fields) || [];
       const field = fields.filter((f) => f && f.name === fieldId)[0];
-      return field && Array.isArray(field.choices)
-        ? field.choices.map((v) => ({ id: v.value, label: v.label }))
-        : [];
+      const choices = field && Array.isArray(field.choices)
+        ? field.choices : [];
+      return choices
+        .filter((v) => includeRetired || v.retired !== true)
+        .map((v) => ({ id: v.id, label: v.label }));
+    }
+
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+    function fieldWriteAllValues(fieldId) {
+      const fields = (currentSpec && currentSpec.fields) || [];
+      const field = fields.filter((f) => f && f.name === fieldId)[0];
+      const choices = field && Array.isArray(field.choices)
+        ? field.choices : [];
+      return choices.map((v) => ({ id: v.id, label: v.label,
+        retired: v.retired === true }));
     }
 
     function putField(id, body) {
@@ -1034,7 +1053,12 @@
       }
       const reread = await loadFields();
       if (reread === "ok") {
-        sayFields(successMessage, null);
+         
+         
+         
+         
+        sayFields("", null);
+        showToast(successMessage);
         loadLog();
       } else if (reread === "failed") {
         sayFields(STALE_AFTER_WRITE, "bad");
@@ -1058,10 +1082,22 @@
         "Restored.");
     }
 
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
     function retireValue(fieldId, valueId) {
-      const remaining = liveChoices(fieldId)
-        .filter((v) => v.id !== valueId);
-      return sendFieldWrite(() => putField(fieldId, { values: remaining }),
+      const values = fieldWriteAllValues(fieldId).map((v) =>
+        v.id === valueId ? { id: v.id, label: v.label, retired: true } : v);
+      return sendFieldWrite(() => putField(fieldId, { values: values }),
         "Retired.");
     }
 
@@ -1069,21 +1105,28 @@
      
      
      
+     
+     
+     
+     
+     
+     
     function unretireValue(fieldId, valueId, label) {
-      const values = liveChoices(fieldId)
-        .concat([{ id: valueId, label: label, retired: false }]);
+      const values = fieldWriteAllValues(fieldId).map((v) =>
+        v.id === valueId ? { id: v.id, label: label, retired: false } : v);
       return sendFieldWrite(() => putField(fieldId, { values: values }),
         "Restored.");
     }
 
     function addValue(fieldId, label) {
-      const values = liveChoices(fieldId).concat([{ label: label }]);
+      const values = fieldWriteValues(fieldId, false)
+        .concat([{ label: label }]);
       return sendFieldWrite(() => putField(fieldId, { values: values }),
         "Added.");
     }
 
     function moveValue(fieldId, valueId, delta) {
-      const values = liveChoices(fieldId);
+      const values = fieldWriteValues(fieldId, false);
       const at = values.findIndex((v) => v.id === valueId);
       const to = at + delta;
       if (at === -1 || to < 0 || to >= values.length) return;
@@ -1094,11 +1137,11 @@
         "Reordered.");
     }
 
-    function renameValue(fieldId, valueId, newLabel, mode) {
-      const values = liveChoices(fieldId).map((v) =>
+    function renameValue(fieldId, valueId, newLabel) {
+      const values = fieldWriteValues(fieldId, false).map((v) =>
         v.id === valueId ? { id: v.id, label: newLabel } : v);
       return sendFieldWrite(
-        () => putField(fieldId, { values: values, mode: mode }),
+        () => putField(fieldId, { values: values, mode: RENAME_MODE }),
         "Renamed.");
     }
 
@@ -1111,6 +1154,44 @@
     }
 
      
+
+     
+     
+     
+     
+     
+     
+    function dangerousAction(container, trigger, sentence, onYes) {
+      const block = document.createElement("div");
+      block.className = "stack-tight";
+      block.hidden = true;
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = sentence;
+      block.appendChild(p);
+      const row = document.createElement("div");
+      row.className = "row";
+      const yes = document.createElement("button");
+      yes.type = "button";
+      yes.className = "primary";
+      yes.textContent = "Yes";
+      yes.addEventListener("click", onYes);
+      row.appendChild(yes);
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "secondary";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", function () {
+        show(block, false);
+      });
+      row.appendChild(cancel);
+      block.appendChild(row);
+      container.appendChild(block);
+      trigger.addEventListener("click", function () {
+        show(block, block.hidden);
+      });
+      return block;
+    }
 
      
      
@@ -1209,13 +1290,12 @@
       retire.type = "button";
       retire.className = "secondary";
       retire.textContent = "Retire";
-      retire.addEventListener("click", function () {
-        retireValue(view.id, value.id);
-      });
       buttons.appendChild(retire);
 
       block.appendChild(buttons);
 
+       
+       
        
        
        
@@ -1228,26 +1308,24 @@
       input.value = value.label;
       form.appendChild(input);
 
-      for (const choice of RENAME_CHOICES) {
-        const consequence = document.createElement("p");
-        consequence.className = "hint";
-        consequence.textContent = choice.consequence;
-        form.appendChild(consequence);
+      const consequence = document.createElement("p");
+      consequence.className = "hint";
+      consequence.textContent = RENAME_CONSEQUENCE;
+      form.appendChild(consequence);
 
-        const modeButton = document.createElement("button");
-        modeButton.type = "button";
-        modeButton.className = "secondary";
-        modeButton.textContent = choice.label;
-        modeButton.addEventListener("click", function () {
-          const verdict = validateValueLabel(input.value);
-          if (!verdict.ok) {
-            sayFields(verdict.message, "bad");
-            return;
-          }
-          renameValue(view.id, value.id, verdict.value, choice.mode);
-        });
-        form.appendChild(modeButton);
-      }
+      const send = document.createElement("button");
+      send.type = "button";
+      send.className = "primary";
+      send.textContent = "Rename";
+      send.addEventListener("click", function () {
+        const verdict = validateValueLabel(input.value);
+        if (!verdict.ok) {
+          sayFields(verdict.message, "bad");
+          return;
+        }
+        renameValue(view.id, value.id, verdict.value);
+      });
+      form.appendChild(send);
 
       const cancel = document.createElement("button");
       cancel.type = "button";
@@ -1262,6 +1340,11 @@
       rename.addEventListener("click", function () {
         show(form, form.hidden);
       });
+
+      dangerousAction(block, retire, retireValueSentence(value.label),
+        function () {
+          retireValue(view.id, value.id);
+        });
 
       return block;
     }
@@ -1288,6 +1371,17 @@
       buttons.className = "row buttons";
 
       if (!view.active) {
+         
+         
+         
+         
+        if (view.retiredAt) {
+          const when = document.createElement("p");
+          when.className = "hint";
+          when.textContent = "Last changed " + shortDate(view.retiredAt) +
+            ".";
+          block.appendChild(when);
+        }
         const restore = document.createElement("button");
         restore.type = "button";
         restore.className = "secondary";
@@ -1331,7 +1425,7 @@
             sayFields(verdict.message, "bad");
             return;
           }
-          if (liveChoices(view.id).length >= MAX_FIELD_VALUES) {
+          if (fieldWriteValues(view.id, true).length >= MAX_FIELD_VALUES) {
             sayFields("A field carries up to " + MAX_FIELD_VALUES +
               " values, retired ones counted.", "bad");
             return;
@@ -1345,21 +1439,16 @@
         block.appendChild(addRow);
       }
 
-      let armed = false;
       const retire = document.createElement("button");
       retire.type = "button";
       retire.className = "secondary";
       retire.textContent = "Retire field";
-      retire.addEventListener("click", function () {
-        if (!armed) {
-          armed = true;
-          retire.textContent = "Confirm retiring this field";
-          return;
-        }
-        retireField(view.id);
-      });
       buttons.appendChild(retire);
       block.appendChild(buttons);
+      dangerousAction(block, retire, retireFieldSentence(view.label),
+        function () {
+          retireField(view.id);
+        });
       return block;
     }
 
@@ -1395,11 +1484,16 @@
       for (const field of split.other) {
         list.appendChild(readOnlyFieldBlock(field));
       }
-      for (const view of fieldsRosterView(fieldsKnown, currentSpec)) {
-        list.appendChild(fieldBlock(view));
+      for (const field of split.choice) {
+        list.appendChild(fieldBlock(fieldView(field)));
       }
     }
 
+     
+     
+     
+     
+     
      
      
      
@@ -1409,7 +1503,7 @@
       sayFields("Loading…", null);
       let payload;
       try {
-        const response = await fetch(config.endpoint + "/spec", {
+        const response = await fetch(config.endpoint + "/admin-fields", {
           headers: root.BinderSession.authorization(),
         });
         if (sessionRefused(response, sayFields)) return "signed-out";
@@ -1426,7 +1520,6 @@
       const spec = payload && payload.spec && typeof payload.spec === "object"
         ? payload.spec
         : { fields: [] };
-      fieldsKnown = mergeFieldsRoster(fieldsKnown, spec);
       currentSpec = spec;
       renderFields();
       sayFields("", null);
@@ -1543,7 +1636,6 @@
       show($("roles-other"), false);
       $("fields-list").textContent = "";
       currentSpec = null;
-      fieldsKnown = new Map();
     }
 
     function wireIdle() {
@@ -1593,6 +1685,80 @@
 
       ticker = root.setInterval(checkAttention, TICK_MS);
       $("idle-stay").addEventListener("click", markInteraction);
+    }
+
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+
+     
+     
+     
+     
+     
+     
+     
+    function fadeIn(el) {
+      if (!el) return;
+      el.className = (el.className ? el.className + " " : "") + "fade-in";
+      void el.offsetHeight;
+      el.className = el.className.replace(/\s*fade-in\b/, "");
+    }
+
+    const TABS = [
+      { tab: "tab-settings", panel: "settings-card" },
+      { tab: "tab-roles", panel: "roles-card" },
+      { tab: "tab-fields", panel: "fields-card" },
+      { tab: "tab-log", panel: "log-card" },
+    ];
+
+    function selectTab(panelId) {
+      for (const one of TABS) {
+        const active = one.panel === panelId;
+        $(one.tab).setAttribute("aria-selected", String(active));
+        show($(one.panel), active);
+        if (active) fadeIn($(one.panel));
+      }
+    }
+
+    for (const one of TABS) {
+      $(one.tab).addEventListener("click", function () {
+        selectTab(one.panel);
+      });
+    }
+     
+     
+     
+    selectTab("settings-card");
+
+     
+     
+     
+     
+     
+     
+     
+     
+     
+    let toastTimer = null;
+    function showToast(message) {
+      const toast = $("toast");
+      if (!toast) return;
+      root.clearTimeout(toastTimer);
+      toast.textContent = message;
+      show(toast, true);
+      fadeIn(toast);
+      toastTimer = root.setTimeout(function () {
+        show(toast, false);
+      }, 3000);
     }
 
     wireIdle();
