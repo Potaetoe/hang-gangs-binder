@@ -843,7 +843,9 @@
     });
   }
 
-  function buildFilterRow(state) {
+  
+
+  function buildFilterRow(container, state) {
     const row = document.createElement("div");
     row.className = "field filter-row";
     row.setAttribute("data-field", state.field);
@@ -852,6 +854,7 @@
     label.id = "filter-label-" + state.field;
     label.textContent = state.label;
     row.appendChild(label);
+    container.appendChild(row);
 
     const chips = buildChipButtons(state);
     const chipRow = document.createElement("div");
@@ -877,15 +880,13 @@
       row.appendChild(notice);
       wireFilterSelect(state, select, notice);
     }
-
-    return row;
   }
 
   function renderFilterRows() {
     const container = $("filter-rows");
     container.textContent = "";
     fieldStates.forEach(function (state) {
-      container.appendChild(buildFilterRow(state));
+      buildFilterRow(container, state);
     });
   }
 

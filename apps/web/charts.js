@@ -1448,7 +1448,26 @@
     });
   }
 
-  function buildFilterRow(state) {
+  /*
+   * `container` IS APPENDED TO BEFORE ANY CHIP IS MEASURED. A node built
+   * with document.createElement() and never inserted has no layout box
+   * at all - getBoundingClientRect() on a detached chip reads {top: 0,
+   * ...} for every one of them alike, which satisfies "fits two rows"
+   * by construction regardless of how many chips there are or how wide
+   * they are. Attaching the row (empty, chip-less) to the live
+   * #filter-rows FIRST, then building and measuring its chips, is what
+   * gives measuredTops() real numbers to read - proven wrong the other
+   * way at builder time in a real browser: country's twenty candidates
+   * measured as one row (chip tops all 0) until this ordering fixed it,
+   * see the completion on #434 for the numbers. NO FLICKER even though
+   * the row is live during measurement: everything from here to the
+   * mode decision runs in one synchronous stretch with no `await`, so
+   * the browser never paints the chip row before a "list" verdict swaps
+   * it for a <select> - see this file's header on why decideMode()
+   * defaults to chips only when no geometry is available at all, never
+   * because none was sought.
+   */
+  function buildFilterRow(container, state) {
     const row = document.createElement("div");
     row.className = "field filter-row";
     row.setAttribute("data-field", state.field);
@@ -1457,6 +1476,7 @@
     label.id = "filter-label-" + state.field;
     label.textContent = state.label;
     row.appendChild(label);
+    container.appendChild(row);
 
     const chips = buildChipButtons(state);
     const chipRow = document.createElement("div");
@@ -1482,15 +1502,13 @@
       row.appendChild(notice);
       wireFilterSelect(state, select, notice);
     }
-
-    return row;
   }
 
   function renderFilterRows() {
     const container = $("filter-rows");
     container.textContent = "";
     fieldStates.forEach(function (state) {
-      container.appendChild(buildFilterRow(state));
+      buildFilterRow(container, state);
     });
   }
 
