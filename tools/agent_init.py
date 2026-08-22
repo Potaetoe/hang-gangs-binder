@@ -151,6 +151,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -891,6 +892,84 @@ def lease_path(block, state=None):
     return os.path.join(leases_dir(state), "%d.json" % block[0])
 
 
+# How many times remove_lease_file retries a PermissionError before
+# giving up loudly, and how long it waits between tries. Bounded the
+# same way take_lease's own exclusive create is bounded (F5, #441): the
+# holder of a contended handle is another process's brief read, not a
+# lock this process could release itself, so a fixed ceiling is what
+# keeps a genuinely stuck denial from hanging agent-park forever.
+LEASE_DELETE_ATTEMPTS = 10
+LEASE_DELETE_DELAY = 0.05
+
+
+class LeaseReleaseDenied(PermissionError):
+    """A persistent denial from hand_over's own release, and ONLY that -
+    never from anything else take_lease can raise (F3, #448 review of
+    #441's fix, comment 5378165718).
+
+    A subclass of PermissionError, not a new hierarchy: everything that
+    already writes `except PermissionError` (do_park's own catch on
+    release_lease, or a caller nobody has taught about this class yet)
+    keeps catching it, since an instance of this class IS a
+    PermissionError. What it buys is the other direction - do_init can
+    tell "the release step this message names actually failed" apart
+    from a PermissionError raised somewhere else inside take_lease.
+
+    Before this class existed, do_init wrapped the WHOLE take_lease(...)
+    call in one `except PermissionError`, and printed one message: "the
+    lease directory refused to release this worktree's previous block".
+    But take_lease's first statement is
+    `os.makedirs(leases_dir(state), exist_ok=True)`, and the reclaim
+    path calls `write_lease(...)` - both can raise PermissionError, and
+    neither has released anything. A first-ever run on a machine whose
+    ports directory cannot be created was told a previous block failed
+    to release and sent to wait for a lease file that does not exist -
+    exactly the shape F2 exists to remove, at a new site. hand_over now
+    raises this class specifically so do_init's narrower catch (below)
+    only claims a release failed when one actually did.
+    """
+
+
+def remove_lease_file(path):
+    """Delete a lease file, tolerant of the Windows race take_lease's own
+    exclusive create already catches one function up (F3, #448 review of
+    #441, comment 5377511579).
+
+    A concurrent reader - another agent's allocation scan, which opens
+    every lease file it walks through `read_lease` - can hold this exact
+    path open at the instant a release tries to delete it. Windows
+    raises PermissionError while that handle is live, where POSIX lets
+    the delete through and unlinks the name out from under the open
+    handle. That is CONTENTION, the same fact take_lease's own
+    `except (FileExistsError, PermissionError)` already treats as
+    "someone else has this path right now" rather than a crash - so this
+    retries a bounded number of times with a short pause and only then
+    gives up, LOUDLY: it raises rather than swallowing the denial, which
+    is what "specific errors, bounded, loud" (the ticket's own words)
+    means for a delete rather than a create. A release that reported
+    success while the lease survives would be the precise "a lease you
+    hold after your session ends is a blocker for someone else" hazard
+    #441 exists to prevent, made worse by looking like it worked - the
+    GREEN commit that introduced take_lease's own hardening claimed that
+    general property while leaving this exact call bare (F3, #448
+    review).
+
+    FileNotFoundError is never retried: the file is already gone, which
+    is the state this call exists to reach, so that is idempotent
+    success rather than an error to recover from.
+    """
+    for attempt in range(LEASE_DELETE_ATTEMPTS):
+        try:
+            os.remove(path)
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError:
+            if attempt == LEASE_DELETE_ATTEMPTS - 1:
+                raise
+            time.sleep(LEASE_DELETE_DELAY)
+
+
 def lease_reclaimable(lease, repo, state=None):
     """Why this lease may be taken over, or None if it may not.
 
@@ -966,13 +1045,24 @@ def take_lease(repo, branch, state=None, requested=None, reclaim=False):
         Once, and not before: releasing first and then failing to take
         the requested block would leave the agent holding nothing, which
         is worse than holding the block it asked to leave.
+
+        A PermissionError from remove_lease_file here is re-raised as
+        LeaseReleaseDenied - the same denial, retagged so do_init can
+        tell it apart from a PermissionError raised anywhere else in
+        take_lease (F3, #448 review of #441's fix, comment 5378165718;
+        see LeaseReleaseDenied's own docstring for the failure this
+        closes).
         """
         if already and already != block:
-            os.remove(lease_path(already, state))
+            try:
+                remove_lease_file(lease_path(already, state))
+            except PermissionError as denial:
+                raise LeaseReleaseDenied(*denial.args) from denial
             return block, note + ", releasing %d-%d it held" % already
         return block, note
 
     held = []
+    denied = []
     for block in blocks:
         path = lease_path(block, state)
         existing = read_lease(path)
@@ -990,7 +1080,7 @@ def take_lease(repo, branch, state=None, requested=None, reclaim=False):
             continue
         try:
             handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except (FileExistsError, PermissionError):
+        except (FileExistsError, PermissionError) as denial:
             # Lost the race between the read above and here - or, on
             # Windows, a moment from not existing. The same NTFS
             # delete-pending window tools/prime_lock.py's own exclusive
@@ -1004,12 +1094,29 @@ def take_lease(repo, branch, state=None, requested=None, reclaim=False):
             # block rather than letting the transient exception crash
             # the whole allocation (carried into this slice's scope by
             # #441's own review of #436's finding).
-            held.append((block, read_lease(path) or {}))
+            #
+            # F2 (#448 review of #441, comment 5377511579): that
+            # reasoning covers a REAL race - a lease file is on disk to
+            # read once the dust settles. A PERSISTENT denial (an ACL,
+            # an antivirus or EDR lock, a roaming-profile sync) never
+            # produces one: nothing here ever wrote a lease, so
+            # `read_lease(path)` finds nothing. Filing that as `held`
+            # anyway invented a holder ("an unnamed worktree since an
+            # unrecorded time") for a block no agent has ever leased,
+            # and sent the reader to `agent-park` a worktree that does
+            # not exist. `denied` is that same denial reported as
+            # itself - see lease_refusal()'s own docstring for the
+            # message it produces.
+            after = read_lease(path)
+            if after is not None:
+                held.append((block, after))
+            else:
+                denied.append((block, denial))
             continue
         write_new_lease(handle, mine, branch, block)
         return hand_over(block, "newly leased")
 
-    return None, lease_refusal(held)
+    return None, lease_refusal(held, denied)
 
 
 def read_lease(path):
@@ -1071,34 +1178,122 @@ def blocks_as_text():
     return ", ".join("%d-%d" % block for block in PORT_BLOCKS)
 
 
-def lease_refusal(held):
-    """The message for a full lease table - a state, not a bug."""
-    lines = ["every port block this fleet allocates is leased, and none "
-             "of them is provably free:"]
-    for block, lease in held:
-        observed = bound_ports(block)
-        if observed is None:
-            evidence = "nothing here could observe the ports"
-        elif observed:
-            evidence = "ports %s are bound" % ", ".join(
-                str(port) for port in sorted(observed))
+def lease_refusal(held, denied=None):
+    """The message for a failed full-pool allocation - a state, not a bug.
+
+    `held` and `denied` are reported as the two different facts they are
+    (F1, F2, #448): a block another agent's lease names is not the same
+    fact as a block this call never even got to read, and BEFORE this
+    function took the split, a denial was folded into `held` as an entry
+    with an empty lease record, so it printed "held by an unnamed
+    worktree since an unrecorded time" for a block nothing has ever
+    leased - inventing a holder that does not exist and sending the
+    remedy at `./run agent-park` in a worktree that was never created.
+
+    `branch` is printed alongside `worktree` and `leased_at` because
+    #441 scope item 2 named all three as the facts the lease file
+    carries and the refusal must print (F1, #448 review comment
+    5377511579): the lease record always has the field, so a missing
+    one here was a message-content gap, not a data gap.
+
+    THE MIXED STATE (F2, #448 review of #441's fix, comment 5378165718):
+    `held` and `denied` are not two mutually exclusive scans - they are
+    two outcomes of the SAME scan across the pool, and both can be
+    non-empty together. The handler's own comment on the exclusive
+    create describes exactly how: an NTFS delete-pending window where
+    one block's create sees "access denied" for a release that is
+    mid-flight elsewhere, while a DIFFERENT block in the same pass reads
+    back as a real, live lease. Ten agents parking and initializing at
+    once is this fleet's normal day, so this is reachable with no
+    filesystem pathology at all.
+
+    Before this fix, the header always said "every port block this
+    fleet allocates is leased" whenever `held` was non-empty - true only
+    when `denied` is empty, false and overclaiming otherwise, since some
+    blocks were never read at all. And whenever `denied` was non-empty,
+    the denial paragraph always closed with "No block above is a proven
+    hold" - true only when `held` is empty; false, and actively harmful,
+    the moment it is not, because it sits right above the `--reclaim`
+    remedy and invites reclaiming a block whose holder is alive on disk.
+    The remedy logic made this worse: `elif denied` meant the denial's
+    own remedy never printed at all whenever anything was held, so a
+    mixed reader got no guidance about the denial half of their own
+    refusal. The three sentences below now say only what is true of the
+    two lists actually passed in, and both remedies print whenever both
+    lists are non-empty.
+    """
+    denied = denied or []
+    lines = []
+    if held and not denied:
+        lines.append("every port block this fleet allocates is leased, "
+                     "and none of them is provably free:")
+    elif held:
+        lines.append(
+            "%d port block(s) are leased for real, and %d could not be "
+            "read at all (a filesystem denial, not a lease - listed "
+            "separately below):" % (len(held), len(denied)))
+    if held:
+        for block, lease in held:
+            observed = bound_ports(block)
+            if observed is None:
+                evidence = "nothing here could observe the ports"
+            elif observed:
+                evidence = "ports %s are bound" % ", ".join(
+                    str(port) for port in sorted(observed))
+            else:
+                # The pack's own finding, mechanized: silence here is not
+                # evidence of a dead holder.
+                evidence = ("no port in it is bound, which is consistent "
+                            "with a dead holder and does not prove one - "
+                            "an agent that has not started its server "
+                            "yet is invisible to netstat")
+            lines.append(
+                "  %d-%d  held by %s (branch %s) since %s; %s"
+                % (block[0], block[1],
+                   lease.get("worktree", "an unnamed worktree"),
+                   lease.get("branch", "an unrecorded branch"),
+                   lease.get("leased_at", "an unrecorded time"),
+                   evidence))
+    if denied:
+        if lines:
+            lines.append("")
+        lines.append(
+            "the lease directory refused the create %d time(s), most "
+            "recently: %s" % (len(denied), denied[-1][1]))
+        if held:
+            lines.append(
+                "that is a filesystem denial on the create itself, for "
+                "the block(s) just named in this paragraph only - not a "
+                "lease this fleet ever wrote for THEM. It could be an "
+                "ordinary race against another agent's own lease act "
+                "landing at the same instant, or something outside this "
+                "fleet denying writes to the ports directory (a "
+                "permission, an antivirus or EDR lock, a roaming-profile "
+                "sync). The block(s) listed above are separate and ARE "
+                "proven holds - this paragraph says nothing about them.")
         else:
-            # The pack's own finding, mechanized: silence here is not
-            # evidence of a dead holder.
-            evidence = ("no port in it is bound, which is consistent with "
-                        "a dead holder and does not prove one - an agent "
-                        "that has not started its server yet is invisible "
-                        "to netstat")
-        lines.append("  %d-%d  held by %s since %s; %s"
-                     % (block[0], block[1],
-                        lease.get("worktree", "an unnamed worktree"),
-                        lease.get("leased_at", "an unrecorded time"),
-                        evidence))
-    lines.append("remedy: run `./run agent-park` in whichever of those "
-                 "worktrees is finished, which releases its block; or, "
-                 "once you have established a holder is gone, "
-                 "`./run agent-init --ports <start> --reclaim`, which "
-                 "prints what it superseded.")
+            lines.append(
+                "that is a filesystem denial on the create itself, not a "
+                "lease this fleet ever wrote - it could be an ordinary "
+                "race against another agent's own lease act landing at "
+                "the same instant, or something outside this fleet "
+                "denying writes to the ports directory (a permission, an "
+                "antivirus or EDR lock, a roaming-profile sync). No "
+                "block above is a proven hold.")
+    if held:
+        lines.append("remedy: run `./run agent-park` in whichever of "
+                     "those worktrees is finished, which releases its "
+                     "block; or, once you have established a holder is "
+                     "gone, `./run agent-init --ports <start> "
+                     "--reclaim`, which prints what it superseded.")
+    if denied:
+        lines.append(
+            "remedy: run `./run agent-init` again - a race resolves on "
+            "retry; if the denial persists, establish why the ports "
+            "directory refuses a create there (a permission, an "
+            "antivirus or EDR lock, a roaming-profile sync) and fix "
+            "that, since `--reclaim` and `agent-park` both act on a "
+            "lease that exists, and none of these blocks has one.")
     return "\n".join(lines)
 
 
@@ -1106,7 +1301,7 @@ def release_lease(repo, state=None):
     """The block this worktree held, dropped. Idempotent."""
     block = current_lease(repo, state)
     if block:
-        os.remove(lease_path(block, state))
+        remove_lease_file(lease_path(block, state))
     return block
 
 
@@ -1497,7 +1692,46 @@ def do_init(args):
     # 4. The contract, generated from what was just established.
     record = read_json(record_path(repo, state)) or {}
     requested = "primary" if kind == "primary" else args.ports
-    block, note = take_lease(repo, branch, state, requested, args.reclaim)
+    try:
+        block, note = take_lease(repo, branch, state, requested,
+                                 args.reclaim)
+    except LeaseReleaseDenied as denial:
+        # take_lease's own hand_over() deletes the block this worktree
+        # is MOVING OFF of (a --ports request onto a different block),
+        # through remove_lease_file - bounded and loud rather than
+        # unbounded and silent (F3, #448 review of #441, comment
+        # 5377511579), which means a persistent denial reaches here as
+        # a raised exception rather than a false "released" claim.
+        # Reported as agent-init's own refusal shape rather than a raw
+        # traceback, matching every other failure path in this function.
+        # Caught by its OWN type, ahead of the plain PermissionError
+        # clause below, so this message is only ever printed for the
+        # release it names - never for a denial on take_lease's
+        # os.makedirs or write_lease, which have no previous block to
+        # release at all (F3, #448 review of #441's fix, comment
+        # 5378165718; LeaseReleaseDenied's own docstring carries the
+        # failure this narrowing closes).
+        return fail(
+            "the lease directory refused to release this worktree's "
+            "previous block after %d attempt(s): %s."
+            % (LEASE_DELETE_ATTEMPTS, denial),
+            "run `./run agent-init` again once whatever is holding that "
+            "lease file open (an antivirus or EDR scan, another agent's "
+            "read of it) has cleared.")
+    except PermissionError as denial:
+        # Everything else take_lease can raise as a PermissionError:
+        # os.makedirs(leases_dir(state), ...) at its own first line, or
+        # write_lease(...) on the reclaim path - neither one releases
+        # anything, so this message never claims a previous block
+        # failed to release (F3, #448 review of #441's fix, comment
+        # 5378165718).
+        return fail(
+            "the lease directory refused a write during allocation - "
+            "nothing has been given up or released here, only "
+            "attempted: %s." % denial,
+            "run `./run agent-init` again once whatever is denying "
+            "writes to the ports directory (a permission, an antivirus "
+            "or EDR lock, a roaming-profile sync) has cleared.")
     if block is None:
         return fail(note)
     scratch = take_scratch(branch, record.get("scratch"))
@@ -1709,7 +1943,25 @@ def do_park(args):
                            "origin/accounts")
     merged = code == 0
 
-    released = release_lease(repo, state)
+    try:
+        released = release_lease(repo, state)
+    except PermissionError as denial:
+        # release_lease deletes this worktree's own lease file through
+        # remove_lease_file - bounded and loud rather than unbounded and
+        # silent (F3, #448 review of #441, comment 5377511579). HEAD is
+        # already detached above by this point, but nothing has been
+        # written to the marker yet, so a persistent denial is reported
+        # here rather than left as a raw traceback that would leave the
+        # lease on disk with no explanation of why.
+        return fail(
+            "the lease directory refused to delete this worktree's own "
+            "lease file after %d attempt(s): %s. HEAD is already "
+            "detached at %s, but nothing else has been changed - the "
+            "lease this worktree held is still on disk."
+            % (LEASE_DELETE_ATTEMPTS, denial, tip),
+            "run `./run agent-park` again once whatever is holding that "
+            "lease file open (an antivirus or EDR scan, another agent's "
+            "read of it) has cleared.")
     # Only a directory under the root this verb makes them in, and
     # `within` is what asks that as a question about paths. A teardown
     # that deletes a path out of a record it did not write is a teardown
