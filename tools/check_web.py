@@ -2883,6 +2883,10 @@ LABELS = {
     # touches that page.
     "Change log": "runner",
     "Development session": "caution",
+    # 0.9-M3-S13 (#433): the Fields card, the categorical form builder's
+    # page half - a runner like every other card on this page, naming
+    # the section it stands on rather than reporting an outcome.
+    "Fields": "runner",
     "How your entry is handled": "runner",
     "Members": "runner",
     "Not open": "flag",
