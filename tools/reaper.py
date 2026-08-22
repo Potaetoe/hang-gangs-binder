@@ -120,7 +120,7 @@ instead of to nothing. `tools/reaper_suite.py`'s fixture E is built
 exactly this shape: a parked record, a still-registered worktree,
 expected protected.
 
-ACT() ASKS AGAIN TOO (fix wave 1, F2, review comment 5376697023): this
+THE ACT VERB ASKS AGAIN TOO (fix wave 1, F2, review comment 5376697023): this
 protection is decided once, in plan(), the same as every other proof in
 this file - and `act()`'s own docstring is explicit that decisions made
 at plan time are not carried across the gap to the act, because the
