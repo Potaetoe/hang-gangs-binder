@@ -2369,17 +2369,6 @@ DANGLING_PINS = {
             "retired 0.9-M2-S3 (#354). server/ - listed for #424 or "
             "the next sensitive slice - #422"),
 
-    # ADMIN_IDLE_MINUTES: mentioned twice in server/worker.js's own
-    # comments, never bound anywhere - checked against 0.9-M3-S8's own
-    # branch tip before it merged, same result. Not history (nothing
-    # says it was ever real); a forward reference to a binding S8 named
-    # but has not wired. server/ - listed for #424 or the next sensitive
-    # slice, not S17's to invent a binding for.
-    ("server/worker.js", "constant", "ADMIN_IDLE_MINUTES"):
-        (2, "mentioned, never bound, in this file or 0.9-M3-S8's own "
-            "branch before it merged; listed for #424 or the next "
-            "sensitive slice - #422"),
-
     # Retired features and files with no single owner obvious enough to
     # rewrite blind:
     ("tools/check_live.py", "function", "origin_problems"):
