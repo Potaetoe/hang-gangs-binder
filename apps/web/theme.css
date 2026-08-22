@@ -848,10 +848,16 @@ body.railed {
  * fails is a page somebody can get stranded on. The copies are held to
  * agreeing by tools/check_web.py.
  *
- * No `hidden` anywhere in here, and that is load-bearing rather than an
- * omission: [hidden] is display:none !important at the top of this
- * file, so an attribute-hidden list could not be revealed again by any
- * media query. The four links are always in flow, at every width.
+ * Your page and Charts carry no `hidden` here, and that is load-bearing
+ * rather than an omission: [hidden] is display:none !important at the
+ * top of this file, so an attribute-hidden link could not be revealed
+ * again by any MEDIA QUERY - the reason this block never leaned on one
+ * to reveal a link back. Admin is the one exception (0.9-M3-S33 fix
+ * wave 1, #457, F6): #454 item 6 names the admin destination as gated
+ * to admins on both the bottom bar and this rail, so it ships `hidden`
+ * and apps/web/nav.js's gateAdminItem() reveals it by SCRIPT, the same
+ * way it already reveals the bar's own #tab-bar-admin - not by a media
+ * query, so the concern above does not apply to it.
  */
 .rail-links {
   display: flex;
@@ -956,10 +962,16 @@ body.railed {
  * follows (see .rail-session's comment, above): with scripts dead
  * there is no confirmed session to end and no adminVia to gate an
  * admin destination on, so a control offering either would do nothing.
- * apps/web/signout.js's paintSession() reveals #tab-bar-signout the
- * same way it already reveals #sign-out; apps/web/nav.js's
- * gateAdminItem() reveals #tab-bar-admin only once GET /me answers
- * with a non-empty adminVia.
+ * apps/web/nav.js's paintBarSignOut() reveals #tab-bar-signout the same
+ * honest-resting-state way apps/web/signout.js's own paintSession()
+ * reveals #sign-out - wired in nav.js rather than beside signout.js's
+ * own copy so this file's edit stayed normal-tier (0.9-M3-S33, #457;
+ * signout.js is auth/session surface and tiers sensitive regardless of
+ * size, AGENTS.md's "The M3 delivery shape") - and calls the same,
+ * unmodified `BinderSignOut.signOut()` signout.js's own button calls.
+ * apps/web/nav.js's gateAdminItem() reveals #tab-bar-admin and the
+ * rail's own #rail-admin (0.9-M3-S33 fix wave 1, #457, F6) only once
+ * GET /me answers with a non-empty adminVia.
  */
 .tab-bar {
   display: none;

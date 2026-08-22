@@ -45,7 +45,7 @@
     <ul class="rail-links">
       <li><a href="your-page.html">Your page</a></li>
       <li><a href="charts.html">Charts</a></li>
-      <li><a href="admin.html">Admin</a></li>
+      <li><a href="admin.html" id="rail-admin" hidden>Admin</a></li>
     </ul>
   </nav>
 
@@ -64,13 +64,15 @@
 <!-- The nameplate. It says what surface this is before it says anything
      about what is on it - #265 row 23's rule survives the rewrite:
      BOTH SENTENCES ARE ABOUT WHAT IS BELOW THEM, so admin.js takes them
-     down when what is below them is a refusal. The rail offers Admin to
-     every member on the owner's instruction, so the ordinary member
-     experience of this page is the UNAVAILABLE card, and the surface
-     mark would be a false claim over that screen. They ship VISIBLE,
-     which keeps the no-script resting state exactly what it was: a
-     signed-in reader with scripts dead sees the page's name and nothing
-     it can do. -->
+     down when what is below them is a refusal. The rail's own Admin
+     link is gated to admins now (0.9-M3-S33 fix wave 1, #457, F6), but
+     this page is still public - a direct URL, a bookmark or a stale
+     link reaches it regardless of the rail - so the ordinary member
+     experience of this page is still the UNAVAILABLE card, and the
+     surface mark would be a false claim over that screen. They ship
+     VISIBLE, which keeps the no-script resting state exactly what it
+     was: a signed-in reader with scripts dead sees the page's name and
+     nothing it can do. -->
 <p class="surface-mark" id="surface-mark">
   Admin surface — visible to admins only.
 </p>
@@ -109,8 +111,11 @@
   </div>
 
   <!-- Shown instead of the tool for a signed-in member who is not an
-       admin. The rail offers this page to everyone, so this card - not
-       the tool below it - is the ordinary experience of visiting it. -->
+       admin. This page stays public regardless of the rail's own
+       Admin link being gated to admins now (0.9-M3-S33 fix wave 1,
+       #457, F6) - a direct URL, a bookmark or a stale link still
+       reaches it - so this card, not the tool below it, is the
+       ordinary experience of a non-admin who lands here. -->
   <div class="card narrow" id="closed" hidden>
     <p class="flag">Unavailable</p>
     <p data-reason></p>
@@ -460,7 +465,10 @@
   apps/web/theme.css's own comment on .tab-bar for the full reasoning,
   and this page's earlier comment on the rail for why markup this
   important is written out per page rather than built by nav.js.
-  tools/check_web.py holds the four copies identical.
+  tools/check_web.py holds the three copies identical. Each item
+  carries its own id (0.9-M3-S33 fix wave 1, #457, F1) so a missing or
+  mislabeled one is named rather than only a missing bar - see
+  your-page.html's own comment on this block for the full reasoning.
 
   Icons carry no words of their own (they are aria-hidden and
   unfocusable - the label beside each one is what a screen reader and
@@ -469,7 +477,7 @@
   from one declaration.
 -->
 <nav class="tab-bar" aria-label="Site">
-  <a class="tab-bar-item" href="your-page.html">
+  <a class="tab-bar-item" id="tab-bar-yourpage" href="your-page.html">
     <svg class="tab-bar-icon" viewBox="0 0 24 24" fill="none"
       stroke="currentColor" stroke-width="2" stroke-linecap="round"
       stroke-linejoin="round" aria-hidden="true" focusable="false"
@@ -477,7 +485,7 @@
       d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
     <span>Your page</span>
   </a>
-  <a class="tab-bar-item" href="charts.html">
+  <a class="tab-bar-item" id="tab-bar-charts" href="charts.html">
     <svg class="tab-bar-icon" viewBox="0 0 24 24" fill="none"
       stroke="currentColor" stroke-width="2" stroke-linecap="round"
       stroke-linejoin="round" aria-hidden="true" focusable="false"

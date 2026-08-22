@@ -1,7 +1,9 @@
 /*
  * Three jobs, all about the shared shell rather than a page's own
  * content: marking where you are in the rail (and, since 0.9-M3-S33,
- * #457, in the bottom bar), gating the bar's Admin item to admins, and
+ * #457, in the bottom bar), gating the Admin item to admins on BOTH
+ * surfaces (the bar's and, since this ticket's fix wave 1, the rail's
+ * own #rail-admin - #454 item 6 names them gated "the same way"), and
  * showing/wiring the bar's own Sign out item.
  *
  * It is loaded by the three pages that HAVE a rail and a bar, and by
@@ -30,13 +32,17 @@
  * same list written three or four times, which is real - so
  * tools/check_web.py fails the build if the copies ever disagree.
  *
- * What this file does not do is open the navigation. The rail's four
- * links are always in flow at every width - that is the owner's
- * decision on #73, and the links are the thing somebody needs, so they
- * are the thing that stays. The bar replaces the rail's role on a
- * phone (theme.css's own comment on .tab-bar carries that ruling); it
- * is not a disclosure either, just a different position for the same
- * kind of always-visible destination.
+ * What this file does not do is open the navigation. Your page and
+ * Charts are always in flow at every width on the rail - that is the
+ * owner's decision on #73, and the links are the thing somebody needs,
+ * so they are the thing that stays. Admin is the one rail link that is
+ * NOT always in flow any more (0.9-M3-S33 fix wave 1, #457, F6): #454
+ * item 6 gates it to admins on the rail the same way the bar already
+ * gated its own copy, so gateAdminItem() is the one thing here that
+ * does open navigation, on both surfaces, from one /me answer. The bar
+ * replaces the rail's role on a phone (theme.css's own comment on
+ * .tab-bar carries that ruling); it is not a disclosure either, just a
+ * different position for the same destinations, gated the same way.
  *
  * Mostly wiring, with one small pure-shaped read (isAdminVia, used
  * only to decide true/false and easy to exercise without a document).
@@ -90,18 +96,23 @@
   }
 
   /*
-   * The bar's Admin item, gated by /me's adminVia rather than by
-   * anything cached at sign-in - the same reasoning admin.js's own
-   * loadAdminVia() carries, applied to a control every signed-in
-   * member's page now renders. Ships `hidden` (the honest resting
-   * state every session-dependent bar/rail control ships with) and is
-   * revealed only once this answers true - never on a request that
-   * fails or on a Worker that predates the field, which both read as
-   * "say nothing" rather than as "assume admin".
+   * The bar's Admin item AND the rail's own #rail-admin (0.9-M3-S33 fix
+   * wave 1, #457, F6 - #454 item 6 names admin as gated "the same way"
+   * on both), gated by /me's adminVia rather than by anything cached at
+   * sign-in - the same reasoning admin.js's own loadAdminVia() carries,
+   * applied to a control every signed-in member's page now renders on
+   * two surfaces. Both ship `hidden` (the honest resting state every
+   * session-dependent bar/rail control ships with) and are revealed
+   * together, from the one /me answer, only once this answers true -
+   * never on a request that fails or on a Worker that predates the
+   * field, which both read as "say nothing" rather than as "assume
+   * admin". A page missing one of the two ids (the sign-in page has
+   * neither) simply reveals the one it has.
    */
   function gateAdminItem() {
-    const item = document.getElementById("tab-bar-admin");
-    if (!item) return;
+    const barItem = document.getElementById("tab-bar-admin");
+    const railItem = document.getElementById("rail-admin");
+    if (!barItem && !railItem) return;
     const config = root.BINDER_CONFIG || {};
     const session = root.BinderSession && root.BinderSession.read();
     if (!config.endpoint || !session) return;
@@ -111,10 +122,12 @@
       if (!response.ok) return null;
       return response.json();
     }).then(function (payload) {
-      if (payload && isAdminVia(payload.adminVia)) item.hidden = false;
+      if (!payload || !isAdminVia(payload.adminVia)) return;
+      if (barItem) barItem.hidden = false;
+      if (railItem) railItem.hidden = false;
     }).catch(function () {
       // A network failure says nothing, same as an unreadable answer -
-      // the item stays hidden, which is the safe default this whole
+      // both items stay hidden, which is the safe default this whole
       // function exists to keep.
     });
   }

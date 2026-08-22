@@ -6813,6 +6813,64 @@ def toast_element_present(text):
     return re.search(r'\bid="toast"', text) is not None
 
 
+# The four items every .tab-bar is supposed to carry - id, the href a
+# link item must resolve to (None for the Sign out button, which has
+# none), and the label a member reads beside its icon. Read off the
+# ids apps/web/nav.js gates or wires by (tab-bar-signout, tab-bar-admin)
+# and the two this fix wave added to match them (tab-bar-yourpage,
+# tab-bar-charts) - #457 review, F1.
+TAB_BAR_ITEMS = (
+    ("tab-bar-yourpage", "your-page.html", "Your page"),
+    ("tab-bar-charts", "charts.html", "Charts"),
+    ("tab-bar-signout", None, "Sign out"),
+    ("tab-bar-admin", "admin.html", "Admin"),
+)
+
+
+def tab_bar_item_fragment(bar, item_id):
+    """One item's own tag, open to close, inside a .tab-bar fragment - or
+    None when no element in it carries that id."""
+    match = re.search(
+        r'<(a|button)\b[^>]*\bid="%s"[^>]*>.*?</\1\s*>'
+        % re.escape(item_id), bar, re.S | re.I)
+    return match.group(0) if match else None
+
+
+def tab_bar_contents_problems(bar):
+    """[problem] for a .tab-bar fragment missing one of its four required
+    items, by id, by the destination it should link to, or by its label.
+
+    Before this arm (#457 review, F1) check 28 asked only whether a
+    `<nav class="tab-bar">` existed and whether the copies agreed with
+    each other - never what was inside one. A bar emptied of all four
+    items, on every page at once, satisfied both questions: one <nav>,
+    identically empty everywhere. This is the question that catches
+    that state - the same one the parity arm above cannot ask, because
+    parity is a claim about copies agreeing with EACH OTHER, and empty
+    copies agree perfectly.
+    """
+    problems = []
+    for item_id, href, label in TAB_BAR_ITEMS:
+        fragment = tab_bar_item_fragment(bar, item_id)
+        if fragment is None:
+            problems.append(
+                'carries no id="%s" item in its .tab-bar - #454 items '
+                "5-6 (owner ruling 2026-08-22) name it among the bar's "
+                "four destinations" % item_id)
+            continue
+        if href is not None:
+            found = re.search(r'\bhref="([^"]*)"', fragment)
+            if not found or found.group(1) != href:
+                problems.append(
+                    'has a .tab-bar item id="%s" that does not link to '
+                    "%s" % (item_id, href))
+        if label_text(fragment) != label:
+            problems.append(
+                'has a .tab-bar item id="%s" not labeled "%s"'
+                % (item_id, label))
+    return problems
+
+
 def tab_bar_and_toast_problems():
     """(page, problem) for a railed page missing, or diverging on, the
     bar or the toast."""
@@ -6832,6 +6890,8 @@ def tab_bar_and_toast_problems():
                 "browser's own back button"))
         else:
             bars[name] = bar
+            for problem in tab_bar_contents_problems(bar):
+                problems.append((name, problem))
         if not toast_element_present(text):
             problems.append((name,
                 "carries no #toast. #454 item 8 rules a shared toast for "

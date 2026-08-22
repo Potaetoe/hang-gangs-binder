@@ -43,7 +43,7 @@
     <ul class="rail-links">
       <li><a href="your-page.html">Your page</a></li>
       <li><a href="charts.html">Charts</a></li>
-      <li><a href="admin.html">Admin</a></li>
+      <li><a href="admin.html" id="rail-admin" hidden>Admin</a></li>
     </ul>
   </nav>
 
@@ -281,7 +281,10 @@
   apps/web/theme.css's own comment on .tab-bar for the full reasoning,
   and this page's earlier comment on the rail for why markup this
   important is written out per page rather than built by nav.js.
-  tools/check_web.py holds the four copies identical.
+  tools/check_web.py holds the three copies identical. Each item
+  carries its own id (0.9-M3-S33 fix wave 1, #457, F1) so a missing or
+  mislabeled one is named rather than only a missing bar - see
+  your-page.html's own comment on this block for the full reasoning.
 
   Icons carry no words of their own (they are aria-hidden and
   unfocusable - the label beside each one is what a screen reader and
@@ -290,7 +293,7 @@
   from one declaration.
 -->
 <nav class="tab-bar" aria-label="Site">
-  <a class="tab-bar-item" href="your-page.html">
+  <a class="tab-bar-item" id="tab-bar-yourpage" href="your-page.html">
     <svg class="tab-bar-icon" viewBox="0 0 24 24" fill="none"
       stroke="currentColor" stroke-width="2" stroke-linecap="round"
       stroke-linejoin="round" aria-hidden="true" focusable="false"
@@ -298,7 +301,7 @@
       d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
     <span>Your page</span>
   </a>
-  <a class="tab-bar-item" href="charts.html">
+  <a class="tab-bar-item" id="tab-bar-charts" href="charts.html">
     <svg class="tab-bar-icon" viewBox="0 0 24 24" fill="none"
       stroke="currentColor" stroke-width="2" stroke-linecap="round"
       stroke-linejoin="round" aria-hidden="true" focusable="false"

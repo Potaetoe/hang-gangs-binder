@@ -1761,7 +1761,90 @@ check("F5: weight stays blank for the next measurement, even right after " +
   resubmitPage.byId("entry-weight-metric").value === "");
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 116;
+/* 11. apps/web/nav.js's DOM-wired half: gateAdminItem() and             */
+/* paintBarSignOut() (0.9-M3-S33 fix wave 1, #457 review F2) - proven    */
+/* once already, fully, in tests/admin-page.test.mjs; this is the       */
+/* second page suite the brief names, a lighter real check rather than  */
+/* a duplicated battery: the admin gate holds both directions, and the  */
+/* sign-out item calls the real, unmodified BinderSignOut.signOut().    */
+
+function navItemStub(tag) {
+  return {
+    tagName: (tag || "a").toUpperCase(),
+    hidden: false,
+    _listeners: {},
+    addEventListener(type, fn) {
+      (this._listeners[type] = this._listeners[type] || []).push(fn);
+    },
+    dispatch(type) {
+      (this._listeners[type] || []).slice().forEach((fn) => fn({}));
+    },
+  };
+}
+
+async function drivenNavOnYourPage(meAnswer, options) {
+  const opts = options || {};
+  const tabBarAdmin = navItemStub("a");
+  tabBarAdmin.hidden = true;
+  const tabBarSignout = navItemStub("button");
+  tabBarSignout.hidden = true;
+  const ids = new Map([
+    ["tab-bar-admin", tabBarAdmin],
+    ["tab-bar-signout", tabBarSignout],
+  ]);
+  const docListeners = {};
+  globalThis.document = {
+    getElementById: (id) => ids.get(id) || null,
+    querySelectorAll: () => [],
+    addEventListener: (type, fn) => {
+      (docListeners[type] = docListeners[type] || []).push(fn);
+    },
+  };
+  const session = "session" in opts ? opts.session : { present: true };
+  globalThis.BinderSession = {
+    read: () => session,
+    onChange: () => {},
+    pageName: () => "your-page.html",
+    authorization: () => ({ Authorization: "Bearer token" }),
+  };
+  let signOutCalls = 0;
+  globalThis.BinderSignOut = { signOut: () => { signOutCalls += 1; } };
+  globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };
+  globalThis.fetch = async () => {
+    if (meAnswer === null) return { ok: false, status: 401 };
+    return { ok: true, status: 200, async json() { return meAnswer; } };
+  };
+  await load("../apps/web/nav.js", "nav-your-page-" + Math.random());
+  docListeners.DOMContentLoaded[0]();
+  for (let i = 0; i < 4; i += 1) await Promise.resolve();
+  return { tabBarAdmin, tabBarSignout, getSignOutCalls: () => signOutCalls };
+}
+
+{
+  const { tabBarAdmin } = await drivenNavOnYourPage({ adminVia: null });
+  check("gateAdminItem keeps the bar's Admin item hidden with no " +
+    "adminVia on your-page.html too - the review's own mutation would " +
+    "reveal it here",
+    tabBarAdmin.hidden === true);
+}
+{
+  const { tabBarAdmin } = await drivenNavOnYourPage({ adminVia: "telegram" });
+  check("and reveals it once GET /me answers a real adminVia",
+    tabBarAdmin.hidden === false);
+}
+{
+  const { tabBarSignout, getSignOutCalls } =
+    await drivenNavOnYourPage({ adminVia: null });
+  check("paintBarSignOut reveals Sign out for a confirmed session and " +
+    "wires it to the real, unmodified BinderSignOut.signOut()",
+    tabBarSignout.hidden === false);
+  tabBarSignout.dispatch("click");
+  check("and the click actually calls it",
+    getSignOutCalls() === 1);
+}
+
+/* ------------------------------------------------------------------ */
+const EXPECTED = 120;
 console.log(failures
   ? `\nyour-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

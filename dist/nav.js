@@ -30,8 +30,9 @@
   
 
   function gateAdminItem() {
-    const item = document.getElementById("tab-bar-admin");
-    if (!item) return;
+    const barItem = document.getElementById("tab-bar-admin");
+    const railItem = document.getElementById("rail-admin");
+    if (!barItem && !railItem) return;
     const config = root.BINDER_CONFIG || {};
     const session = root.BinderSession && root.BinderSession.read();
     if (!config.endpoint || !session) return;
@@ -41,7 +42,9 @@
       if (!response.ok) return null;
       return response.json();
     }).then(function (payload) {
-      if (payload && isAdminVia(payload.adminVia)) item.hidden = false;
+      if (!payload || !isAdminVia(payload.adminVia)) return;
+      if (barItem) barItem.hidden = false;
+      if (railItem) railItem.hidden = false;
     }).catch(function () {
        
        

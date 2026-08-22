@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 575
+EXPECTED = 581
 
 
 def check(label, condition):
@@ -3653,6 +3653,57 @@ check("a vetoed sentence quoted in a comment is not on the page",
 
 check("the pages themselves meet the bar's two readable rules",
       check_web.register_problems() == [])
+
+# tab_bar_contents_problems() (0.9-M3-S33 fix wave 1, #457 review F1) -
+# check 28's own presence and parity arms both held before this fix
+# wave, and both still pass a bar emptied of every item, since neither
+# one reads INSIDE the <nav>. This is the arm that does, tested on
+# strings the same way rail_page_problems() is tested above rather
+# than on the five files it happens to guard today.
+TAB_BAR = (
+    '<nav class="tab-bar" aria-label="Site">'
+    '<a class="tab-bar-item" id="tab-bar-yourpage" href="your-page.html">'
+    '<span>Your page</span></a>'
+    '<a class="tab-bar-item" id="tab-bar-charts" href="charts.html">'
+    '<span>Charts</span></a>'
+    '<button class="tab-bar-item" id="tab-bar-signout" hidden>'
+    '<span>Sign out</span></button>'
+    '<a class="tab-bar-item" id="tab-bar-admin" href="admin.html" hidden>'
+    '<span>Admin</span></a>'
+    '</nav>'
+)
+
+check("one item's own tag is read out of a .tab-bar fragment by id",
+      check_web.tab_bar_item_fragment(TAB_BAR, "tab-bar-charts") is not None
+      and "Charts" in
+      check_web.tab_bar_item_fragment(TAB_BAR, "tab-bar-charts"))
+check("an id no item carries reads as absence",
+      check_web.tab_bar_item_fragment(TAB_BAR, "tab-bar-nothing") is None)
+
+check("a complete .tab-bar raises nothing",
+      check_web.tab_bar_contents_problems(TAB_BAR) == [])
+
+# THE F1 CASE ITSELF: every item removed, the <nav> left standing -
+# exactly the state check 28's presence arm (a bare tab_bar_fragment()
+# search) and its parity arm (comparing empty copies to each other)
+# both call fine.
+EMPTY_TAB_BAR = '<nav class="tab-bar" aria-label="Site"></nav>'
+check("an empty .tab-bar - every item gone, the wrapper left standing - "
+      "is refused, one problem per missing id",
+      len(check_web.tab_bar_contents_problems(EMPTY_TAB_BAR)) == 4 and
+      all('carries no id="tab-bar-' in p
+          for p in check_web.tab_bar_contents_problems(EMPTY_TAB_BAR)))
+
+check("an item present by id but pointed at the wrong page is refused",
+      any('does not link to charts.html' in p
+          for p in check_web.tab_bar_contents_problems(
+              TAB_BAR.replace('href="charts.html"', 'href="your-page.html"',
+                              1))))
+check("an item present by id but carrying the wrong label is refused",
+      any('not labeled "Charts"' in p
+          for p in check_web.tab_bar_contents_problems(
+              TAB_BAR.replace("<span>Charts</span>",
+                               "<span>Chart</span>"))))
 
 
 if failures:

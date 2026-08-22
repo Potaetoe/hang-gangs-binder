@@ -730,13 +730,19 @@
             button.disabled = false;
             const refusal = refusalFor(response.status,
               await refusalBody(response));
-            saySettings(refusal.message, "bad");
+             
+             
+             
+             
+            saySettings("", null);
+            showToast(refusal.message);
             return;
           }
         } catch (error) {
           button.disabled = false;
           detail(why(error));
-          saySettings("That could not be sent.", "bad");
+          saySettings("", null);
+          showToast("That could not be sent.");
           return;
         }
         button.disabled = false;
@@ -846,13 +852,20 @@
       }
     }
 
-    function handleRefusal(status, payload) {
+     
+     
+     
+     
+     
+    function handleRefusal(status, payload, where) {
+      const say = where || sayRoles;
       const refusal = refusalFor(status, payload);
       if (refusal.action === "signed-out") {
         sessionEnded(sayRoles);
         return true;
       }
-      sayRoles(refusal.message, "bad");
+      if (say !== sayRoles) sayRoles("", null);
+      say(refusal.message, "bad");
       return false;
     }
 
@@ -909,13 +922,18 @@
         });
         if (!response.ok) {
           $("member-add").disabled = false;
-          handleRefusal(response.status, await refusalBody(response));
+           
+           
+           
+          handleRefusal(response.status, await refusalBody(response),
+            showToast);
           return;
         }
       } catch (error) {
         $("member-add").disabled = false;
         detail(why(error));
-        sayRoles("That could not be sent.", "bad");
+        sayRoles("", null);
+        showToast("That could not be sent.");
         return;
       }
 
@@ -943,15 +961,19 @@
           });
         if (!response.ok) {
           button.disabled = false;
+           
+           
+           
           const left = handleRefusal(response.status,
-            await refusalBody(response));
+            await refusalBody(response), showToast);
           if (!left) await readMembership();
           return;
         }
       } catch (error) {
         button.disabled = false;
         detail(why(error));
-        sayRoles("That could not be removed.", "bad");
+        sayRoles("", null);
+        showToast("That could not be removed.");
         return;
       }
 
@@ -1919,6 +1941,8 @@
      
     selectTab("settings-card");
 
+     
+     
      
      
      

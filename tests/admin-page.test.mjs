@@ -196,6 +196,139 @@ check("dist/nav.js's isAdminVia agrees, value for value - the mirror " +
   "is not stale",
   NAV_PROBES.every((v) => DistNav.isAdminVia(v) === Nav.isAdminVia(v)));
 
+/* ------------------------------------------------------------------ */
+/* 2b. nav.js's DOM-WIRED half: gateAdminItem() and paintBarSignOut()   */
+/* (0.9-M3-S33 fix wave 1, #457 review F2) - nothing anywhere exercised */
+/* these before this wave; section 2a above proves only the pure        */
+/* isAdminVia() predicate the gate CALLS, never the gate itself, so the */
+/* review's own mutation (ignore adminVia, reveal on any 200) passed    */
+/* clean. A tiny, purpose-built document stub - just the ids nav.js     */
+/* touches, driven by a real click - the same rejection of jsdom every  */
+/* other suite in this file states.                                     */
+
+function navStubNode(tag) {
+  return {
+    tagName: (tag || "a").toUpperCase(),
+    hidden: false,
+    _listeners: {},
+    addEventListener(type, fn) {
+      (this._listeners[type] = this._listeners[type] || []).push(fn);
+    },
+    dispatch(type) {
+      (this._listeners[type] || []).slice().forEach((fn) => fn({}));
+    },
+  };
+}
+
+async function drivenNav(meAnswer, options) {
+  const opts = options || {};
+  const tabBarAdmin = navStubNode("a");
+  tabBarAdmin.hidden = true;
+  const railAdmin = navStubNode("a");
+  railAdmin.hidden = true;
+  const tabBarSignout = navStubNode("button");
+  tabBarSignout.hidden = true;
+  const ids = new Map([
+    ["tab-bar-admin", tabBarAdmin],
+    ["rail-admin", railAdmin],
+    ["tab-bar-signout", tabBarSignout],
+  ]);
+  const docListeners = {};
+  globalThis.document = {
+    getElementById: (id) => ids.get(id) || null,
+    querySelectorAll: () => [],
+    addEventListener: (type, fn) => {
+      (docListeners[type] = docListeners[type] || []).push(fn);
+    },
+  };
+  let onChangeListener = null;
+  const session = "session" in opts ? opts.session : { present: true };
+  globalThis.BinderSession = {
+    read: () => session,
+    onChange: (fn) => { onChangeListener = fn; },
+    pageName: () => "your-page.html",
+    authorization: () => ({ Authorization: "Bearer token" }),
+  };
+  let signOutCalls = 0;
+  globalThis.BinderSignOut = { signOut: () => { signOutCalls += 1; } };
+  globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };
+  globalThis.fetch = async () => {
+    if (meAnswer === null) return { ok: false, status: 401 };
+    return { ok: true, status: 200, async json() { return meAnswer; } };
+  };
+
+  await import("data:text/javascript," + encodeURIComponent(navJs) +
+    "#nav-dom-" + Math.random());
+  docListeners.DOMContentLoaded[0]();
+  for (let i = 0; i < 4; i += 1) await Promise.resolve();
+
+  return {
+    tabBarAdmin, railAdmin, tabBarSignout,
+    getSignOutCalls: () => signOutCalls,
+    fireOnChange: () => onChangeListener && onChangeListener(),
+  };
+}
+
+{
+  const { tabBarAdmin, railAdmin } =
+    await drivenNav({ adminVia: null });
+  check("gateAdminItem keeps the bar's Admin item hidden when GET /me " +
+    "answers with no adminVia - the review's own mutation " +
+    "(`if (payload) item.hidden = false;`) would reveal it here",
+    tabBarAdmin.hidden === true);
+  check("and keeps the rail's own #rail-admin hidden the same way " +
+    "(0.9-M3-S33 fix wave 1, #457, F6 - the rail is gated now too)",
+    railAdmin.hidden === true);
+}
+{
+  const { tabBarAdmin, railAdmin } =
+    await drivenNav({ adminVia: "flag" });
+  check("gateAdminItem reveals the bar's Admin item once GET /me " +
+    "answers a real adminVia",
+    tabBarAdmin.hidden === false);
+  check("and reveals #rail-admin from the same answer, in the same call",
+    railAdmin.hidden === false);
+}
+{
+  const { tabBarAdmin, railAdmin } = await drivenNav(null);
+  check("gateAdminItem keeps both items hidden on a 401 from GET /me " +
+    "- a network refusal says nothing, never assumed admin",
+    tabBarAdmin.hidden === true && railAdmin.hidden === true);
+}
+{
+  const { tabBarSignout, getSignOutCalls } =
+    await drivenNav({ adminVia: null });
+  check("paintBarSignOut reveals the bar's Sign out item for a " +
+    "confirmed session",
+    tabBarSignout.hidden === false);
+  tabBarSignout.dispatch("click");
+  check("and its click calls the real, unmodified " +
+    "BinderSignOut.signOut() - the exact function apps/web/signout.js's " +
+    "own button calls, not a second copy of what leaving means",
+    getSignOutCalls() === 1);
+}
+{
+  const { tabBarSignout } =
+    await drivenNav({ adminVia: null }, { session: null });
+  check("paintBarSignOut keeps the bar's Sign out item hidden with no " +
+    "confirmed session",
+    tabBarSignout.hidden === true);
+}
+{
+  // Re-run on BinderSession.onChange, the same reason signout.js's own
+  // paintSession() re-runs (a 401 elsewhere, or a stored session
+  // expiring, while this tab stays open).
+  const { tabBarSignout, fireOnChange } =
+    await drivenNav({ adminVia: null }, { session: null });
+  check("CONTROL: starts hidden with no session",
+    tabBarSignout.hidden === true);
+  globalThis.BinderSession.read = () => ({ present: true });
+  fireOnChange();
+  check("and paintBarSignOut reveals it once a session appears, " +
+    "without a page reload",
+    tabBarSignout.hidden === false);
+}
+
 /* -- Settings validation, mirroring S8's real server-side rules      */
 /* (#414 completion, comment 5370945709, the "contract, in full" block) -- */
 
@@ -1079,8 +1212,15 @@ const BASE_ROUTES = {
   byId.get("settings-welcome-text").value = "fine text";
   byId.get("settings-welcome-text-save").dispatch("click");
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-  check("a save the Worker refuses shows the Worker's own words",
-    /Content too large/.test(byId.get("settings-status").textContent));
+  // A toast, not the status line, carries the Worker's own words now
+  // (0.9-M3-S33 fix wave 1, #457, F7) - the status line clears instead
+  // of holding the refusal, the same split the save-confirms-by-toast
+  // check above already proves for the success path.
+  check("a save the Worker refuses shows the Worker's own words - in " +
+    "the toast, not the status line",
+    byId.get("settings-status").hidden === true &&
+    byId.get("toast").hidden === false &&
+    /Content too large/.test(byId.get("toast").textContent));
 }
 
 /* -- Roles: render, add, remove, adminVia -- */
@@ -1123,6 +1263,26 @@ const BASE_ROUTES = {
     byId.get("roles-status").hidden === true &&
     byId.get("toast").hidden === false &&
     /New admin/.test(byId.get("toast").textContent));
+}
+
+{
+  // The Worker's own refusal reason, verbatim, in the toast - not the
+  // status line (0.9-M3-S33 fix wave 1, #457, F7: the #457 review's F3
+  // named this exact path, routed through handleRefusal()'s own
+  // `where` argument, as one of the comment's false claims).
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "POST /membership": () => refused(409, { error: "Already a member." }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  byId.get("member-telegram-id").value = "123456";
+  byId.get("member-label").value = "New admin";
+  byId.get("member-add").dispatch("click");
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("a member-add the Worker refuses shows the Worker's own words " +
+    "- in the toast, not the status line",
+    byId.get("roles-status").hidden === true &&
+    byId.get("toast").hidden === false &&
+    /Already a member/.test(byId.get("toast").textContent));
 }
 
 {
@@ -1182,6 +1342,26 @@ const BASE_ROUTES = {
     byId.get("roles-status").hidden === true &&
     byId.get("toast").hidden === false &&
     byId.get("toast").textContent === "Removed.");
+}
+
+{
+  // The remove side of the same F7 fix - the Worker's own refusal
+  // reason, verbatim, in the toast.
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "DELETE /membership/*/*":
+      () => refused(400, { error: "Cannot remove the last admin." }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  await Promise.resolve();
+  const button = byId.get("roles-admin").children[0].children[2];
+  button.dispatch("click");
+  button.dispatch("click");
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("a member-remove the Worker refuses shows the Worker's own " +
+    "words - in the toast, not the status line",
+    byId.get("roles-status").hidden === true &&
+    byId.get("toast").hidden === false &&
+    /Cannot remove the last admin/.test(byId.get("toast").textContent));
 }
 
 /* -- Fields: render, add/retire/un-retire a value, one-button rename,  */
@@ -2674,7 +2854,7 @@ check("no download/export id survives in the real shipped markup - the " +
 // (Departed-tab arms vs. wrap-row-wiring arms) and both are kept in
 // full, so the union is the base plus both sides' own additions:
 // 171 + 36 + 8 = 215.
-const EXPECTED = 221;
+const EXPECTED = 233;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

@@ -916,13 +916,19 @@
             button.disabled = false;
             const refusal = refusalFor(response.status,
               await refusalBody(response));
-            saySettings(refusal.message, "bad");
+            // A toast, not the inline line, for the Worker's own
+            // refusal (0.9-M3-S33 fix wave 1, #457, F7) - the exact
+            // reason it gave, verbatim, the same shape the Departed
+            // card's own eraseDeparted() already puts in a toast.
+            saySettings("", null);
+            showToast(refusal.message);
             return;
           }
         } catch (error) {
           button.disabled = false;
           detail(why(error));
-          saySettings("That could not be sent.", "bad");
+          saySettings("", null);
+          showToast("That could not be sent.");
           return;
         }
         button.disabled = false;
@@ -933,9 +939,9 @@
         }
         // A brief toast, not an inline status line, for the result of
         // this save (0.9-M3-S33, #454 item 8) - saySettings still
-        // carries "Saving…" above and a refusal below, matching the
-        // Fields card's own split (see the toast's own comment, below
-        // this card).
+        // carries "Saving…" above; a refusal now goes to the toast too
+        // (fix wave 1, #457, F7), matching the Fields card's own split
+        // (see the toast's own comment, below this card).
         saySettings("", null);
         showToast("Saved.");
         loadLog();
@@ -1032,13 +1038,20 @@
       }
     }
 
-    function handleRefusal(status, payload) {
+    // `where` is the informational default (sayRoles, the card's own
+    // inline status line) for readMembership's own load failure; the
+    // Roles card's two ACTIONS (add, remove) pass showToast instead
+    // (0.9-M3-S33 fix wave 1, #457, F7) - the same signed-out/refused
+    // split either way, only where the "show" branch says it changes.
+    function handleRefusal(status, payload, where) {
+      const say = where || sayRoles;
       const refusal = refusalFor(status, payload);
       if (refusal.action === "signed-out") {
         sessionEnded(sayRoles);
         return true;
       }
-      sayRoles(refusal.message, "bad");
+      if (say !== sayRoles) sayRoles("", null);
+      say(refusal.message, "bad");
       return false;
     }
 
@@ -1095,13 +1108,18 @@
         });
         if (!response.ok) {
           $("member-add").disabled = false;
-          handleRefusal(response.status, await refusalBody(response));
+          // The Worker's own refusal reason, verbatim, in a toast
+          // (0.9-M3-S33 fix wave 1, #457, F7) - handleRefusal still
+          // ends the session inline for the signed-out case.
+          handleRefusal(response.status, await refusalBody(response),
+            showToast);
           return;
         }
       } catch (error) {
         $("member-add").disabled = false;
         detail(why(error));
-        sayRoles("That could not be sent.", "bad");
+        sayRoles("", null);
+        showToast("That could not be sent.");
         return;
       }
 
@@ -1129,15 +1147,19 @@
           });
         if (!response.ok) {
           button.disabled = false;
+          // The Worker's own refusal reason, verbatim, in a toast
+          // (0.9-M3-S33 fix wave 1, #457, F7) - same shape as add's own
+          // refusal, above.
           const left = handleRefusal(response.status,
-            await refusalBody(response));
+            await refusalBody(response), showToast);
           if (!left) await readMembership();
           return;
         }
       } catch (error) {
         button.disabled = false;
         detail(why(error));
-        sayRoles("That could not be removed.", "bad");
+        sayRoles("", null);
+        showToast("That could not be removed.");
         return;
       }
 
@@ -2119,9 +2141,11 @@
     /* each of them. Used for this card's own write confirmations       */
     /* (Added./Retired./Restored./Renamed./Reordered.), for the         */
     /* Departed card's own erase result, success or the Worker's        */
-    /* refusal verbatim (#458), and - since 0.9-M3-S33 - for Settings'  */
-    /* and Roles' own save/add/remove results too (both success and     */
-    /* refusal): loading states ("Saving…", "Adding…", "Removing…") and */
+    /* refusal verbatim (#458), and - since 0.9-M3-S33's fix wave 1,    */
+    /* #457, F7 - for Settings' and Roles' own save/add/remove results  */
+    /* too (both success and refusal, the Worker's reason verbatim the  */
+    /* same way Departed's already was): loading states ("Saving…",     */
+    /* "Adding…", "Removing…") and                                      */
     /* CLIENT validation caught before a request is even sent stay on   */
     /* the inline status line beside the control, since a pending state */
     /* has nothing to hand a toast yet and a field-level validation note */
