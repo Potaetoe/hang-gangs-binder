@@ -1336,6 +1336,14 @@ button.primary:disabled {
  */
 [role="tablist"] {
   display: flex;
+  /* 0.9-M3-S34 (#458): a fifth tab (Departed) is the one that first
+     outgrows 375px - four fit without wrapping, five do not, and a
+     `nowrap` flex row pushes the whole page into sideways scroll rather
+     than the tab bar alone. Wrapping is free on desktop, where five
+     tabs still fit one line, and costs nothing this ticket's admin-
+     surface-at-desktop-plus-one-phone-check rule (item 22) does not
+     already ask this page to hold to. */
+  flex-wrap: wrap;
   gap: var(--space-1);
   border-bottom: 1px solid var(--color-border);
 }
