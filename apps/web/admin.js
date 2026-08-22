@@ -1,7 +1,14 @@
 /*
- * The admin page. Settings, Roles, Fields and the Change log - nothing
- * else, one tab per area (#385 item (b), #454 item 20, owner ruling
- * 2026-08-22).
+ * The admin page. Settings, Roles, Fields, the Change log and Departed -
+ * one tab per area (#385 item (b), #454 item 20, owner ruling
+ * 2026-08-22). Departed (0.9-M3-S34, #458) is the page half of 0.9-M3-S15's
+ * Worker (#420): GET /admin-departed lists accounts in three states -
+ * departed, unknown (each with its own reason), allowed (the operator's
+ * list) - and DELETE /admin-departed/<id> erases a departed account's
+ * rows, admin only, one per-member power beside flag/un-flag (#385 rule
+ * 4). This card decides no state itself; it renders what the Worker
+ * says and offers Remove on every row, since only the Worker's own
+ * re-check at erase time knows whether a given row may go.
  *
  * 0.9-M3-S10 (#416) rebuilds this page for the keyless world: the
  * keyfile-decrypt tool, the entry exports (CSV/xlsx/JSON) and the
@@ -16,14 +23,16 @@
  * (0.9-M3-S13, #433; the bring-back rebuild is 0.9-M3-S30, #452) is no
  * exception: it draws the SPEC, never a count of who picked what.
  *
- * What is left is four cards, one per tab, each reading and writing
+ * What is left is five cards, one per tab, each reading and writing
  * through the admin session alone: Settings (GET/POST /content), Roles
  * (GET/POST/DELETE /membership, plus /me's adminVia), Fields (GET
  * /admin-fields, PUT/DELETE /admin-fields/<id> - the categorical form
  * builder, #433 against 0.9-M3-S11's landed contract on #419, reading
  * the admin-only overlay 0.9-M3-S25 added on #440 so a retired field or
- * value can be brought back from any session), and the Change log (GET
- * /admin-log). Split like every other page here - the pure half is
+ * value can be brought back from any session), the Change log (GET
+ * /admin-log), and Departed (GET /admin-departed, DELETE
+ * /admin-departed/<id> - see the paragraph above). Split like every
+ * other page here - the pure half is
  * exported as BinderAdmin and tested in tests/admin-page.test.mjs; the
  * wiring below returns early when there is no document.
  *
@@ -542,6 +551,9 @@
    * context-dependent (a content key, or the affected member's account
    * id) and folded into `summary`'s own prose rather than shown as a
    * fourth column that would need its own translation per action.
+   *
+   * Reused by departedName() below (0.9-M3-S34, #458): the same "shorten
+   * a hex account id for display" fact, one home rather than two.
    */
   function shortAccountId(accountId) {
     if (accountId === "break-glass") return "the break-glass tool";
@@ -601,6 +613,57 @@
   function logLine(entry) {
     return { when: logWhen(entry && entry.at), who: logWho(entry),
       what: logWhat(entry) };
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Departed (S15's Worker, #420; #385 rule 4 - the one per-member power */
+  /* beside flag/un-flag; #454 items 8, 9, 10, 13, 20).                   */
+
+  /* #385 rule 1 (never a handle, never a numeric id) and item 13 (the
+   * label from membership where one exists, else the short id): GET
+   * /admin-departed sends a `label` straight off `membership` when a
+   * row is there, and null otherwise. */
+  function departedName(entry) {
+    const label = entry && typeof entry.label === "string"
+      ? entry.label.trim() : "";
+    return label || shortAccountId(entry && entry.accountId);
+  }
+
+  /* Item 9's own shape ("the button becomes a sentence... Yes/Cancel"),
+   * with no count: the landed Worker offers no dry-run answer for the
+   * erase (server/worker.js's DELETE /admin-departed/<id> has no query
+   * param and no separate route for one), so this names the four row
+   * classes eraseAccount() actually deletes instead of a number - the
+   * ticket's own fallback for "if the route offers no dry answer". */
+  function eraseDepartedSentence(name) {
+    return "This removes the submissions, directory, membership and " +
+      "sessions rows for " + name + ". Remove them?";
+  }
+
+  const DEPARTED_PAGE_SIZE = 20;
+  const DEPARTED_KEYS = ["departed", "unknown", "allowed"];
+
+  /* Item 13 ("newest 20, then more") over ONE list, not three: GET
+   * /admin-departed's rows already arrive in the Worker's own order
+   * (oldest-stale-first, DEPARTED_LIST_CAP), so this windows how much of
+   * what it sent is shown right now, in the ticket's own section order,
+   * without reordering or re-deriving anything the Worker did not say. */
+  function departedSections(payload, revealed) {
+    const groups = DEPARTED_KEYS.map((key) =>
+      Array.isArray(payload && payload[key]) ? payload[key] : []);
+    const total = groups[0].length + groups[1].length + groups[2].length;
+    const limit = Number.isFinite(revealed) && revealed > 0
+      ? revealed : DEPARTED_PAGE_SIZE;
+    const shown = Math.min(limit, total);
+    let used = 0;
+    const sections = groups.map((rows, i) => {
+      const remaining = shown - used;
+      const slice = remaining > 0 ? rows.slice(0, remaining) : [];
+      used += slice.length;
+      return { key: DEPARTED_KEYS[i], rows: slice };
+    });
+    return { sections: sections, shown: shown, total: total,
+      hasMore: shown < total };
   }
 
   /* ---------------------------------------------------------------- */
@@ -675,6 +738,10 @@
     shortDate: shortDate,
     fieldView: fieldView,
     logLine: logLine,
+    departedName: departedName,
+    eraseDepartedSentence: eraseDepartedSentence,
+    DEPARTED_PAGE_SIZE: DEPARTED_PAGE_SIZE,
+    departedSections: departedSections,
     IDLE_WINDOW: IDLE_WINDOW,
     idleVerdict: idleVerdict,
     idleNotice: idleNotice,
@@ -1793,6 +1860,135 @@
     }
 
     /* ------------------------------------------------------------ */
+    /* Departed. THE PAGE RENDERS WHAT THE WORKER STATES AND DECIDES    */
+    /* NOTHING ITSELF: Remove is offered on every row regardless of      */
+    /* section, because handleEraseDeparted() re-asks the bot itself and */
+    /* is the only source of truth for whether a row may be erased right */
+    /* now - a button withheld here on the strength of a list that may   */
+    /* be an hour stale would be this page deciding a state.             */
+
+    let departedPayload = null;
+    let departedRevealed = DEPARTED_PAGE_SIZE;
+
+    function sayDeparted(message, tone) {
+      UI.setStatus($("departed-status"), message, tone);
+    }
+
+    const DEPARTED_TITLES = { departed: "Departed", unknown: "Unknown",
+      allowed: "Allowed" };
+
+    function departedRow(entry, sectionKey) {
+      const label = departedName(entry);
+      const block = document.createElement("div");
+      block.className = "stack-tight";
+
+      const row = document.createElement("div");
+      row.className = "row wrap-row";
+      const name = document.createElement("span");
+      name.className = "wrap-row-value";
+      name.textContent = label;
+      row.appendChild(name);
+      const info = document.createElement("span");
+      info.className = "hint";
+      const reason = sectionKey !== "departed" && entry &&
+        typeof entry.reason === "string" ? entry.reason : "";
+      info.textContent = "last seen " + shortDate(entry && entry.lastSeenAt) +
+        (reason ? " - " + reason : "");
+      row.appendChild(info);
+      block.appendChild(row);
+
+      const buttons = document.createElement("div");
+      buttons.className = "row buttons";
+      const trigger = document.createElement("button");
+      trigger.type = "button";
+      trigger.className = "secondary";
+      trigger.textContent = "Remove";
+      buttons.appendChild(trigger);
+      block.appendChild(buttons);
+
+      dangerousAction(block, trigger, eraseDepartedSentence(label),
+        function () {
+          eraseDeparted(entry && entry.accountId, label);
+        });
+      return block;
+    }
+
+    function renderDeparted() {
+      const list = $("departed-list");
+      list.textContent = "";
+      const view = departedSections(departedPayload, departedRevealed);
+      if (!view.total) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "Nobody has left - nothing to clean up.";
+        list.appendChild(empty);
+        return;
+      }
+      for (const section of view.sections) {
+        if (!section.rows.length) continue;
+        const heading = document.createElement("h2");
+        heading.textContent = DEPARTED_TITLES[section.key];
+        list.appendChild(heading);
+        for (const entry of section.rows) {
+          list.appendChild(departedRow(entry, section.key));
+        }
+      }
+      if (!view.hasMore) return;
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "secondary";
+      more.textContent = "More";
+      more.addEventListener("click", function () {
+        departedRevealed += DEPARTED_PAGE_SIZE;
+        renderDeparted();
+      });
+      list.appendChild(more);
+    }
+
+    async function loadDeparted() {
+      try {
+        const response = await fetch(config.endpoint + "/admin-departed", {
+          headers: root.BinderSession.authorization(),
+        });
+        if (sessionRefused(response, sayDeparted)) return;
+        if (!response.ok) {
+          sayDeparted(refusalFor(response.status, await refusalBody(response))
+            .message, "bad");
+          return;
+        }
+        departedPayload = await response.json();
+      } catch (error) {
+        detail(why(error));
+        sayDeparted("The departed list could not be read.", "bad");
+        return;
+      }
+      departedRevealed = DEPARTED_PAGE_SIZE;
+      renderDeparted();
+      sayDeparted("", null);
+    }
+
+    // The result is a toast either way (#454 item 8), never the inline
+    // status line - refusalBody's own null-on-unparseable fallback is
+    // reused here exactly as it is for every other card's refusal read.
+    async function eraseDeparted(accountId, name) {
+      let response;
+      try {
+        response = await fetch(
+          config.endpoint + "/admin-departed/" + encodeURIComponent(accountId),
+          { method: "DELETE", headers: root.BinderSession.authorization() });
+      } catch (error) {
+        detail(why(error));
+        showToast("That could not be sent.");
+        return;
+      }
+      if (sessionRefused(response, showToast)) return;
+      const payload = await refusalBody(response);
+      showToast(response.ok ? "Removed." :
+        (payload && payload.error) || "That could not be removed.");
+      await loadDeparted();
+    }
+
+    /* ------------------------------------------------------------ */
     /* Walking away from the machine, matching apps/web/submit.js's own */
     /* wireIdle() shape.                                                */
 
@@ -1805,6 +2001,9 @@
       show($("roles-other"), false);
       $("fields-list").textContent = "";
       currentSpec = null;
+      $("departed-list").textContent = "";
+      departedPayload = null;
+      departedRevealed = DEPARTED_PAGE_SIZE;
     }
 
     function wireIdle() {
@@ -1887,6 +2086,7 @@
       { tab: "tab-roles", panel: "roles-card" },
       { tab: "tab-fields", panel: "fields-card" },
       { tab: "tab-log", panel: "log-card" },
+      { tab: "tab-departed", panel: "departed-card" },
     ];
 
     function selectTab(panelId) {
@@ -1936,5 +2136,6 @@
     loadAdminVia();
     loadFields();
     loadLog();
+    loadDeparted();
   }
 })(globalThis);

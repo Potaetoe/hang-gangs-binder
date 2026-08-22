@@ -443,6 +443,48 @@
    
    
    
+
+  
+
+  function departedName(entry) {
+    const label = entry && typeof entry.label === "string"
+      ? entry.label.trim() : "";
+    return label || shortAccountId(entry && entry.accountId);
+  }
+
+  
+
+  function eraseDepartedSentence(name) {
+    return "This removes the submissions, directory, membership and " +
+      "sessions rows for " + name + ". Remove them?";
+  }
+
+  const DEPARTED_PAGE_SIZE = 20;
+  const DEPARTED_KEYS = ["departed", "unknown", "allowed"];
+
+  
+
+  function departedSections(payload, revealed) {
+    const groups = DEPARTED_KEYS.map((key) =>
+      Array.isArray(payload && payload[key]) ? payload[key] : []);
+    const total = groups[0].length + groups[1].length + groups[2].length;
+    const limit = Number.isFinite(revealed) && revealed > 0
+      ? revealed : DEPARTED_PAGE_SIZE;
+    const shown = Math.min(limit, total);
+    let used = 0;
+    const sections = groups.map((rows, i) => {
+      const remaining = shown - used;
+      const slice = remaining > 0 ? rows.slice(0, remaining) : [];
+      used += slice.length;
+      return { key: DEPARTED_KEYS[i], rows: slice };
+    });
+    return { sections: sections, shown: shown, total: total,
+      hasMore: shown < total };
+  }
+
+   
+   
+   
    
 
   const IDLE_WINDOW = Object.freeze({
@@ -512,6 +554,10 @@
     shortDate: shortDate,
     fieldView: fieldView,
     logLine: logLine,
+    departedName: departedName,
+    eraseDepartedSentence: eraseDepartedSentence,
+    DEPARTED_PAGE_SIZE: DEPARTED_PAGE_SIZE,
+    departedSections: departedSections,
     IDLE_WINDOW: IDLE_WINDOW,
     idleVerdict: idleVerdict,
     idleNotice: idleNotice,
@@ -1626,6 +1672,135 @@
      
      
      
+     
+     
+     
+     
+
+    let departedPayload = null;
+    let departedRevealed = DEPARTED_PAGE_SIZE;
+
+    function sayDeparted(message, tone) {
+      UI.setStatus($("departed-status"), message, tone);
+    }
+
+    const DEPARTED_TITLES = { departed: "Departed", unknown: "Unknown",
+      allowed: "Allowed" };
+
+    function departedRow(entry, sectionKey) {
+      const label = departedName(entry);
+      const block = document.createElement("div");
+      block.className = "stack-tight";
+
+      const row = document.createElement("div");
+      row.className = "row wrap-row";
+      const name = document.createElement("span");
+      name.className = "wrap-row-value";
+      name.textContent = label;
+      row.appendChild(name);
+      const info = document.createElement("span");
+      info.className = "hint";
+      const reason = sectionKey !== "departed" && entry &&
+        typeof entry.reason === "string" ? entry.reason : "";
+      info.textContent = "last seen " + shortDate(entry && entry.lastSeenAt) +
+        (reason ? " - " + reason : "");
+      row.appendChild(info);
+      block.appendChild(row);
+
+      const buttons = document.createElement("div");
+      buttons.className = "row buttons";
+      const trigger = document.createElement("button");
+      trigger.type = "button";
+      trigger.className = "secondary";
+      trigger.textContent = "Remove";
+      buttons.appendChild(trigger);
+      block.appendChild(buttons);
+
+      dangerousAction(block, trigger, eraseDepartedSentence(label),
+        function () {
+          eraseDeparted(entry && entry.accountId, label);
+        });
+      return block;
+    }
+
+    function renderDeparted() {
+      const list = $("departed-list");
+      list.textContent = "";
+      const view = departedSections(departedPayload, departedRevealed);
+      if (!view.total) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "Nobody has left - nothing to clean up.";
+        list.appendChild(empty);
+        return;
+      }
+      for (const section of view.sections) {
+        if (!section.rows.length) continue;
+        const heading = document.createElement("h2");
+        heading.textContent = DEPARTED_TITLES[section.key];
+        list.appendChild(heading);
+        for (const entry of section.rows) {
+          list.appendChild(departedRow(entry, section.key));
+        }
+      }
+      if (!view.hasMore) return;
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "secondary";
+      more.textContent = "More";
+      more.addEventListener("click", function () {
+        departedRevealed += DEPARTED_PAGE_SIZE;
+        renderDeparted();
+      });
+      list.appendChild(more);
+    }
+
+    async function loadDeparted() {
+      try {
+        const response = await fetch(config.endpoint + "/admin-departed", {
+          headers: root.BinderSession.authorization(),
+        });
+        if (sessionRefused(response, sayDeparted)) return;
+        if (!response.ok) {
+          sayDeparted(refusalFor(response.status, await refusalBody(response))
+            .message, "bad");
+          return;
+        }
+        departedPayload = await response.json();
+      } catch (error) {
+        detail(why(error));
+        sayDeparted("The departed list could not be read.", "bad");
+        return;
+      }
+      departedRevealed = DEPARTED_PAGE_SIZE;
+      renderDeparted();
+      sayDeparted("", null);
+    }
+
+     
+     
+     
+    async function eraseDeparted(accountId, name) {
+      let response;
+      try {
+        response = await fetch(
+          config.endpoint + "/admin-departed/" + encodeURIComponent(accountId),
+          { method: "DELETE", headers: root.BinderSession.authorization() });
+      } catch (error) {
+        detail(why(error));
+        showToast("That could not be sent.");
+        return;
+      }
+      if (sessionRefused(response, showToast)) return;
+      const payload = await refusalBody(response);
+      showToast(response.ok ? "Removed." :
+        (payload && payload.error) || "That could not be removed.");
+      await loadDeparted();
+    }
+
+     
+     
+     
 
     function clearAdminData() {
       $("log-list").textContent = "";
@@ -1636,6 +1811,9 @@
       show($("roles-other"), false);
       $("fields-list").textContent = "";
       currentSpec = null;
+      $("departed-list").textContent = "";
+      departedPayload = null;
+      departedRevealed = DEPARTED_PAGE_SIZE;
     }
 
     function wireIdle() {
@@ -1718,6 +1896,7 @@
       { tab: "tab-roles", panel: "roles-card" },
       { tab: "tab-fields", panel: "fields-card" },
       { tab: "tab-log", panel: "log-card" },
+      { tab: "tab-departed", panel: "departed-card" },
     ];
 
     function selectTab(panelId) {
@@ -1767,5 +1946,6 @@
     loadAdminVia();
     loadFields();
     loadLog();
+    loadDeparted();
   }
 })(globalThis);
