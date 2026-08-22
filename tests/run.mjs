@@ -54,9 +54,12 @@
  * the only thing consulted. On green the runner shows the arm's last
  * line - its own verdict - and drops the rest.
  *
- * Arms run one at a time. Not for speed: a suite that binds a socket
- * or writes a scratch directory is a suite this ordering lets stay
- * simple, and the old gate learned that with its demo stage.
+ * Arms ran one at a time until 0.9-M3-S35 (#460) put them through a
+ * pool - see THE POOL, further down, for what changed and what did not:
+ * a suite that binds a socket or writes a scratch directory still gets
+ * to assume nothing else is racing it, because that half of the
+ * argument was never about ORDER, only about ISOLATION, and isolation
+ * is what the pool's own reading and 20-run proof are about.
  *
  * TWO WAYS TO GO GREEN WITHOUT CHECKING ANYTHING, both refused here.
  * Finding no arms is a red - a gate that passes because it swept an
