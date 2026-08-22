@@ -257,9 +257,20 @@ const NOT_ARMS = new Set([rel(fileURLToPath(import.meta.url)), PREFLIGHT,
    back empty or zero, which `os.cpus()` can on some containers) and
    `BINDER_GATE_POOL` overrides it - the suppressed lever the mutation
    battery uses to prove pool size 1 restores the old sequential wall
-   time. */
+   time. Read with `envNumber` below, not a bare `Number(...) || default`
+   - `0` is a legitimate override for a lever like this (gate-budget.
+   test.mjs's own "forced 0s budget" scenario needs it to mean zero, not
+   "unset"), and `||` treats the falsy number 0 exactly like an absent
+   variable, silently discarding it back to the default. */
+function envNumber(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 const DEFAULT_POOL = cpus().length || 4;
-const POOL_SIZE = Number(process.env.BINDER_GATE_POOL) || DEFAULT_POOL;
+const POOL_SIZE = envNumber("BINDER_GATE_POOL", DEFAULT_POOL);
 
 /* THE BUDGET (0.9-M3-S35, #460). Slowness is a red here, never a
    surprise a reader has to notice by eye in a scrolling log. 300s is
@@ -269,8 +280,8 @@ const POOL_SIZE = Number(process.env.BINDER_GATE_POOL) || DEFAULT_POOL;
    a loaded CI runner) - always with the reason stated where it is
    raised, never silently. */
 const DEFAULT_BUDGET_SECONDS = 300;
-const BUDGET_SECONDS = Number(process.env.BINDER_GATE_BUDGET_SECONDS) ||
-  DEFAULT_BUDGET_SECONDS;
+const BUDGET_SECONDS = envNumber("BINDER_GATE_BUDGET_SECONDS",
+  DEFAULT_BUDGET_SECONDS);
 
 const exists = async (path) => {
   try {
