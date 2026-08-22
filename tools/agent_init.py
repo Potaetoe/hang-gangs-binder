@@ -165,12 +165,27 @@ CONTRACT = 1
 # what the verb printed when it wrote it.
 SCHEMA = 1
 
-# The six blocks a delegated agent may take, and the block that belongs
+# The ten blocks a delegated agent may take, and the block that belongs
 # to the machine's primary checkout. Six numbers per block is what a
 # preview, a demo mirror and their spares need; the reservation exists
 # because the owner drives the demo on the primary while agents run.
+#
+# Six blocks was the whole pool through 0.9-M0-S5 (#283). Grown to ten
+# at #441 (2026-08-21): the M3 delivery shape (#402) runs parallel
+# batches as the norm, and a reviewer and a fix-wave builder for the
+# same slice are often alive together - the day this grew, a real batch
+# ran SEVEN live agents against six blocks at once (S22's builder had no
+# lease at all, so no init record, so preflight refused it before a
+# single arm ran; S13's reviewer waited on a block; S15's builder
+# stopped to ask Prime before reclaiming a dead reviewer's lease instead
+# of the verb just taking it, which lease_reclaimable() above already
+# does automatically). The four new blocks continue the same 10-apart,
+# 6-wide pattern the first six already set - nothing about how a block
+# is shaped or addressed changes, only how many exist.
 PORT_BLOCKS = [(8130, 8135), (8140, 8145), (8150, 8155),
-               (8160, 8165), (8170, 8175), (8180, 8185)]
+               (8160, 8165), (8170, 8175), (8180, 8185),
+               (8190, 8195), (8200, 8205), (8210, 8215),
+               (8220, 8225)]
 PRIMARY_BLOCK = (8124, 8126)
 
 # The one gate stage the readiness probe runs. See the module docstring
@@ -971,9 +986,19 @@ def take_lease(repo, branch, state=None, requested=None, reclaim=False):
             continue
         try:
             handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            # Lost the race between the read above and here. The other
-            # agent holds it; try the next block.
+        except (FileExistsError, PermissionError):
+            # Lost the race between the read above and here - or, on
+            # Windows, a moment from not existing. The same NTFS
+            # delete-pending window tools/prime_lock.py's own exclusive
+            # creates already catch (S23, #436) can present a concurrent
+            # release's os.remove(path) as ERROR_ACCESS_DENIED
+            # (PermissionError) rather than ERROR_FILE_EXISTS for a few
+            # microseconds - the same fact ("someone else has this path
+            # right now"), two different Windows codes depending on
+            # timing. Either way the other agent holds it, or just did;
+            # try the next block rather than letting the transient
+            # exception crash the whole allocation (carried into this
+            # slice's scope by #441's own review of #436's finding).
             held.append((block, read_lease(path) or {}))
             continue
         write_new_lease(handle, mine, branch, block)
