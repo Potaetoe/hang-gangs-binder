@@ -422,13 +422,16 @@
   </div>
 
   <!--
-    The toast (#454 item 8) - the one element and one function this
-    ticket owes (0.9-M3-S30, #452), so 0.9-M3-S33 can lift both
-    site-wide unchanged. role="status"/aria-live="polite": a save
-    confirmation is not urgent enough to interrupt a screen reader
-    mid-sentence, the same call this page's idle countdown already
-    makes for the same reason (see the comment above #idle-warning).
-    admin.js's showToast() is the one function that writes to it.
+    The toast (#454 item 8) - the one element this page minted
+    (0.9-M3-S30, #452). 0.9-M3-S33 (#457) lifted the one function that
+    writes to it, BinderUI.showToast(), so every signed-in page carries
+    the same element and the same function rather than a second copy of
+    either; every call site on this page still reads it as showToast(),
+    a local alias for the shared one. role="status"/aria-live="polite":
+    a save confirmation is not urgent enough to interrupt a screen
+    reader mid-sentence, the same call this page's idle countdown
+    already makes for the same reason (see the comment above
+    #idle-warning).
   -->
   <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
 </main>
@@ -449,6 +452,53 @@
 </footer>
 
 </div>
+
+<!--
+  The bottom bar (#454 items 5-6, owner ruling 2026-08-22; 0.9-M3-S33,
+  #457): a phone-width replacement for the rail's own navigation,
+  identical on every signed-in page and the admin page - see
+  apps/web/theme.css's own comment on .tab-bar for the full reasoning,
+  and this page's earlier comment on the rail for why markup this
+  important is written out per page rather than built by nav.js.
+  tools/check_web.py holds the four copies identical.
+
+  Icons carry no words of their own (they are aria-hidden and
+  unfocusable - the label beside each one is what a screen reader and
+  a sighted member both read), and stroke="currentColor" is what lets
+  the aria-current rule below color the icon and the label together
+  from one declaration.
+-->
+<nav class="tab-bar" aria-label="Site">
+  <a class="tab-bar-item" href="your-page.html">
+    <svg class="tab-bar-icon" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" focusable="false"
+      ><circle cx="12" cy="8" r="4"/><path
+      d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+    <span>Your page</span>
+  </a>
+  <a class="tab-bar-item" href="charts.html">
+    <svg class="tab-bar-icon" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" focusable="false"
+      ><path d="M5 21V10M12 21V4M19 21v-7"/></svg>
+    <span>Charts</span>
+  </a>
+  <button type="button" class="tab-bar-item" id="tab-bar-signout" hidden>
+    <svg class="tab-bar-icon" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" focusable="false"
+      ><path d="M9 21H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4M16 17l4-5-4-5M20 12H9"/></svg>
+    <span>Sign out</span>
+  </button>
+  <a class="tab-bar-item" href="admin.html" id="tab-bar-admin" hidden>
+    <svg class="tab-bar-icon" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" focusable="false"
+      ><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3Z"/></svg>
+    <span>Admin</span>
+  </a>
+</nav>
 
 <script src="config.js"></script>
 <script src="ui.js"></script>

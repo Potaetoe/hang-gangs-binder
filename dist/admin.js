@@ -745,7 +745,13 @@
           $("settings-floor-notice").textContent =
             root.BinderAdmin.floorNotice(verdict.value);
         }
-        saySettings("Saved.", null);
+         
+         
+         
+         
+         
+        saySettings("", null);
+        showToast("Saved.");
         loadLog();
       });
     }
@@ -916,7 +922,10 @@
       $("member-telegram-id").value = "";
       $("member-add").disabled = false;
       await readMembership();
-      sayRoles(addedNotice(label), null);
+       
+       
+      sayRoles("", null);
+      showToast(addedNotice(label));
       loadLog();
     });
 
@@ -947,7 +956,10 @@
       }
 
       await readMembership();
-      sayRoles("Removed.", null);
+       
+       
+      sayRoles("", null);
+      showToast("Removed.");
       loadLog();
     }
 
@@ -1876,20 +1888,9 @@
      
      
      
+     
 
-     
-     
-     
-     
-     
-     
-     
-    function fadeIn(el) {
-      if (!el) return;
-      el.className = (el.className ? el.className + " " : "") + "fade-in";
-      void el.offsetHeight;
-      el.className = el.className.replace(/\s*fade-in\b/, "");
-    }
+    const fadeIn = UI.fadeIn;
 
     const TABS = [
       { tab: "tab-settings", panel: "settings-card" },
@@ -1930,18 +1931,13 @@
      
      
      
-    let toastTimer = null;
-    function showToast(message) {
-      const toast = $("toast");
-      if (!toast) return;
-      root.clearTimeout(toastTimer);
-      toast.textContent = message;
-      show(toast, true);
-      fadeIn(toast);
-      toastTimer = root.setTimeout(function () {
-        show(toast, false);
-      }, 3000);
-    }
+     
+     
+     
+     
+     
+     
+    const showToast = UI.showToast;
 
     wireIdle();
     loadSettings();

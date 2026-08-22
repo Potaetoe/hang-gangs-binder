@@ -148,6 +148,50 @@ check("admin.js's shipped bytes and dist's agree, functionally: both " +
     return before === after;
   })());
 
+/* ------------------------------------------------------------------ */
+/* 2a. apps/web/nav.js's own pure half - the bottom bar's Admin item    */
+/* gate (0.9-M3-S33, #457). No document is defined at this point in the */
+/* file (the DOM stub arrives with driven(), section 3 onward), so this */
+/* exercises the guard clause itself: BinderNav still publishes with no */
+/* document to wire against, the same shape every other pure/DOM split  */
+/* module here proves.                                                  */
+
+const navJs = await read("../apps/web/nav.js");
+const distNavJs = await read("../dist/nav.js");
+await import("data:text/javascript," + encodeURIComponent(navJs));
+const Nav = globalThis.BinderNav;
+
+check("nav.js publishes BinderNav, frozen, with no document defined",
+  Nav !== undefined && Object.isFrozen(Nav) &&
+  typeof globalThis.document === "undefined");
+
+check("isAdminVia recognizes exactly the four values admin.js's own " +
+  "loadAdminVia() recognizes - telegram, flag, secret, break-glass",
+  Nav.isAdminVia("telegram") === true &&
+  Nav.isAdminVia("flag") === true &&
+  Nav.isAdminVia("secret") === true &&
+  Nav.isAdminVia("break-glass") === true);
+
+check("isAdminVia reads absent, empty or unrecognized as 'not an " +
+  "admin here' rather than as an error - the bar's Admin item stays " +
+  "hidden on any of these, never assumed true",
+  Nav.isAdminVia(null) === false && Nav.isAdminVia(undefined) === false &&
+  Nav.isAdminVia("") === false && Nav.isAdminVia("member") === false &&
+  Nav.isAdminVia("Telegram") === false); // case-sensitive on purpose -
+  // the Worker's own adminVia is one of the four literal strings, never
+  // a value this page title-cases or guesses at.
+
+check("dist/nav.js's isAdminVia agrees, value for value - the mirror " +
+  "is not stale",
+  (async () => {
+    await import("data:text/javascript," + encodeURIComponent(distNavJs) +
+      "#dist-nav-parity");
+    const DistNav = globalThis.BinderNav;
+    const probes = ["telegram", "flag", "secret", "break-glass", "",
+      "member", null];
+    return probes.every((v) => DistNav.isAdminVia(v) === Nav.isAdminVia(v));
+  })());
+
 /* -- Settings validation, mirroring S8's real server-side rules      */
 /* (#414 completion, comment 5370945709, the "contract, in full" block) -- */
 
@@ -735,6 +779,12 @@ const setStatus = (element, message, tone) => {
   element.hidden = !message;
   element.className = "status" + (tone ? " " + tone : "");
 };
+// apps/web/ui.js's own fadeIn() forces a reflow (`void element.
+// offsetHeight`) this stub DOM does not have - harmless to skip, the
+// same way tests/your-page.test.mjs's own harness note says the real
+// build_web strippers suite already exercises the shipped bytes. What
+// matters to every check here is `.hidden`, never the transition class.
+const fadeIn = () => {};
 
 /*
  * One fetch stub per scenario, dispatching on method+path exactly the
@@ -768,7 +818,18 @@ async function driven(routes, options) {
   globalThis.document = doc;
   globalThis.BinderUI = {
     byId: (id) => byId.get(id) || null,
-    show, checkedValue, setStatus,
+    show, checkedValue, setStatus, fadeIn,
+    // apps/web/ui.js's own showToast(), stubbed the same way setStatus
+    // is above: find #toast by id and write to it, matching what every
+    // toast check in this suite already reads back through byId.get
+    // ("toast") (0.9-M3-S33, #457 - admin.js reads UI.showToast() now
+    // rather than keeping its own copy).
+    showToast(message) {
+      const toast = byId.get("toast");
+      if (!toast) return;
+      toast.textContent = message;
+      toast.hidden = false;
+    },
     boot(setUp, onError) {
       try {
         const result = setUp();
@@ -998,9 +1059,11 @@ const BASE_ROUTES = {
     "field's own name and the validated value",
     posts.length === 1 && posts[0].name === "chart.floor" &&
     posts[0].value === "12");
-  check("the status line confirms the save, and the floor notice updates " +
-    "to match",
-    /Saved/.test(byId.get("settings-status").textContent) &&
+  check("a toast confirms the save, not the status line (0.9-M3-S33, " +
+    "#454 item 8), and the floor notice updates to match",
+    byId.get("settings-status").hidden === true &&
+    byId.get("toast").hidden === false &&
+    byId.get("toast").textContent === "Saved." &&
     calls.some((c) => c.method === "GET" && c.path === "/admin-log"));
 }
 
@@ -1047,6 +1110,15 @@ const BASE_ROUTES = {
   check("the telegram id field is cleared after a successful add - the " +
     "last place that numeric id exists on this page",
     byId.get("member-telegram-id").value === "");
+  // Two more ticks than the checks above need: the toast fires after
+  // readMembership()'s own re-read (a second fetch and a json() parse),
+  // not synchronously with the POST the first two checks read.
+  await Promise.resolve(); await Promise.resolve();
+  check("a toast names the add, not the status line (0.9-M3-S33, #454 " +
+    "item 8)",
+    byId.get("roles-status").hidden === true &&
+    byId.get("toast").hidden === false &&
+    /New admin/.test(byId.get("toast").textContent));
 }
 
 {
@@ -1097,6 +1169,15 @@ const BASE_ROUTES = {
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
   check("the second press removes the exact role and id GET handed back",
     removed === "/membership/admin/a1");
+  // Two more ticks than the check above needs, the same gap
+  // member-add's own toast check names: the toast fires after
+  // readMembership()'s own re-read, not synchronously with the DELETE.
+  await Promise.resolve(); await Promise.resolve();
+  check("and toasts Removed. rather than the status line (0.9-M3-S33, " +
+    "#454 item 8)",
+    byId.get("roles-status").hidden === true &&
+    byId.get("toast").hidden === false &&
+    byId.get("toast").textContent === "Removed.");
 }
 
 /* -- Fields: render, add/retire/un-retire a value, one-button rename,  */
@@ -2589,7 +2670,7 @@ check("no download/export id survives in the real shipped markup - the " +
 // (Departed-tab arms vs. wrap-row-wiring arms) and both are kept in
 // full, so the union is the base plus both sides' own additions:
 // 171 + 36 + 8 = 215.
-const EXPECTED = 215;
+const EXPECTED = 221;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
