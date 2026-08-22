@@ -46,6 +46,7 @@ import prime_lock
 
 failures = 0
 performed = 0
+skipped = 0
 
 # The synchronized-concurrency harness (2nd-audit MAJOR2). A wall-clock
 # barrier is not enough on its own to prove a single-winner property, but
@@ -132,7 +133,7 @@ def exit_codes(outcomes):
 # nothing compares against still prints a confident pass when a check
 # stops running, which is the armed-looking-but-not failure this
 # repository holds to be worse than no check at all.
-EXPECTED = 116
+EXPECTED = 120
 
 
 def check(label, condition):
@@ -143,6 +144,38 @@ def check(label, condition):
         print("FAIL  %s" % label)
     else:
         print("ok    %s" % label)
+
+
+def skip(label, reason):
+    """Account for a check whose CONDITION this platform cannot create.
+
+    Counted in `performed` on purpose, so EXPECTED stays one number on
+    every platform: the count proves the suite reached every check site,
+    and the printed line says which sites could not run here and why. A
+    skip left out of the count would make the total platform-dependent,
+    and a total nobody can predict is a total nobody can assert - which
+    is the whole reason EXPECTED exists.
+
+    Reserved for a condition the operating system genuinely will not
+    produce (the Windows-only open-handle denial below is the only user
+    today). A property that CAN be proved everywhere is proved
+    everywhere, by injection if the real condition is platform-bound -
+    never skipped, and never left passing for free on the platform where
+    its premise is false (S23 fix wave 2, #436).
+    """
+    global performed, skipped
+    performed += 1
+    skipped += 1
+    print("skip  %s - skipped: %s" % (label, reason))
+
+
+# Windows denies a move or a delete against a file another process holds
+# open; POSIX does not, and that difference is a fact about the operating
+# systems rather than about this module.
+NO_OPEN_HANDLE_DENIAL = ("only Windows refuses to move or delete a file "
+                         "another process holds open - POSIX rename(2) "
+                         "and unlink(2) both succeed against an open "
+                         "file, so no live handle can deny a steal here")
 
 
 def run(argv):
@@ -631,49 +664,94 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
           read(settle_state).get("session") == "winner")
 
     print("\n--- S23 (#436): a third, distinct race - steal_mutex against "
-          "a mutex a real process still has open ---")
+          "a mutex it cannot move ---")
     # A review lead on #436 (S11's re-fire reviewer, unable to reproduce
     # the storm flake directly) named this one before it was found here:
     # a contender that loses the takeover race while another process
-    # still holds the file handle. Reproduced directly - a subprocess
-    # holding the mutex path open (standing in for a holder that is slow
-    # rather than crashed) while its mtime is aged past the steal
-    # threshold makes the graveyard replace raise exactly a
-    # `PermissionError` reading "the process cannot access the file
-    # because it is being used by another process", a THIRD mechanism
-    # behind
-    # the same error type as the delete-pending race above but a
-    # genuinely different cause (a live handle, not a timing sliver).
-    # steal_mutex already treats it as ordinary contention; this proves
-    # that call, live, with a real OS-level open handle rather than a
-    # monkeypatched os.open.
-    steal_state = os.path.join(root, "steal-open-handle")
-    steal_path = prime_lock.mutex_path(steal_state)
-    os.makedirs(os.path.dirname(steal_path), exist_ok=True)
-    holder = subprocess.Popen(
-        [sys.executable, "-c",
-         "import sys, time\n"
-         "with open(sys.argv[1], 'w', encoding='utf-8') as f:\n"
-         "    f.write('{}')\n"
-         "    f.flush()\n"
-         "    print('HELD', flush=True)\n"
-         "    time.sleep(2.0)\n",
-         steal_path],
-        stdout=subprocess.PIPE, text=True)
-    holder.stdout.readline()  # blocks until the subprocess has it open
+    # still holds the file handle. On Windows a subprocess holding the
+    # mutex path open (standing in for a holder that is slow rather than
+    # crashed) while its mtime is aged past the steal threshold makes the
+    # graveyard replace raise exactly a `PermissionError` reading "the
+    # process cannot access the file because it is being used by another
+    # process", a THIRD mechanism behind the same error type as the
+    # delete-pending race above but a genuinely different cause (a live
+    # handle, not a timing sliver).
+    #
+    # WHY THE PROPERTY IS PROVED BY INJECTION AND THE LIVE HANDLE IS THE
+    # SECOND ARM (S23 fix wave 2, #436). What steal_mutex must do is
+    # absorb a denied move, whatever denied it - a property of this
+    # module, true on every operating system. The live-handle fixture is
+    # a Windows-only way to PRODUCE that denial, because POSIX rename(2)
+    # succeeds against an open file; run on Linux it denies nothing, the
+    # steal goes through, and the arm passes without ever exercising the
+    # catch it names. So the denial is injected into os.replace - the
+    # same shape the os.remove and os.stat injections in this file use -
+    # and the real handle is kept below as a second arm that SAYS it
+    # skipped rather than passing for free.
+    deny_state = os.path.join(root, "steal-denied-replace")
+    deny_path = prime_lock.mutex_path(deny_state)
+    os.makedirs(os.path.dirname(deny_path), exist_ok=True)
+    with open(deny_path, "w", encoding="utf-8") as handle:
+        handle.write('{"pid": 1, "host": "wedged", "at": "old"}')
     old = time.time() - (prime_lock.MUTEX_STALE_SECONDS + 5)
-    os.utime(steal_path, (old, old))
-    check("the held mutex reads as stale by mtime, same as a crashed "
-          "holder's", prime_lock.mutex_is_stale(steal_path))
+    os.utime(deny_path, (old, old))
+    real_replace = os.replace
+
+    def denied_replace(src, dst, *a, **kw):
+        if src == deny_path:
+            raise PermissionError(
+                13, "The process cannot access the file because it is "
+                    "being used by another process (injected, S23)")
+        return real_replace(src, dst, *a, **kw)
+    os.replace = denied_replace
     raised = None
     try:
-        prime_lock.steal_mutex(steal_path)
+        prime_lock.steal_mutex(deny_path)
     except Exception as exc:  # proving NONE escapes
         raised = exc
-    check("steal_mutex against a mutex a live process still has open "
-          "does not crash - it is ordinary contention, retried by the "
-          "caller's own spin loop", raised is None)
-    holder.wait(timeout=10)
+    finally:
+        os.replace = real_replace
+    check("steal_mutex against a mutex it cannot move does not crash - "
+          "it is ordinary contention, retried by the caller's own spin "
+          "loop", raised is None)
+    check("and the mutex it could not move is still there, so the next "
+          "spin sees a wedged holder rather than a free slot",
+          os.path.exists(deny_path))
+
+    if os.name == "nt":
+        steal_state = os.path.join(root, "steal-open-handle")
+        steal_path = prime_lock.mutex_path(steal_state)
+        os.makedirs(os.path.dirname(steal_path), exist_ok=True)
+        holder = subprocess.Popen(
+            [sys.executable, "-c",
+             "import sys, time\n"
+             "with open(sys.argv[1], 'w', encoding='utf-8') as f:\n"
+             "    f.write('{}')\n"
+             "    f.flush()\n"
+             "    print('HELD', flush=True)\n"
+             "    time.sleep(2.0)\n",
+             steal_path],
+            stdout=subprocess.PIPE, text=True)
+        holder.stdout.readline()  # blocks until the subprocess has it open
+        old = time.time() - (prime_lock.MUTEX_STALE_SECONDS + 5)
+        os.utime(steal_path, (old, old))
+        check("the held mutex reads as stale by mtime, same as a crashed "
+              "holder's", prime_lock.mutex_is_stale(steal_path))
+        raised = None
+        try:
+            prime_lock.steal_mutex(steal_path)
+        except Exception as exc:  # proving NONE escapes
+            raised = exc
+        check("steal_mutex against a mutex a live process still has open "
+              "does not crash - the denial above, produced by a real OS "
+              "handle rather than injected", raised is None)
+        holder.wait(timeout=10)
+    else:
+        skip("the held mutex reads as stale by mtime, same as a crashed "
+             "holder's", NO_OPEN_HANDLE_DENIAL)
+        skip("steal_mutex against a mutex a live process still has open "
+             "does not crash - the denial above, produced by a real OS "
+             "handle rather than injected", NO_OPEN_HANDLE_DENIAL)
 
     # The subprocess case above proves os.replace itself can raise
     # PermissionError against a live handle - and steal_mutex already
@@ -735,27 +813,39 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     check("the shipped timeout still outlasts the steal threshold, so a "
           "wedged fleet recovers rather than every waiter timing out",
           prime_lock.MUTEX_TIMEOUT_SECONDS > prime_lock.MUTEX_STALE_SECONDS)
+    # UNSTEALABLE IS INJECTED, NOT HELD OPEN (S23 fix wave 2, #436). The
+    # first version made the mutex unstealable by holding its handle in a
+    # live subprocess, which is a Windows-only condition: on Linux
+    # rename(2) succeeds against an open file, so the steal went through,
+    # the acquire succeeded, no TimeoutError was raised and the arm's own
+    # premise was false - CI on ubuntu-latest red on exactly that while
+    # every Windows run was green. What is under test is the loop's
+    # SHAPE, so the "cannot steal" condition is injected into os.replace
+    # and the property is proved identically on every platform; the real
+    # open handle stays as a Windows-only second arm below.
     spin_state = os.path.join(root, "unstealable-mutex")
     spin_path = prime_lock.mutex_path(spin_state)
     os.makedirs(os.path.dirname(spin_path), exist_ok=True)
-    live = subprocess.Popen(
-        [sys.executable, "-c",
-         "import sys, time\n"
-         "with open(sys.argv[1], 'w', encoding='utf-8') as f:\n"
-         "    f.write('{}')\n"
-         "    f.flush()\n"
-         "    print('HELD', flush=True)\n"
-         "    time.sleep(30.0)\n",
-         spin_path],
-        stdout=subprocess.PIPE, text=True)
-    live.stdout.readline()  # blocks until the subprocess has it open
+    with open(spin_path, "w", encoding="utf-8") as handle:
+        handle.write('{"pid": 1, "host": "wedged", "at": "old"}')
     old = time.time() - (prime_lock.MUTEX_STALE_SECONDS + 5)
     os.utime(spin_path, (old, old))
-    check("the mutex a live process holds still reads STALE by mtime, so "
-          "the steal arm is the one this loop keeps selecting",
+    check("the mutex under test reads STALE by mtime, so the steal arm "
+          "is the one this loop keeps selecting",
           prime_lock.mutex_is_stale(spin_path))
+    real_replace = os.replace
+    attempts = {"n": 0}
+
+    def unstealable_replace(src, dst, *a, **kw):
+        if src == spin_path:
+            attempts["n"] += 1
+            raise PermissionError(
+                13, "The process cannot access the file because it is "
+                    "being used by another process (injected, S23)")
+        return real_replace(src, dst, *a, **kw)
     real_timeout = prime_lock.MUTEX_TIMEOUT_SECONDS
     prime_lock.MUTEX_TIMEOUT_SECONDS = 1.0
+    os.replace = unstealable_replace
     raised, elapsed = None, None
     try:
         started = time.monotonic()
@@ -767,8 +857,7 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
         elapsed = time.monotonic() - started
     finally:
         prime_lock.MUTEX_TIMEOUT_SECONDS = real_timeout
-    live.kill()
-    live.wait()
+        os.replace = real_replace
     check("mutation_lock against an unstealable stale mutex fails LOUDLY "
           "instead of spinning - it raises TimeoutError",
           isinstance(raised, TimeoutError))
@@ -781,6 +870,48 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
           raised is not None
           and ("FileExistsError" in str(raised)
                or "PermissionError" in str(raised)))
+    # Without this the arm above would still pass if the loop gave up on
+    # the FIRST failed steal: the deadline being reached is not by itself
+    # proof that the steal arm is where the loop spent the interval.
+    check("and the steal arm is where every pass went - the denied move "
+          "was attempted many times, not once (%d attempts)"
+          % attempts["n"], attempts["n"] > 1)
+
+    if os.name == "nt":
+        held_state = os.path.join(root, "unstealable-open-handle")
+        held_path = prime_lock.mutex_path(held_state)
+        os.makedirs(os.path.dirname(held_path), exist_ok=True)
+        live = subprocess.Popen(
+            [sys.executable, "-c",
+             "import sys, time\n"
+             "with open(sys.argv[1], 'w', encoding='utf-8') as f:\n"
+             "    f.write('{}')\n"
+             "    f.flush()\n"
+             "    print('HELD', flush=True)\n"
+             "    time.sleep(30.0)\n",
+             held_path],
+            stdout=subprocess.PIPE, text=True)
+        live.stdout.readline()  # blocks until the subprocess has it open
+        old = time.time() - (prime_lock.MUTEX_STALE_SECONDS + 5)
+        os.utime(held_path, (old, old))
+        prime_lock.MUTEX_TIMEOUT_SECONDS = 1.0
+        raised = None
+        try:
+            with prime_lock.mutation_lock(held_state):
+                pass
+        except Exception as exc:  # the point is WHICH one escapes
+            raised = exc
+        finally:
+            prime_lock.MUTEX_TIMEOUT_SECONDS = real_timeout
+            live.kill()
+            live.wait()
+        check("the same bound holds against a REAL open handle rather "
+              "than an injected denial - TimeoutError, not a hot loop",
+              isinstance(raised, TimeoutError))
+    else:
+        skip("the same bound holds against a REAL open handle rather "
+             "than an injected denial - TimeoutError, not a hot loop",
+             NO_OPEN_HANDLE_DENIAL)
 
     print("\n--- S23 fix wave (#436): settle_unreadable's own stat takes "
           "the same Windows error its siblings do ---")
@@ -975,6 +1106,13 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
           crashed([("fine", 1, "REFUSED: somebody else holds it\n")]) == [])
 
 print("\n%d checks, %d failure(s)" % (performed, failures))
+if skipped:
+    # Printed rather than folded into the total: a skip is counted so
+    # EXPECTED stays one number everywhere, and named here so nobody
+    # reads a green run as proof of a check this platform never ran.
+    print("%d of those checks were SKIPPED on this platform (os.name=%r) "
+          "- see the 'skip' lines above for the condition each one needs."
+          % (skipped, os.name))
 if performed != EXPECTED:
     print("EXPECTED %d checks and %d ran. A suite that quietly stops "
           "running is a suite that quietly stops checking."
