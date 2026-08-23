@@ -188,6 +188,14 @@
     --space-6: 1.5rem; --space-8: 2rem;
     --radius: 0.75rem; --radius-pill: 999px;
     --measure: 46rem; --measure-wide: 84rem; --rail-width: 15rem;
+    /* Size, reach and motion (owner ruling, #454 items 3-4; 0.9-M3-S33,
+       #457) - theme.css's own comment on these three carries the full
+       reasoning, including why --tap-target's 2.75rem and
+       --motion-duration's 150ms are consolidations of literals this
+       scale already shipped (.filter-chip, the toast) rather than new
+       decisions. */
+    --tap-target: 2.75rem; --motion-duration: 150ms;
+    --tab-bar-height: 4.25rem;
   }
 
   .site *, .site *::before, .site *::after { box-sizing: border-box; }

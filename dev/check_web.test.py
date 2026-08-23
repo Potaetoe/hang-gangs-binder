@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 575
+EXPECTED = 581
 
 
 def check(label, condition):
@@ -1065,12 +1065,15 @@ for module, namespace in sorted(check_web.MODULE_EXPORTS.items()):
         bool(check_web.frozen_publish(check_web.strip_js_comments(source),
                                       namespace)))
 check("every module on the roster freezes its export in the shipped file",
-      # 12, not 11: site-content.js joined MODULE_EXPORTS at 0.9-M3-S12
-      # (#418), publishing BinderSiteContent. theme-init.js left the
-      # roster earlier, at 0.9-M2-S14 (#380 ruling 2), when the custom
-      # theme it published (BinderCustomPalette) retired with it - which
-      # is why this was 11 rather than 12 before this change.
-      len(frozen_in_place) == 12 and all(frozen_in_place))
+      # 13, not 12: nav.js joined MODULE_EXPORTS at 0.9-M3-S33 (#457),
+      # publishing BinderNav once the bottom bar's admin-gate needed a
+      # pure read (isAdminVia) a suite could exercise without a
+      # document - moved out of NO_MODULE_EXPORT, where it had sat since
+      # nav.js assigned no global at all. site-content.js joined at
+      # 0.9-M3-S12 (#418), publishing BinderSiteContent; theme-init.js
+      # left the roster earlier, at 0.9-M2-S14 (#380 ruling 2), when the
+      # custom theme it published (BinderCustomPalette) retired with it.
+      len(frozen_in_place) == 13 and all(frozen_in_place))
 check("apps/web raises no export problem",
       check_web.module_export_problems() == [])
 
@@ -3650,6 +3653,57 @@ check("a vetoed sentence quoted in a comment is not on the page",
 
 check("the pages themselves meet the bar's two readable rules",
       check_web.register_problems() == [])
+
+# tab_bar_contents_problems() (0.9-M3-S33 fix wave 1, #457 review F1) -
+# check 28's own presence and parity arms both held before this fix
+# wave, and both still pass a bar emptied of every item, since neither
+# one reads INSIDE the <nav>. This is the arm that does, tested on
+# strings the same way rail_page_problems() is tested above rather
+# than on the five files it happens to guard today.
+TAB_BAR = (
+    '<nav class="tab-bar" aria-label="Site">'
+    '<a class="tab-bar-item" id="tab-bar-yourpage" href="your-page.html">'
+    '<span>Your page</span></a>'
+    '<a class="tab-bar-item" id="tab-bar-charts" href="charts.html">'
+    '<span>Charts</span></a>'
+    '<button class="tab-bar-item" id="tab-bar-signout" hidden>'
+    '<span>Sign out</span></button>'
+    '<a class="tab-bar-item" id="tab-bar-admin" href="admin.html" hidden>'
+    '<span>Admin</span></a>'
+    '</nav>'
+)
+
+check("one item's own tag is read out of a .tab-bar fragment by id",
+      check_web.tab_bar_item_fragment(TAB_BAR, "tab-bar-charts") is not None
+      and "Charts" in
+      check_web.tab_bar_item_fragment(TAB_BAR, "tab-bar-charts"))
+check("an id no item carries reads as absence",
+      check_web.tab_bar_item_fragment(TAB_BAR, "tab-bar-nothing") is None)
+
+check("a complete .tab-bar raises nothing",
+      check_web.tab_bar_contents_problems(TAB_BAR) == [])
+
+# THE F1 CASE ITSELF: every item removed, the <nav> left standing -
+# exactly the state check 28's presence arm (a bare tab_bar_fragment()
+# search) and its parity arm (comparing empty copies to each other)
+# both call fine.
+EMPTY_TAB_BAR = '<nav class="tab-bar" aria-label="Site"></nav>'
+check("an empty .tab-bar - every item gone, the wrapper left standing - "
+      "is refused, one problem per missing id",
+      len(check_web.tab_bar_contents_problems(EMPTY_TAB_BAR)) == 4 and
+      all('carries no id="tab-bar-' in p
+          for p in check_web.tab_bar_contents_problems(EMPTY_TAB_BAR)))
+
+check("an item present by id but pointed at the wrong page is refused",
+      any('does not link to charts.html' in p
+          for p in check_web.tab_bar_contents_problems(
+              TAB_BAR.replace('href="charts.html"', 'href="your-page.html"',
+                              1))))
+check("an item present by id but carrying the wrong label is refused",
+      any('not labeled "Charts"' in p
+          for p in check_web.tab_bar_contents_problems(
+              TAB_BAR.replace("<span>Charts</span>",
+                               "<span>Chart</span>"))))
 
 
 if failures:

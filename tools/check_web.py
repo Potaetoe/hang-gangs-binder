@@ -3813,6 +3813,11 @@ MODULE_EXPORTS = {
     "crypto.js": "BinderCrypto",
     "fields.js": "BinderFields",
     "form.js": "BinderForm",
+    # BinderNav.isAdminVia (0.9-M3-S33, #457): the one pure read the bar's
+    # admin-gate needs (is this adminVia value a real reason), exported so
+    # a suite can exercise it without a document - the same reasoning
+    # every other pure/DOM-split module here already follows.
+    "nav.js": "BinderNav",
     "session.js": "BinderSession",
     "signout.js": "BinderSignOut",
     "site-content.js": "BinderSiteContent",
@@ -3827,7 +3832,6 @@ MODULE_EXPORTS = {
 # is a decision these files have already made.
 NO_MODULE_EXPORT = {
     "countries.js": "is two data tables the form reads",
-    "nav.js": "marks the current destination in the rail and returns",
     # BINDER_SITE is a data global, not a namespace of helpers - the same
     # shape BINDER_CONFIG is - but unlike BINDER_CONFIG it deliberately
     # ships UNFROZEN at this assignment: apps/web/fields.js's own header
@@ -4885,6 +4889,12 @@ MOCKUP_SCALE = {
     "--measure": "46rem",
     "--measure-wide": "84rem",
     "--rail-width": "15rem",
+    # Size, reach and motion (owner ruling, #454 items 3-4; 0.9-M3-S33,
+    # #457): the tap-target floor, the transition length and the bar's
+    # own height, matching theme.css's :root token block.
+    "--tap-target": "2.75rem",
+    "--motion-duration": "150ms",
+    "--tab-bar-height": "4.25rem",
 }
 
 # The four palettes, from the mockup's `.site` block (Midnight, its
@@ -6771,6 +6781,151 @@ def register_problems():
     return sorted(problems)
 
 
+# ------------------------------------------------------------------
+# Check 28: the bottom bar and the toast (0.9-M3-S33, #457; #454 items
+# 5-6 and 8, owner ruling 2026-08-22).
+#
+# The same SHELLS-keyed rule the rail already answers to, read the
+# other way: every page pinned "rail" carries a .tab-bar and a #toast,
+# and no other page needs to (the sign-in page and the error page are
+# pinned "plain" and have no session to navigate from or to feed a
+# toast). Parity is checked the same way session_parity_problems()
+# already checks the rail's own session block - one page's copy is the
+# reference, every other copy is compared fragment by fragment, and a
+# drift is named by what it says differently rather than merely
+# "differs". A page that simply dropped its bar is caught by the
+# presence check above, not folded into the parity comparison, for the
+# same reason rail_page_problems() refuses that case on its own rather
+# than leaving it to the comparison: a claim about copies cannot be
+# made true by having fewer of them.
+TAB_BAR_PIN = "SHELLS in tools/check_web.py"
+
+
+def tab_bar_fragment(text):
+    """One page's whole .tab-bar block, or None when it carries none."""
+    match = re.search(r'<nav\b[^>]*class="tab-bar"[^>]*>.*?</nav\s*>',
+                      text, re.S | re.I)
+    return match.group(0) if match else None
+
+
+def toast_element_present(text):
+    """Whether a page's markup carries the shared #toast element."""
+    return re.search(r'\bid="toast"', text) is not None
+
+
+# The four items every .tab-bar is supposed to carry - id, the href a
+# link item must resolve to (None for the Sign out button, which has
+# none), and the label a member reads beside its icon. Read off the
+# ids apps/web/nav.js gates or wires by (tab-bar-signout, tab-bar-admin)
+# and the two this fix wave added to match them (tab-bar-yourpage,
+# tab-bar-charts) - #457 review, F1.
+TAB_BAR_ITEMS = (
+    ("tab-bar-yourpage", "your-page.html", "Your page"),
+    ("tab-bar-charts", "charts.html", "Charts"),
+    ("tab-bar-signout", None, "Sign out"),
+    ("tab-bar-admin", "admin.html", "Admin"),
+)
+
+
+def tab_bar_item_fragment(bar, item_id):
+    """One item's own tag, open to close, inside a .tab-bar fragment - or
+    None when no element in it carries that id."""
+    match = re.search(
+        r'<(a|button)\b[^>]*\bid="%s"[^>]*>.*?</\1\s*>'
+        % re.escape(item_id), bar, re.S | re.I)
+    return match.group(0) if match else None
+
+
+def tab_bar_contents_problems(bar):
+    """[problem] for a .tab-bar fragment missing one of its four required
+    items, by id, by the destination it should link to, or by its label.
+
+    Before this arm (#457 review, F1) check 28 asked only whether a
+    `<nav class="tab-bar">` existed and whether the copies agreed with
+    each other - never what was inside one. A bar emptied of all four
+    items, on every page at once, satisfied both questions: one <nav>,
+    identically empty everywhere. This is the question that catches
+    that state - the same one the parity arm above cannot ask, because
+    parity is a claim about copies agreeing with EACH OTHER, and empty
+    copies agree perfectly.
+    """
+    problems = []
+    for item_id, href, label in TAB_BAR_ITEMS:
+        fragment = tab_bar_item_fragment(bar, item_id)
+        if fragment is None:
+            problems.append(
+                'carries no id="%s" item in its .tab-bar - #454 items '
+                "5-6 (owner ruling 2026-08-22) name it among the bar's "
+                "four destinations" % item_id)
+            continue
+        if href is not None:
+            found = re.search(r'\bhref="([^"]*)"', fragment)
+            if not found or found.group(1) != href:
+                problems.append(
+                    'has a .tab-bar item id="%s" that does not link to '
+                    "%s" % (item_id, href))
+        if label_text(fragment) != label:
+            problems.append(
+                'has a .tab-bar item id="%s" not labeled "%s"'
+                % (item_id, label))
+    return problems
+
+
+def tab_bar_and_toast_problems():
+    """(page, problem) for a railed page missing, or diverging on, the
+    bar or the toast."""
+    problems = []
+    bars = {}
+    for name in sorted(n for n, shell in SHELLS.items() if shell == "rail"):
+        if name not in html_pages():
+            continue
+        text = page_text(name)
+        bar = tab_bar_fragment(text)
+        if bar is None:
+            problems.append((name,
+                "carries no .tab-bar. #454 items 5-6 (owner ruling "
+                "2026-08-22) rule a bottom bar, icons with labels, on "
+                "every signed-in page and the admin page - a phone-width "
+                "member with no bar has no way off this page but the "
+                "browser's own back button"))
+        else:
+            bars[name] = bar
+            for problem in tab_bar_contents_problems(bar):
+                problems.append((name, problem))
+        if not toast_element_present(text):
+            problems.append((name,
+                "carries no #toast. #454 item 8 rules a shared toast for "
+                "the result of an action on every signed-in page and the "
+                "admin page, and apps/web/ui.js's BinderUI.showToast() "
+                "finds it by that id alone"))
+
+    if len(bars) == 1:
+        problems.append((TAB_BAR_PIN,
+            "leaves this arm one .tab-bar to compare. Parity is a claim "
+            "about copies, and a rule holding one copy cannot fail - "
+            "either the other railed pages come back, or this arm has "
+            "outlived its subject and goes out with the reason written "
+            "down"))
+    elif len(bars) > 1:
+        reference = sorted(bars)[0]
+        for name in sorted(bars):
+            if name == reference:
+                continue
+            here = fragment_pieces(bars[name])
+            there = fragment_pieces(bars[reference])
+            if here == there:
+                continue
+            problems.append((name,
+                "has a .tab-bar that differs from %s's: it %s. Every "
+                "railed page carries its own copy of the bar - the same "
+                "reasoning the rail's own session block carries - so an "
+                "edit reaching some of the copies leaves a member "
+                "meeting a different bar on every page"
+                % (reference, fragment_difference(here, there, reference))))
+
+    return problems
+
+
 def main():
     problems = []
     environments, config_problems = config_environments()
@@ -6899,6 +7054,9 @@ def main():
         problems.append("%s %s." % (subject, problem))
 
     for page, problem in register_problems():
+        problems.append("%s %s." % (page, problem))
+
+    for page, problem in tab_bar_and_toast_problems():
         problems.append("%s %s." % (page, problem))
 
     for where in ("apps/web", "dist"):

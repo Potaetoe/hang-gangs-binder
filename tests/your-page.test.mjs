@@ -526,6 +526,9 @@ async function loadSubmitWithEntries() {
       return chosen ? chosen.value : fallback;
     },
     setStatus(element, message) { if (element) element.textContent = message; },
+    // submit.js's own delete flow toasts its result now (0.9-M3-S33,
+    // #454 item 8).
+    showToast(message) { page.byId("toast").textContent = message; },
     boot(setUp) { booted = Promise.resolve(setUp()); return booted; },
   };
   globalThis.BinderSession = {
@@ -790,6 +793,9 @@ async function loadSubmitWithFailedFetch() {
       return chosen ? chosen.value : fallback;
     },
     setStatus(element, message) { if (element) element.textContent = message; },
+    // submit.js's own delete flow toasts its result now (0.9-M3-S33,
+    // #454 item 8).
+    showToast(message) { page.byId("toast").textContent = message; },
     boot(setUp) { booted = Promise.resolve(setUp()); return booted; },
   };
   globalThis.BinderSession = {
@@ -919,6 +925,9 @@ async function loadSubmitForAbortTest() {
       return chosen ? chosen.value : fallback;
     },
     setStatus(element, message) { if (element) element.textContent = message; },
+    // submit.js's own delete flow toasts its result now (0.9-M3-S33,
+    // #454 item 8).
+    showToast(message) { page.byId("toast").textContent = message; },
     boot(setUp) { booted = Promise.resolve(setUp()); return booted; },
   };
   globalThis.BinderSession = {
@@ -965,6 +974,7 @@ async function loadSubmitForDeleteTest(deleteStatus) {
   globalThis.document = page.document;
   globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };
   let booted = null;
+  const toastCalls = [];
   globalThis.BinderUI = {
     byId: page.byId,
     show(element, visible) { if (element) element.hidden = !visible; },
@@ -975,6 +985,9 @@ async function loadSubmitForDeleteTest(deleteStatus) {
       return chosen ? chosen.value : fallback;
     },
     setStatus(element, message) { if (element) element.textContent = message; },
+    // The delete result is a toast now, not a status paragraph inside
+    // the row's own action cell (0.9-M3-S33, #454 item 8).
+    showToast(message) { toastCalls.push(message); },
     boot(setUp) { booted = Promise.resolve(setUp()); return booted; },
   };
   globalThis.BinderSession = {
@@ -1001,24 +1014,27 @@ async function loadSubmitForDeleteTest(deleteStatus) {
     encodeURIComponent(submitSource) + "#delete-" + deleteStatus + "-" +
     Math.random());
   await booted;
-  return calls;
+  return { calls, toastCalls };
 }
 
-const refusedCalls = await loadSubmitForDeleteTest(500);
+const deleteRefused = await loadSubmitForDeleteTest(500);
 const refusedRow = allRows(page.byId("entries-slot"))[0];
 const refusedCell = refusedRow.children[refusedRow.children.length - 1];
 await findTag(refusedCell, "button").dispatch("click");
 const refusedButtons = refusedCell.children[1];
 await refusedButtons.children[0].dispatch("click"); // "Yes, delete"
-check("a delete refused with a non-2xx status shows the retry message, " +
-  "not a silent success",
-  refusedCell.children[1].textContent ===
-    "That entry could not be removed — try again." &&
-  refusedCell.children[1].hidden === false);
+check("a delete refused with a non-2xx status toasts the retry message, " +
+  "not a silent success (#454 item 8)",
+  deleteRefused.toastCalls.length === 1 &&
+  deleteRefused.toastCalls[0] === "That entry could not be removed — try again.");
+check("and the confirm step reverts to the plain Delete button rather " +
+  "than staying armed on a failure",
+  refusedCell.children.length === 1 &&
+  refusedCell.children[0].tag === "button");
 check("and the row is not treated as deleted - no reload was requested",
-  refusedCalls.filter((c) => c.url.indexOf("/my-entries") !== -1).length === 1);
+  deleteRefused.calls.filter((c) => c.url.indexOf("/my-entries") !== -1).length === 1);
 
-const acceptedCalls = await loadSubmitForDeleteTest(200);
+const deleteAccepted = await loadSubmitForDeleteTest(200);
 const acceptedRow = allRows(page.byId("entries-slot"))[0];
 const acceptedCell = acceptedRow.children[acceptedRow.children.length - 1];
 await findTag(acceptedCell, "button").dispatch("click");
@@ -1027,7 +1043,11 @@ await acceptedButtons.children[0].dispatch("click"); // "Yes, delete"
 check("CONTROL: a delete confirmed with a 2xx status IS treated as " +
   "removed - a reload was requested, proving the guard reads the " +
   "status rather than always refusing",
-  acceptedCalls.filter((c) => c.url.indexOf("/my-entries") !== -1).length === 2);
+  deleteAccepted.calls.filter((c) => c.url.indexOf("/my-entries") !== -1)
+    .length === 2);
+check("and toasts Removed. rather than staying silent on success",
+  deleteAccepted.toastCalls.length === 1 &&
+  deleteAccepted.toastCalls[0] === "Removed.");
 
 /* ------------------------------------------------------------------ */
 /* 6. form.js's own DOM half - never exercised in tests/ before this    */
@@ -1119,6 +1139,7 @@ async function loadFormWired(fetchImpl) {
   globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };
   let booted = null;
   const sayCalls = [];
+  const toastCalls = [];
   globalThis.BinderUI = {
     byId: formPage.byId,
     show(element, visible) { if (element) element.hidden = !visible; },
@@ -1135,6 +1156,10 @@ async function loadFormWired(fetchImpl) {
         element.hidden = !message;
       }
     },
+    // The result of a submit is a toast now, not the status line
+    // (0.9-M3-S33, #454 item 8) - recorded the same way sayCalls
+    // records setStatus, so section 6a below can tell the two apart.
+    showToast(message) { toastCalls.push(message); },
     boot(setUp) { booted = Promise.resolve(setUp()); return booted; },
   };
   globalThis.BinderSession = {
@@ -1154,7 +1179,7 @@ async function loadFormWired(fetchImpl) {
   await import("data:text/javascript," +
     encodeURIComponent(formSource) + "#form-wired-" + Math.random());
   await booted;
-  return { page: formPage, sent, sayCalls };
+  return { page: formPage, sent, sayCalls, toastCalls };
 }
 
 /*
@@ -1194,18 +1219,26 @@ async function submitAndObserve(fetchImpl) {
   const loaded = await loadFormWired(fetchImpl);
   fillValidEntry(loaded.page.byId);
   await loaded.page.submission.dispatch("submit");
-  return { sent: loaded.sent, dispatched: loaded.page.dispatched };
+  return { sent: loaded.sent, dispatched: loaded.page.dispatched,
+    toastCalls: loaded.toastCalls };
 }
 
 const refused403 = await submitAndObserve(async () =>
   ({ ok: false, status: 403, async json() { return { error: "refused" }; } }));
 check("a submit the Worker refuses (403) dispatches no stored event",
   refused403.sent.length === 1 && !refused403.dispatched.includes("binder:submitted"));
+check("and the refusal is a toast, naming the Worker's own reason (#454 " +
+  "item 8) - never a silent refusal",
+  refused403.toastCalls.length === 1 &&
+  refused403.toastCalls[0] === "Nothing was stored — try again.");
 
 const refused500 = await submitAndObserve(async () =>
   ({ ok: false, status: 500, async json() { return {}; } }));
 check("a server error (500) dispatches no stored event either",
   !refused500.dispatched.includes("binder:submitted"));
+check("and toasts the fallback sentence when the Worker sent no `error`",
+  refused500.toastCalls.length === 1 &&
+  refused500.toastCalls[0] === "Nothing was stored — try again.");
 
 const unreachable = await submitAndObserve(async () => {
   throw new Error("the connection failed");
@@ -1213,12 +1246,18 @@ const unreachable = await submitAndObserve(async () => {
 check("a send that never completes dispatches no stored event",
   unreachable.sent.length === 1 &&
   !unreachable.dispatched.includes("binder:submitted"));
+check("and toasts the unreachable-network sentence",
+  unreachable.toastCalls.length === 1 &&
+  unreachable.toastCalls[0] === "Nothing was stored — try again.");
 
 const accepted = await submitAndObserve();
 check("CONTROL: the same harness on a successful send DOES dispatch it - " +
   "the three refusals above prove absence against a harness proven to " +
   "notice presence",
   accepted.dispatched.filter((type) => type === "binder:submitted").length === 1);
+check("and a successful send toasts the confirmation, not a silent success",
+  accepted.toastCalls.length === 1 &&
+  accepted.toastCalls[0] === "Added — it now shows in your entries below.");
 
 /*
  * 6b (F6). A required choice, and only it, left unanswered - every
@@ -1385,6 +1424,12 @@ async function loadCombinedForPrefill(options) {
     setStatus(element, message) {
       if (element) { element.textContent = message || ""; element.hidden = !message; }
     },
+    // submit.js's own delete flow toasts its result now (0.9-M3-S33,
+    // #454 item 8) - a harness with no showToast at all is how a
+    // successful delete inside this loader's own pages first surfaced
+    // "UI.showToast is not a function" as an uncaught rejection rather
+    // than a failed check.
+    showToast(message) { formPage.byId("toast").textContent = message; },
     boot(setUp) { formBooted = Promise.resolve(setUp()); return formBooted; },
   };
   globalThis.BinderSession = {
@@ -1618,6 +1663,12 @@ async function loadForContainerAbsent() {
     setStatus(element, message) {
       if (element) { element.textContent = message || ""; element.hidden = !message; }
     },
+    // submit.js's own delete flow toasts its result now (0.9-M3-S33,
+    // #454 item 8) - a harness with no showToast at all is how a
+    // successful delete inside this loader's own pages first surfaced
+    // "UI.showToast is not a function" as an uncaught rejection rather
+    // than a failed check.
+    showToast(message) { formPage.byId("toast").textContent = message; },
     boot(setUp) { formBooted = Promise.resolve(setUp()); return formBooted; },
   };
   globalThis.BinderSession = {
@@ -1710,7 +1761,90 @@ check("F5: weight stays blank for the next measurement, even right after " +
   resubmitPage.byId("entry-weight-metric").value === "");
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 110;
+/* 11. apps/web/nav.js's DOM-wired half: gateAdminItem() and             */
+/* paintBarSignOut() (0.9-M3-S33 fix wave 1, #457 review F2) - proven    */
+/* once already, fully, in tests/admin-page.test.mjs; this is the       */
+/* second page suite the brief names, a lighter real check rather than  */
+/* a duplicated battery: the admin gate holds both directions, and the  */
+/* sign-out item calls the real, unmodified BinderSignOut.signOut().    */
+
+function navItemStub(tag) {
+  return {
+    tagName: (tag || "a").toUpperCase(),
+    hidden: false,
+    _listeners: {},
+    addEventListener(type, fn) {
+      (this._listeners[type] = this._listeners[type] || []).push(fn);
+    },
+    dispatch(type) {
+      (this._listeners[type] || []).slice().forEach((fn) => fn({}));
+    },
+  };
+}
+
+async function drivenNavOnYourPage(meAnswer, options) {
+  const opts = options || {};
+  const tabBarAdmin = navItemStub("a");
+  tabBarAdmin.hidden = true;
+  const tabBarSignout = navItemStub("button");
+  tabBarSignout.hidden = true;
+  const ids = new Map([
+    ["tab-bar-admin", tabBarAdmin],
+    ["tab-bar-signout", tabBarSignout],
+  ]);
+  const docListeners = {};
+  globalThis.document = {
+    getElementById: (id) => ids.get(id) || null,
+    querySelectorAll: () => [],
+    addEventListener: (type, fn) => {
+      (docListeners[type] = docListeners[type] || []).push(fn);
+    },
+  };
+  const session = "session" in opts ? opts.session : { present: true };
+  globalThis.BinderSession = {
+    read: () => session,
+    onChange: () => {},
+    pageName: () => "your-page.html",
+    authorization: () => ({ Authorization: "Bearer token" }),
+  };
+  let signOutCalls = 0;
+  globalThis.BinderSignOut = { signOut: () => { signOutCalls += 1; } };
+  globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };
+  globalThis.fetch = async () => {
+    if (meAnswer === null) return { ok: false, status: 401 };
+    return { ok: true, status: 200, async json() { return meAnswer; } };
+  };
+  await load("../apps/web/nav.js", "nav-your-page-" + Math.random());
+  docListeners.DOMContentLoaded[0]();
+  for (let i = 0; i < 4; i += 1) await Promise.resolve();
+  return { tabBarAdmin, tabBarSignout, getSignOutCalls: () => signOutCalls };
+}
+
+{
+  const { tabBarAdmin } = await drivenNavOnYourPage({ adminVia: null });
+  check("gateAdminItem keeps the bar's Admin item hidden with no " +
+    "adminVia on your-page.html too - the review's own mutation would " +
+    "reveal it here",
+    tabBarAdmin.hidden === true);
+}
+{
+  const { tabBarAdmin } = await drivenNavOnYourPage({ adminVia: "telegram" });
+  check("and reveals it once GET /me answers a real adminVia",
+    tabBarAdmin.hidden === false);
+}
+{
+  const { tabBarSignout, getSignOutCalls } =
+    await drivenNavOnYourPage({ adminVia: null });
+  check("paintBarSignOut reveals Sign out for a confirmed session and " +
+    "wires it to the real, unmodified BinderSignOut.signOut()",
+    tabBarSignout.hidden === false);
+  tabBarSignout.dispatch("click");
+  check("and the click actually calls it",
+    getSignOutCalls() === 1);
+}
+
+/* ------------------------------------------------------------------ */
+const EXPECTED = 120;
 console.log(failures
   ? `\nyour-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

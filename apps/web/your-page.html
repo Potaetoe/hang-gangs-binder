@@ -51,16 +51,21 @@
   block below, beside the words that say whether this tab holds a
   session, and tools/check_web.py refuses it up here.
 
-  Nothing in here is hidden by the `hidden` attribute except the Sign
-  out control, and that is deliberate. [hidden] is display:none
+  Sign out and Admin are the two items here hidden by the `hidden`
+  attribute; Your page and Charts are not. [hidden] is display:none
   !important in theme.css, so anything hidden that way at one width
-  cannot be revealed at another; the destinations stay in flow at every
-  width. Sign out is the one thing that genuinely has no state to be in
-  until a script confirms a session, so the attribute is right for it -
-  and the Sign in route beside it ships VISIBLE for the same reasoning
-  read the other way: with scripts dead there is no session, the door
-  is the honest resting state, and signout.js hides it only once a
-  session is confirmed.
+  cannot be revealed at another - which is fine for both: neither is a
+  disclosure, both are revealed once by script and stay that way. Sign
+  out has no state to be in until a script confirms a session; the Sign
+  in route beside it ships VISIBLE for the same reasoning read the
+  other way (with scripts dead there is no session, the door is the
+  honest resting state, and signout.js hides it only once a session is
+  confirmed). Admin ships hidden for the same reason the bottom bar's
+  own Admin item does - DESIGN.md's "the same items in a top rail on
+  desktop" (owner ruling 2026-08-22, #454 item 6) names admin as gated
+  there too, not merely present - apps/web/nav.js's "gateAdminItem()"
+  reveals both #tab-bar-admin and #rail-admin from the one GET /me
+  answer, never a cached session flag.
 -->
 <aside class="rail">
   <a class="wordmark" href="index.html">
@@ -68,16 +73,22 @@
     <span class="wordmark-name">Binder</span>
   </a>
 
-  <!-- admin.html is in this list on instruction, and it costs nothing:
-       the page is public and useless without an admin session - a
-       visitor who lands on it meets the same door as everywhere else.
-       The entry says what it needs, so nobody follows it expecting a
-       page they can use. -->
+  <!-- admin.html is in this list, gated the same way the bottom bar's
+       own Admin item is (#454 item 6; 0.9-M3-S33 fix wave 1, #457) -
+       apps/web/nav.js's "gateAdminItem()" reveals #rail-admin only once
+       GET /me answers with a real adminVia, exactly the honest-
+       resting-state rule the bar's own #tab-bar-admin already follows.
+       This link shipped unconditionally before this fix wave, on the
+       reasoning that the page is public and useless without an admin
+       session; DESIGN.md's own words for item 6 ("the admin page for
+       admins only") name the destination's VISIBILITY, not merely its
+       uselessness to a non-admin who follows it, so the link now
+       matches the bar rather than standing apart from it. -->
   <nav aria-label="Site">
     <ul class="rail-links">
       <li><a href="your-page.html">Your page</a></li>
       <li><a href="charts.html">Charts</a></li>
-      <li><a href="admin.html">Admin</a></li>
+      <li><a href="admin.html" id="rail-admin" hidden>Admin</a></li>
     </ul>
   </nav>
 
@@ -209,6 +220,18 @@
     </div>
   </section>
 
+  <!--
+    The toast (#454 item 8) - the one element and one function every
+    signed-in page shares, BinderUI.showToast() in apps/web/ui.js
+    (0.9-M3-S30 minted it on admin.html, #452; 0.9-M3-S33 lifted it
+    site-wide, #457). apps/web/form.js writes the result of pressing
+    Add to the binder here, and apps/web/submit.js writes the result of
+    a row delete - both are the RESULT of an action rather than its
+    pending state (the SENDING state still stays on #status, which is a
+    process line rather than a result).
+  -->
+  <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+
 </main>
 
 <!--
@@ -307,6 +330,60 @@
 </footer>
 
 </div>
+
+<!--
+  The bottom bar (#454 items 5-6, owner ruling 2026-08-22; 0.9-M3-S33,
+  #457): a phone-width replacement for the rail's own navigation,
+  identical on every signed-in page and the admin page - see
+  apps/web/theme.css's own comment on .tab-bar for the full reasoning,
+  and this page's earlier comment on the rail for why markup this
+  important is written out per page rather than built by nav.js.
+  tools/check_web.py holds the three copies identical.
+
+  Icons carry no words of their own (they are aria-hidden and
+  unfocusable - the label beside each one is what a screen reader and
+  a sighted member both read), and stroke="currentColor" is what lets
+  the aria-current rule below color the icon and the label together
+  from one declaration.
+
+  Each item carries its own id (0.9-M3-S33 fix wave 1, #457, F1) so
+  tools/check_web.py can name a missing or mislabeled item rather than
+  only a missing bar - an empty one, every item removed but the
+  wrapping element left standing, is refused rather than passing
+  silently, the exact state this arm exists to catch: nothing inside
+  the bar is read without it.
+-->
+<nav class="tab-bar" aria-label="Site">
+  <a class="tab-bar-item" id="tab-bar-yourpage" href="your-page.html">
+    <svg class="tab-bar-icon" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" focusable="false"
+      ><circle cx="12" cy="8" r="4"/><path
+      d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+    <span>Your page</span>
+  </a>
+  <a class="tab-bar-item" id="tab-bar-charts" href="charts.html">
+    <svg class="tab-bar-icon" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" focusable="false"
+      ><path d="M5 21V10M12 21V4M19 21v-7"/></svg>
+    <span>Charts</span>
+  </a>
+  <button type="button" class="tab-bar-item" id="tab-bar-signout" hidden>
+    <svg class="tab-bar-icon" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" focusable="false"
+      ><path d="M9 21H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4M16 17l4-5-4-5M20 12H9"/></svg>
+    <span>Sign out</span>
+  </button>
+  <a class="tab-bar-item" href="admin.html" id="tab-bar-admin" hidden>
+    <svg class="tab-bar-icon" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" focusable="false"
+      ><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3Z"/></svg>
+    <span>Admin</span>
+  </a>
+</nav>
 
 <script src="config.js"></script>
 <script src="site.config.js"></script>

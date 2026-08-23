@@ -482,6 +482,20 @@
       hasMore: shown < total };
   }
 
+  
+
+  function departedCapNote(payload, rows) {
+    const total = payload && payload.total;
+    const cap = payload && payload.cap;
+    if (typeof total !== "number" || !Number.isFinite(total)) return "";
+    if (typeof cap !== "number" || !Number.isFinite(cap)) return "";
+    if (typeof rows !== "number" || !Number.isFinite(rows) || rows < 0) {
+      return "";
+    }
+    if (!(total > cap)) return "";
+    return "Showing " + rows + " (checked " + cap + " of " + total + ")";
+  }
+
    
    
    
@@ -558,6 +572,7 @@
     eraseDepartedSentence: eraseDepartedSentence,
     DEPARTED_PAGE_SIZE: DEPARTED_PAGE_SIZE,
     departedSections: departedSections,
+    departedCapNote: departedCapNote,
     IDLE_WINDOW: IDLE_WINDOW,
     idleVerdict: idleVerdict,
     idleNotice: idleNotice,
@@ -730,13 +745,19 @@
             button.disabled = false;
             const refusal = refusalFor(response.status,
               await refusalBody(response));
-            saySettings(refusal.message, "bad");
+             
+             
+             
+             
+            saySettings("", null);
+            showToast(refusal.message);
             return;
           }
         } catch (error) {
           button.disabled = false;
           detail(why(error));
-          saySettings("That could not be sent.", "bad");
+          saySettings("", null);
+          showToast("That could not be sent.");
           return;
         }
         button.disabled = false;
@@ -745,7 +766,13 @@
           $("settings-floor-notice").textContent =
             root.BinderAdmin.floorNotice(verdict.value);
         }
-        saySettings("Saved.", null);
+         
+         
+         
+         
+         
+        saySettings("", null);
+        showToast("Saved.");
         loadLog();
       });
     }
@@ -840,13 +867,20 @@
       }
     }
 
-    function handleRefusal(status, payload) {
+     
+     
+     
+     
+     
+    function handleRefusal(status, payload, where) {
+      const say = where || sayRoles;
       const refusal = refusalFor(status, payload);
       if (refusal.action === "signed-out") {
         sessionEnded(sayRoles);
         return true;
       }
-      sayRoles(refusal.message, "bad");
+      if (say !== sayRoles) sayRoles("", null);
+      say(refusal.message, "bad");
       return false;
     }
 
@@ -903,20 +937,28 @@
         });
         if (!response.ok) {
           $("member-add").disabled = false;
-          handleRefusal(response.status, await refusalBody(response));
+           
+           
+           
+          handleRefusal(response.status, await refusalBody(response),
+            showToast);
           return;
         }
       } catch (error) {
         $("member-add").disabled = false;
         detail(why(error));
-        sayRoles("That could not be sent.", "bad");
+        sayRoles("", null);
+        showToast("That could not be sent.");
         return;
       }
 
       $("member-telegram-id").value = "";
       $("member-add").disabled = false;
       await readMembership();
-      sayRoles(addedNotice(label), null);
+       
+       
+      sayRoles("", null);
+      showToast(addedNotice(label));
       loadLog();
     });
 
@@ -934,20 +976,27 @@
           });
         if (!response.ok) {
           button.disabled = false;
+           
+           
+           
           const left = handleRefusal(response.status,
-            await refusalBody(response));
+            await refusalBody(response), showToast);
           if (!left) await readMembership();
           return;
         }
       } catch (error) {
         button.disabled = false;
         detail(why(error));
-        sayRoles("That could not be removed.", "bad");
+        sayRoles("", null);
+        showToast("That could not be removed.");
         return;
       }
 
       await readMembership();
-      sayRoles("Removed.", null);
+       
+       
+      sayRoles("", null);
+      showToast("Removed.");
       loadLog();
     }
 
@@ -1732,27 +1781,36 @@
         empty.className = "hint";
         empty.textContent = "Nobody has left - nothing to clean up.";
         list.appendChild(empty);
-        return;
-      }
-      for (const section of view.sections) {
-        if (!section.rows.length) continue;
-        const heading = document.createElement("h2");
-        heading.textContent = DEPARTED_TITLES[section.key];
-        list.appendChild(heading);
-        for (const entry of section.rows) {
-          list.appendChild(departedRow(entry, section.key));
+      } else {
+        for (const section of view.sections) {
+          if (!section.rows.length) continue;
+          const heading = document.createElement("h2");
+          heading.textContent = DEPARTED_TITLES[section.key];
+          list.appendChild(heading);
+          for (const entry of section.rows) {
+            list.appendChild(departedRow(entry, section.key));
+          }
+        }
+        if (view.hasMore) {
+          const more = document.createElement("button");
+          more.type = "button";
+          more.className = "secondary";
+          more.textContent = "More";
+          more.addEventListener("click", function () {
+            departedRevealed += DEPARTED_PAGE_SIZE;
+            renderDeparted();
+          });
+          list.appendChild(more);
         }
       }
-      if (!view.hasMore) return;
-      const more = document.createElement("button");
-      more.type = "button";
-      more.className = "secondary";
-      more.textContent = "More";
-      more.addEventListener("click", function () {
-        departedRevealed += DEPARTED_PAGE_SIZE;
-        renderDeparted();
-      });
-      list.appendChild(more);
+      
+
+      const capNote = departedCapNote(departedPayload, view.total);
+      if (!capNote) return;
+      const footer = document.createElement("p");
+      footer.className = "hint";
+      footer.textContent = capNote;
+      list.appendChild(footer);
     }
 
     async function loadDeparted() {
@@ -1876,20 +1934,9 @@
      
      
      
+     
 
-     
-     
-     
-     
-     
-     
-     
-    function fadeIn(el) {
-      if (!el) return;
-      el.className = (el.className ? el.className + " " : "") + "fade-in";
-      void el.offsetHeight;
-      el.className = el.className.replace(/\s*fade-in\b/, "");
-    }
+    const fadeIn = UI.fadeIn;
 
     const TABS = [
       { tab: "tab-settings", panel: "settings-card" },
@@ -1930,18 +1977,15 @@
      
      
      
-    let toastTimer = null;
-    function showToast(message) {
-      const toast = $("toast");
-      if (!toast) return;
-      root.clearTimeout(toastTimer);
-      toast.textContent = message;
-      show(toast, true);
-      fadeIn(toast);
-      toastTimer = root.setTimeout(function () {
-        show(toast, false);
-      }, 3000);
-    }
+     
+     
+     
+     
+     
+     
+     
+     
+    const showToast = UI.showToast;
 
     wireIdle();
     loadSettings();

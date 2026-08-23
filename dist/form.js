@@ -688,6 +688,11 @@
       submit.disabled = true;
       say("Sending…", null);
 
+       
+       
+       
+       
+       
       let record = null;
       try {
         record = buildRecord(input, Date.now(),
@@ -696,7 +701,8 @@
         submit.disabled = false;
         logDetail(error && error.message ? error.message
           : "record building failed with no message");
-        say("Nothing was sent — reload and try again.", "bad");
+        say("", null);
+        UI.showToast("Nothing was sent — reload and try again.");
         return;
       }
 
@@ -713,8 +719,9 @@
         if (response.status === 401) {
           root.BinderSession.clear();
           submit.disabled = false;
-          say("Nothing was stored — your sign-in is no longer valid, so " +
-            "sign in again.", "bad");
+          say("", null);
+          UI.showToast("Nothing was stored — your sign-in is no longer " +
+            "valid, so sign in again.");
           return;
         }
         if (!response.ok) {
@@ -731,7 +738,8 @@
         submit.disabled = false;
         logDetail(error && error.message ? error.message
           : "the submission could not be sent");
-        say("Nothing was stored — try again.", "bad");
+        say("", null);
+        UI.showToast("Nothing was stored — try again.");
         return;
       }
 
@@ -740,7 +748,8 @@
       submit.disabled = false;
       form.reset();
       applyUnits(container);
-      say("Added — it now shows in your entries below.", null);
+      say("", null);
+      UI.showToast("Added — it now shows in your entries below.");
     });
   }
 })(globalThis);

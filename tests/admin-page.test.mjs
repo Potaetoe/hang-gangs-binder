@@ -146,6 +146,187 @@ check("admin.js's shipped bytes and dist's agree, functionally: both " +
   "publish the same frozen API surface",
   beforeDistParity === afterDistParity);
 
+/* ------------------------------------------------------------------ */
+/* 2a. apps/web/nav.js's own pure half - the bottom bar's Admin item    */
+/* gate (0.9-M3-S33, #457). No document is defined at this point in the */
+/* file (the DOM stub arrives with driven(), section 3 onward), so this */
+/* exercises the guard clause itself: BinderNav still publishes with no */
+/* document to wire against, the same shape every other pure/DOM split  */
+/* module here proves.                                                  */
+
+const navJs = await read("../apps/web/nav.js");
+const distNavJs = await read("../dist/nav.js");
+await import("data:text/javascript," + encodeURIComponent(navJs));
+const Nav = globalThis.BinderNav;
+
+check("nav.js publishes BinderNav, frozen, with no document defined",
+  Nav !== undefined && Object.isFrozen(Nav) &&
+  typeof globalThis.document === "undefined");
+
+check("isAdminVia recognizes exactly the four values admin.js's own " +
+  "loadAdminVia() recognizes - telegram, flag, secret, break-glass",
+  Nav.isAdminVia("telegram") === true &&
+  Nav.isAdminVia("flag") === true &&
+  Nav.isAdminVia("secret") === true &&
+  Nav.isAdminVia("break-glass") === true);
+
+check("isAdminVia reads absent, empty or unrecognized as 'not an " +
+  "admin here' rather than as an error - the bar's Admin item stays " +
+  "hidden on any of these, never assumed true",
+  Nav.isAdminVia(null) === false && Nav.isAdminVia(undefined) === false &&
+  Nav.isAdminVia("") === false && Nav.isAdminVia("member") === false &&
+  Nav.isAdminVia("Telegram") === false); // case-sensitive on purpose -
+  // the Worker's own adminVia is one of the four literal strings, never
+  // a value this page title-cases or guesses at.
+
+// AWAITED before check() sees it - a promise handed straight to check()
+// is truthy whether the import lands or not, and the pending import
+// then races the driven() calls below it: 0.9-M3-S33's own fix wave
+// found the dist import's module body running AFTER document had
+// already been set by a later driven() call, because nothing here had
+// awaited it first.
+await import("data:text/javascript," + encodeURIComponent(distNavJs) +
+  "#dist-nav-parity");
+const DistNav = globalThis.BinderNav;
+const NAV_PROBES = ["telegram", "flag", "secret", "break-glass", "",
+  "member", null];
+check("dist/nav.js's isAdminVia agrees, value for value - the mirror " +
+  "is not stale",
+  NAV_PROBES.every((v) => DistNav.isAdminVia(v) === Nav.isAdminVia(v)));
+
+/* ------------------------------------------------------------------ */
+/* 2b. nav.js's DOM-WIRED half: gateAdminItem() and paintBarSignOut()   */
+/* (0.9-M3-S33 fix wave 1, #457 review F2) - nothing anywhere exercised */
+/* these before this wave; section 2a above proves only the pure        */
+/* isAdminVia() predicate the gate CALLS, never the gate itself, so the */
+/* review's own mutation (ignore adminVia, reveal on any 200) passed    */
+/* clean. A tiny, purpose-built document stub - just the ids nav.js     */
+/* touches, driven by a real click - the same rejection of jsdom every  */
+/* other suite in this file states.                                     */
+
+function navStubNode(tag) {
+  return {
+    tagName: (tag || "a").toUpperCase(),
+    hidden: false,
+    _listeners: {},
+    addEventListener(type, fn) {
+      (this._listeners[type] = this._listeners[type] || []).push(fn);
+    },
+    dispatch(type) {
+      (this._listeners[type] || []).slice().forEach((fn) => fn({}));
+    },
+  };
+}
+
+async function drivenNav(meAnswer, options) {
+  const opts = options || {};
+  const tabBarAdmin = navStubNode("a");
+  tabBarAdmin.hidden = true;
+  const railAdmin = navStubNode("a");
+  railAdmin.hidden = true;
+  const tabBarSignout = navStubNode("button");
+  tabBarSignout.hidden = true;
+  const ids = new Map([
+    ["tab-bar-admin", tabBarAdmin],
+    ["rail-admin", railAdmin],
+    ["tab-bar-signout", tabBarSignout],
+  ]);
+  const docListeners = {};
+  globalThis.document = {
+    getElementById: (id) => ids.get(id) || null,
+    querySelectorAll: () => [],
+    addEventListener: (type, fn) => {
+      (docListeners[type] = docListeners[type] || []).push(fn);
+    },
+  };
+  let onChangeListener = null;
+  const session = "session" in opts ? opts.session : { present: true };
+  globalThis.BinderSession = {
+    read: () => session,
+    onChange: (fn) => { onChangeListener = fn; },
+    pageName: () => "your-page.html",
+    authorization: () => ({ Authorization: "Bearer token" }),
+  };
+  let signOutCalls = 0;
+  globalThis.BinderSignOut = { signOut: () => { signOutCalls += 1; } };
+  globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };
+  globalThis.fetch = async () => {
+    if (meAnswer === null) return { ok: false, status: 401 };
+    return { ok: true, status: 200, async json() { return meAnswer; } };
+  };
+
+  await import("data:text/javascript," + encodeURIComponent(navJs) +
+    "#nav-dom-" + Math.random());
+  docListeners.DOMContentLoaded[0]();
+  for (let i = 0; i < 4; i += 1) await Promise.resolve();
+
+  return {
+    tabBarAdmin, railAdmin, tabBarSignout,
+    getSignOutCalls: () => signOutCalls,
+    fireOnChange: () => onChangeListener && onChangeListener(),
+  };
+}
+
+{
+  const { tabBarAdmin, railAdmin } =
+    await drivenNav({ adminVia: null });
+  check("gateAdminItem keeps the bar's Admin item hidden when GET /me " +
+    "answers with no adminVia - the review's own mutation " +
+    "(`if (payload) item.hidden = false;`) would reveal it here",
+    tabBarAdmin.hidden === true);
+  check("and keeps the rail's own #rail-admin hidden the same way " +
+    "(0.9-M3-S33 fix wave 1, #457, F6 - the rail is gated now too)",
+    railAdmin.hidden === true);
+}
+{
+  const { tabBarAdmin, railAdmin } =
+    await drivenNav({ adminVia: "flag" });
+  check("gateAdminItem reveals the bar's Admin item once GET /me " +
+    "answers a real adminVia",
+    tabBarAdmin.hidden === false);
+  check("and reveals #rail-admin from the same answer, in the same call",
+    railAdmin.hidden === false);
+}
+{
+  const { tabBarAdmin, railAdmin } = await drivenNav(null);
+  check("gateAdminItem keeps both items hidden on a 401 from GET /me " +
+    "- a network refusal says nothing, never assumed admin",
+    tabBarAdmin.hidden === true && railAdmin.hidden === true);
+}
+{
+  const { tabBarSignout, getSignOutCalls } =
+    await drivenNav({ adminVia: null });
+  check("paintBarSignOut reveals the bar's Sign out item for a " +
+    "confirmed session",
+    tabBarSignout.hidden === false);
+  tabBarSignout.dispatch("click");
+  check("and its click calls the real, unmodified " +
+    "BinderSignOut.signOut() - the exact function apps/web/signout.js's " +
+    "own button calls, not a second copy of what leaving means",
+    getSignOutCalls() === 1);
+}
+{
+  const { tabBarSignout } =
+    await drivenNav({ adminVia: null }, { session: null });
+  check("paintBarSignOut keeps the bar's Sign out item hidden with no " +
+    "confirmed session",
+    tabBarSignout.hidden === true);
+}
+{
+  // Re-run on BinderSession.onChange, the same reason signout.js's own
+  // paintSession() re-runs (a 401 elsewhere, or a stored session
+  // expiring, while this tab stays open).
+  const { tabBarSignout, fireOnChange } =
+    await drivenNav({ adminVia: null }, { session: null });
+  check("CONTROL: starts hidden with no session",
+    tabBarSignout.hidden === true);
+  globalThis.BinderSession.read = () => ({ present: true });
+  fireOnChange();
+  check("and paintBarSignOut reveals it once a session appears, " +
+    "without a page reload",
+    tabBarSignout.hidden === false);
+}
+
 /* -- Settings validation, mirroring S8's real server-side rules      */
 /* (#414 completion, comment 5370945709, the "contract, in full" block) -- */
 
@@ -496,6 +677,67 @@ check("departedSections copes with a malformed answer - a missing list " +
       view.sections.every((s) => s.rows.length === 0);
   })());
 
+/* -- The cap note (0.9-M3-S38, #471; the owner's ruling at #454 item 23, */
+/* refined by the owner on 2026-08-22 to "Showing 43 (checked 50 of       */
+/* 120)"). GET /admin-departed asks the bot about at most                 */
+/* DEPARTED_LIST_CAP accounts, so a group with more stale rows than that  */
+/* has a list which stops short; without this line an admin cannot tell   */
+/* it from a complete one, and the More button above can never reach      */
+/* past it.                                                               */
+/*                                                                        */
+/* THREE NUMBERS, AND THE FIRST IS NOT THE SECOND. The route drops a      */
+/* candidate the bot calls a current member, so the rows the card holds   */
+/* are fewer than the accounts examined - which is why the first number   */
+/* is counted off the three lists that arrived and only the other two     */
+/* come off the response. -- */
+
+check("apps/web/admin.js exports departedCapNote - the page's whole " +
+  "share of item 23, a pure function the card below renders",
+  typeof Admin.departedCapNote === "function");
+// Called through an alias so that a MISSING export is one red check
+// rather than a TypeError that takes the rest of this suite down with
+// it - the failure a reader most needs the other 200 checks visible
+// for. Where the export exists, this is the export.
+const capNote = typeof Admin.departedCapNote === "function"
+  ? Admin.departedCapNote : () => "(no departedCapNote export)";
+
+check("departedCapNote says the owner's own words when the total is " +
+  "past the cap: the rows in hand, then the accounts examined, then " +
+  "the candidates there were",
+  capNote({ total: 120, cap: 50 }, 43) === "Showing 43 (checked 50 of 120)");
+check("the rows shown are the rows it was given, never the cap - " +
+  "fifty examined can be five rows drawn, and a line printing the cap " +
+  "there would promise an admin fifty rows that are not on the page",
+  capNote({ total: 120, cap: 50 }, 5) === "Showing 5 (checked 50 of 120)" &&
+  capNote({ total: 120, cap: 50 }, 50) === "Showing 50 (checked 50 of 120)");
+check("a card holding nothing at all still says what was examined - " +
+  "zero rows is a number, not a reason to go quiet",
+  capNote({ total: 120, cap: 50 }, 0) === "Showing 0 (checked 50 of 120)");
+check("it reads the cap the Worker sent rather than a 50 of its own - " +
+  "a page holding its own copy of the constant would go on printing 50 " +
+  "after the Worker's moved",
+  capNote({ total: 120, cap: 7 }, 5) === "Showing 5 (checked 7 of 120)");
+check("nothing renders when the cap did not truncate: at the cap " +
+  "exactly, under it, and at zero",
+  capNote({ total: 50, cap: 50 }, 43) === "" &&
+  capNote({ total: 49, cap: 50 }, 43) === "" &&
+  capNote({ total: 0, cap: 50 }, 0) === "");
+check("a Worker that sent no counts at all draws no line - the two " +
+  "fields are read as numbers or not at all, so an older answer, a " +
+  "missing payload and a string are all silent rather than " +
+  "'Showing 3 (checked undefined of NaN)'",
+  capNote({}, 3) === "" &&
+  capNote(null, 3) === "" &&
+  capNote({ total: "120", cap: "50" }, 3) === "" &&
+  capNote({ departed: [], unknown: [], allowed: [] }, 3) === "");
+check("and a rows count that is not a usable number is silent too - " +
+  "the line's first number is the one thing the response cannot " +
+  "supply, so a caller that fails to count is not covered for",
+  capNote({ total: 120, cap: 50 }) === "" &&
+  capNote({ total: 120, cap: 50 }, "43") === "" &&
+  capNote({ total: 120, cap: 50 }, NaN) === "" &&
+  capNote({ total: 120, cap: 50 }, -1) === "");
+
 /* -- The idle timer, unchanged in shape from every other signed-in page -- */
 
 check("idleVerdict is active well before the warning window",
@@ -733,6 +975,12 @@ const setStatus = (element, message, tone) => {
   element.hidden = !message;
   element.className = "status" + (tone ? " " + tone : "");
 };
+// apps/web/ui.js's own fadeIn() forces a reflow (`void element.
+// offsetHeight`) this stub DOM does not have - harmless to skip, the
+// same way tests/your-page.test.mjs's own harness note says the real
+// build_web strippers suite already exercises the shipped bytes. What
+// matters to every check here is `.hidden`, never the transition class.
+const fadeIn = () => {};
 
 /*
  * One fetch stub per scenario, dispatching on method+path exactly the
@@ -766,7 +1014,18 @@ async function driven(routes, options) {
   globalThis.document = doc;
   globalThis.BinderUI = {
     byId: (id) => byId.get(id) || null,
-    show, checkedValue, setStatus,
+    show, checkedValue, setStatus, fadeIn,
+    // apps/web/ui.js's own showToast(), stubbed the same way setStatus
+    // is above: find #toast by id and write to it, matching what every
+    // toast check in this suite already reads back through byId.get
+    // ("toast") (0.9-M3-S33, #457 - admin.js reads UI.showToast() now
+    // rather than keeping its own copy).
+    showToast(message) {
+      const toast = byId.get("toast");
+      if (!toast) return;
+      toast.textContent = message;
+      toast.hidden = false;
+    },
     boot(setUp, onError) {
       try {
         const result = setUp();
@@ -996,9 +1255,11 @@ const BASE_ROUTES = {
     "field's own name and the validated value",
     posts.length === 1 && posts[0].name === "chart.floor" &&
     posts[0].value === "12");
-  check("the status line confirms the save, and the floor notice updates " +
-    "to match",
-    /Saved/.test(byId.get("settings-status").textContent) &&
+  check("a toast confirms the save, not the status line (0.9-M3-S33, " +
+    "#454 item 8), and the floor notice updates to match",
+    byId.get("settings-status").hidden === true &&
+    byId.get("toast").hidden === false &&
+    byId.get("toast").textContent === "Saved." &&
     calls.some((c) => c.method === "GET" && c.path === "/admin-log"));
 }
 
@@ -1010,8 +1271,15 @@ const BASE_ROUTES = {
   byId.get("settings-welcome-text").value = "fine text";
   byId.get("settings-welcome-text-save").dispatch("click");
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-  check("a save the Worker refuses shows the Worker's own words",
-    /Content too large/.test(byId.get("settings-status").textContent));
+  // A toast, not the status line, carries the Worker's own words now
+  // (0.9-M3-S33 fix wave 1, #457, F7) - the status line clears instead
+  // of holding the refusal, the same split the save-confirms-by-toast
+  // check above already proves for the success path.
+  check("a save the Worker refuses shows the Worker's own words - in " +
+    "the toast, not the status line",
+    byId.get("settings-status").hidden === true &&
+    byId.get("toast").hidden === false &&
+    /Content too large/.test(byId.get("toast").textContent));
 }
 
 /* -- Roles: render, add, remove, adminVia -- */
@@ -1045,6 +1313,35 @@ const BASE_ROUTES = {
   check("the telegram id field is cleared after a successful add - the " +
     "last place that numeric id exists on this page",
     byId.get("member-telegram-id").value === "");
+  // Two more ticks than the checks above need: the toast fires after
+  // readMembership()'s own re-read (a second fetch and a json() parse),
+  // not synchronously with the POST the first two checks read.
+  await Promise.resolve(); await Promise.resolve();
+  check("a toast names the add, not the status line (0.9-M3-S33, #454 " +
+    "item 8)",
+    byId.get("roles-status").hidden === true &&
+    byId.get("toast").hidden === false &&
+    /New admin/.test(byId.get("toast").textContent));
+}
+
+{
+  // The Worker's own refusal reason, verbatim, in the toast - not the
+  // status line (0.9-M3-S33 fix wave 1, #457, F7: the #457 review's F3
+  // named this exact path, routed through handleRefusal()'s own
+  // `where` argument, as one of the comment's false claims).
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "POST /membership": () => refused(409, { error: "Already a member." }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  byId.get("member-telegram-id").value = "123456";
+  byId.get("member-label").value = "New admin";
+  byId.get("member-add").dispatch("click");
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("a member-add the Worker refuses shows the Worker's own words " +
+    "- in the toast, not the status line",
+    byId.get("roles-status").hidden === true &&
+    byId.get("toast").hidden === false &&
+    /Already a member/.test(byId.get("toast").textContent));
 }
 
 {
@@ -1095,6 +1392,35 @@ const BASE_ROUTES = {
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
   check("the second press removes the exact role and id GET handed back",
     removed === "/membership/admin/a1");
+  // Two more ticks than the check above needs, the same gap
+  // member-add's own toast check names: the toast fires after
+  // readMembership()'s own re-read, not synchronously with the DELETE.
+  await Promise.resolve(); await Promise.resolve();
+  check("and toasts Removed. rather than the status line (0.9-M3-S33, " +
+    "#454 item 8)",
+    byId.get("roles-status").hidden === true &&
+    byId.get("toast").hidden === false &&
+    byId.get("toast").textContent === "Removed.");
+}
+
+{
+  // The remove side of the same F7 fix - the Worker's own refusal
+  // reason, verbatim, in the toast.
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "DELETE /membership/*/*":
+      () => refused(400, { error: "Cannot remove the last admin." }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  await Promise.resolve();
+  const button = byId.get("roles-admin").children[0].children[2];
+  button.dispatch("click");
+  button.dispatch("click");
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("a member-remove the Worker refuses shows the Worker's own " +
+    "words - in the toast, not the status line",
+    byId.get("roles-status").hidden === true &&
+    byId.get("toast").hidden === false &&
+    /Cannot remove the last admin/.test(byId.get("toast").textContent));
 }
 
 /* -- Fields: render, add/retire/un-retire a value, one-button rename,  */
@@ -2164,6 +2490,122 @@ function departedRowByLabel(list, label) {
     list.children.length === 26 && buttonByText(list, "More") === undefined);
 }
 
+/* -- The cap footer on the card itself (0.9-M3-S38, #471; #454 item 23). */
+/* The fixtures above carry no counts at all - which is why every one of  */
+/* them still ends where it did, and is the arm that no line appears      */
+/* uninvited. -- */
+
+{
+  const ROW = { accountId: "d1", label: "Departed One",
+    lastSeenAt: "2026-07-01T00:00:00.000Z", status: "left" };
+  const capped = (total, cap) => Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true, departed: [ROW],
+      unknown: [], allowed: [], total: total, cap: cap }),
+  });
+
+  {
+    const { byId } = await driven(capped(120, 50), { isAdmin: true });
+    const list = byId.get("departed-list");
+    const last = list.children[list.children.length - 1];
+    check("a truncated read ends the card with the owner's own line, " +
+      "carrying the one row it drew and the Worker's two numbers",
+      last.tag === "p" &&
+      last.textContent === "Showing 1 (checked 50 of 120)");
+    check("the line is the LAST thing in the card - a footer, under the " +
+      "rows it is about", list.children.indexOf(last) === 2);
+    check("it is written as text and holds no markup of its own - one " +
+      "text-only node, set through textContent",
+      last.children.length === 0 &&
+      serializeSubtree(list).includes(">Showing 1 (checked 50 of 120)<"));
+    check("the rows above it are untouched by the line", list.children[0]
+      .textContent === "Departed" &&
+      list.children[1].children[0].children[0].textContent ===
+        "Departed One");
+  }
+
+  {
+    /* THE NUMBER THE ROUTE CANNOT SUPPLY (the owner's refinement of
+       item 23, 2026-08-22, and #471's review finding F1). Fifty
+       candidates were examined and seven of them came back current
+       members, which the route drops from all three lists - so
+       forty-three rows arrived and forty-three is what the card says.
+       A page that printed the cap there would tell an admin fifty rows
+       are here when forty-three are, which is the misreading the
+       refinement exists to close. */
+    const many = (prefix, n) => Array.from({ length: n },
+      (_unused, i) => ({ accountId: prefix + i, label: prefix + " " + i,
+        lastSeenAt: "2026-07-01T00:00:00.000Z" }));
+    const routes = Object.assign({}, BASE_ROUTES, {
+      "GET /admin-departed": () => ok({ ok: true,
+        departed: many("gone", 20), unknown: many("unsure", 15),
+        allowed: many("kept", 8), total: 120, cap: 50 }),
+    });
+    const { byId } = await driven(routes, { isAdmin: true });
+    const list = byId.get("departed-list");
+    const last = list.children[list.children.length - 1];
+    check("the rows the card holds are counted off the three lists that " +
+      "arrived, not read off the cap: fifty examined, seven of them " +
+      "still members, forty-three rows",
+      last.tag === "p" &&
+      last.textContent === "Showing 43 (checked 50 of 120)");
+    check("and it counts everything that arrived, not the twenty the " +
+      "More button has revealed so far - the window is about scrolling " +
+      "and this line is about what the route did not look at",
+      buttonByText(list, "More") !== undefined &&
+      list.children.length === 23 &&
+      list.children[21].textContent === "More");
+    buttonByText(list, "More").dispatch("click");
+    buttonByText(list, "More").dispatch("click");
+    check("revealing more does not move the number - the same " +
+      "forty-three, with the button gone and every row on screen",
+      buttonByText(list, "More") === undefined &&
+      list.children[list.children.length - 1].textContent ===
+        "Showing 43 (checked 50 of 120)");
+  }
+
+  {
+    const { byId } = await driven(capped(50, 50), { isAdmin: true });
+    const list = byId.get("departed-list");
+    check("a read the cap did not truncate draws nothing new - the card " +
+      "ends on its rows, with no line anywhere in it",
+      list.children.length === 2 &&
+      !/Showing|checked/.test(list.textContent));
+  }
+
+  {
+    const routes = Object.assign({}, BASE_ROUTES, {
+      "GET /admin-departed": () => ok({ ok: true, departed: [], unknown: [],
+        allowed: [], total: 0, cap: 50 }),
+    });
+    const { byId } = await driven(routes, { isAdmin: true });
+    const list = byId.get("departed-list");
+    check("and a route that found no candidates at all is silent too - " +
+      "there is nothing it did not look at, so the empty sentence " +
+      "stands alone",
+      list.children.length === 1 &&
+      list.children[0].textContent ===
+        "Nobody has left - nothing to clean up." &&
+      !/Showing|checked/.test(list.textContent));
+  }
+
+  {
+    const routes = Object.assign({}, BASE_ROUTES, {
+      "GET /admin-departed": () => ok({ ok: true, departed: [], unknown: [],
+        allowed: [], total: 120, cap: 50 }),
+    });
+    const { byId } = await driven(routes, { isAdmin: true });
+    const list = byId.get("departed-list");
+    check("a truncated read whose fifty candidates are all still " +
+      "members says BOTH things: nobody has left, and no rows came out " +
+      "of the fifty examined - the empty sentence alone would read as " +
+      "the whole group checked",
+      list.children.length === 2 &&
+      list.children[0].textContent ===
+        "Nobody has left - nothing to clean up." &&
+      list.children[1].textContent === "Showing 0 (checked 50 of 120)");
+  }
+}
+
 {
   // Confirm IN PLACE (item 9): Remove reveals the sentence, Cancel sends
   // nothing, and a DELETE goes out only after Yes - never before it.
@@ -2586,8 +3028,17 @@ check("no download/export id survives in the real shipped markup - the " +
 // wiring, #463 fix wave 1) to reach 179. Both additions are disjoint
 // (Departed-tab arms vs. wrap-row-wiring arms) and both are kept in
 // full, so the union is the base plus both sides' own additions:
-// 171 + 36 + 8 = 215.
-const EXPECTED = 215;
+// 171 + 36 + 8 = 215. 0.9-M3-S38 (#471) adds 11 on top of that union
+// for the cap note, and its fix wave 1 adds 7 more for the owner's
+// three-number wording and the rows the card counts for itself, on the
+// origin/accounts side: 215 + 11 + 7 = 233. This branch's own side adds
+// a disjoint set on top of the SAME 215: 6 from 0.9-M3-S33's own part A
+// build (the bar/toast wiring this file already checked before its
+// review) and 12 more from part A's fix wave 1 (#457 review F1-F7 -
+// gateAdminItem/paintBarSignOut arms, the rail-admin gate, the
+// Settings/Roles toast routing): 215 + 6 + 12 = 233. Merging both
+// disjoint additions over the same 215 base gives the real total below.
+const EXPECTED = 251;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

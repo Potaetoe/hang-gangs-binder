@@ -666,6 +666,50 @@
       hasMore: shown < total };
   }
 
+  /* Item 23 in the owner's own refined words (2026-08-22): "Showing 43
+   * (checked 50 of 120)" - the rows on the page, the accounts the route
+   * examined, the candidates there were. GET /admin-departed asks the
+   * bot about at most its own DEPARTED_LIST_CAP accounts, so a group
+   * with more stale rows than that has an answer that stopped short -
+   * and the More button above windows what arrived, which is why it can
+   * never reach past the cap and why only the Worker's own counts can
+   * say so.
+   *
+   * THE FIRST NUMBER IS NOT THE SECOND, and that is the whole reason
+   * the sentence has three of them. The route drops a candidate the bot
+   * calls a current member, so fifty examined can be five rows drawn -
+   * or none, when every candidate is still a member. `rows` is
+   * therefore counted off the three lists the card rendered and is
+   * never derived from `cap`; a line printing the cap in that place
+   * promises an admin rows that are not on the page.
+   *
+   * THE OTHER TWO COME OFF THE RESPONSE. A page holding its own copy of
+   * the cap would go on printing 50 after the Worker's constant moved,
+   * and a page deriving the total from the rows it received would print
+   * the cap twice.
+   *
+   * `rows` IS NOT departedSections()'s `shown` either. That one is the
+   * twenty-at-a-time window the More button walks, which is about
+   * scrolling; this line is about what the route did not look at, so it
+   * counts everything that arrived whether it is revealed yet or not.
+   *
+   * Numbers or nothing: an answer that carries no counts - one from a
+   * Worker without them, or a malformed read - draws no line at all
+   * rather than "Showing 3 (checked undefined of NaN)", and a caller
+   * that hands over no usable row count gets the same silence, since
+   * that number is the one the response cannot supply. */
+  function departedCapNote(payload, rows) {
+    const total = payload && payload.total;
+    const cap = payload && payload.cap;
+    if (typeof total !== "number" || !Number.isFinite(total)) return "";
+    if (typeof cap !== "number" || !Number.isFinite(cap)) return "";
+    if (typeof rows !== "number" || !Number.isFinite(rows) || rows < 0) {
+      return "";
+    }
+    if (!(total > cap)) return "";
+    return "Showing " + rows + " (checked " + cap + " of " + total + ")";
+  }
+
   /* ---------------------------------------------------------------- */
   /* Walking away from the machine (DESIGN.md, "Sessions": "Idle expiry */
   /* is one rule everywhere") - the same window every signed-in page   */
@@ -742,6 +786,7 @@
     eraseDepartedSentence: eraseDepartedSentence,
     DEPARTED_PAGE_SIZE: DEPARTED_PAGE_SIZE,
     departedSections: departedSections,
+    departedCapNote: departedCapNote,
     IDLE_WINDOW: IDLE_WINDOW,
     idleVerdict: idleVerdict,
     idleNotice: idleNotice,
@@ -916,13 +961,19 @@
             button.disabled = false;
             const refusal = refusalFor(response.status,
               await refusalBody(response));
-            saySettings(refusal.message, "bad");
+            // A toast, not the inline line, for the Worker's own
+            // refusal (0.9-M3-S33 fix wave 1, #457, F7) - the exact
+            // reason it gave, verbatim, the same shape the Departed
+            // card's own eraseDeparted() already puts in a toast.
+            saySettings("", null);
+            showToast(refusal.message);
             return;
           }
         } catch (error) {
           button.disabled = false;
           detail(why(error));
-          saySettings("That could not be sent.", "bad");
+          saySettings("", null);
+          showToast("That could not be sent.");
           return;
         }
         button.disabled = false;
@@ -931,7 +982,13 @@
           $("settings-floor-notice").textContent =
             root.BinderAdmin.floorNotice(verdict.value);
         }
-        saySettings("Saved.", null);
+        // A brief toast, not an inline status line, for the result of
+        // this save (0.9-M3-S33, #454 item 8) - saySettings still
+        // carries "Saving…" above; a refusal now goes to the toast too
+        // (fix wave 1, #457, F7), matching the Fields card's own split
+        // (see the toast's own comment, below this card).
+        saySettings("", null);
+        showToast("Saved.");
         loadLog();
       });
     }
@@ -1026,13 +1083,20 @@
       }
     }
 
-    function handleRefusal(status, payload) {
+    // `where` is the informational default (sayRoles, the card's own
+    // inline status line) for readMembership's own load failure; the
+    // Roles card's two ACTIONS (add, remove) pass showToast instead
+    // (0.9-M3-S33 fix wave 1, #457, F7) - the same signed-out/refused
+    // split either way, only where the "show" branch says it changes.
+    function handleRefusal(status, payload, where) {
+      const say = where || sayRoles;
       const refusal = refusalFor(status, payload);
       if (refusal.action === "signed-out") {
         sessionEnded(sayRoles);
         return true;
       }
-      sayRoles(refusal.message, "bad");
+      if (say !== sayRoles) sayRoles("", null);
+      say(refusal.message, "bad");
       return false;
     }
 
@@ -1089,20 +1153,28 @@
         });
         if (!response.ok) {
           $("member-add").disabled = false;
-          handleRefusal(response.status, await refusalBody(response));
+          // The Worker's own refusal reason, verbatim, in a toast
+          // (0.9-M3-S33 fix wave 1, #457, F7) - handleRefusal still
+          // ends the session inline for the signed-out case.
+          handleRefusal(response.status, await refusalBody(response),
+            showToast);
           return;
         }
       } catch (error) {
         $("member-add").disabled = false;
         detail(why(error));
-        sayRoles("That could not be sent.", "bad");
+        sayRoles("", null);
+        showToast("That could not be sent.");
         return;
       }
 
       $("member-telegram-id").value = "";
       $("member-add").disabled = false;
       await readMembership();
-      sayRoles(addedNotice(label), null);
+      // A brief toast for the result, not an inline line (0.9-M3-S33,
+      // #454 item 8) - see the toast's own comment, below this card.
+      sayRoles("", null);
+      showToast(addedNotice(label));
       loadLog();
     });
 
@@ -1120,20 +1192,27 @@
           });
         if (!response.ok) {
           button.disabled = false;
+          // The Worker's own refusal reason, verbatim, in a toast
+          // (0.9-M3-S33 fix wave 1, #457, F7) - same shape as add's own
+          // refusal, above.
           const left = handleRefusal(response.status,
-            await refusalBody(response));
+            await refusalBody(response), showToast);
           if (!left) await readMembership();
           return;
         }
       } catch (error) {
         button.disabled = false;
         detail(why(error));
-        sayRoles("That could not be removed.", "bad");
+        sayRoles("", null);
+        showToast("That could not be removed.");
         return;
       }
 
       await readMembership();
-      sayRoles("Removed.", null);
+      // A brief toast for the result, not an inline line (0.9-M3-S33,
+      // #454 item 8) - see the toast's own comment, below this card.
+      sayRoles("", null);
+      showToast("Removed.");
       loadLog();
     }
 
@@ -1922,27 +2001,44 @@
         empty.className = "hint";
         empty.textContent = "Nobody has left - nothing to clean up.";
         list.appendChild(empty);
-        return;
-      }
-      for (const section of view.sections) {
-        if (!section.rows.length) continue;
-        const heading = document.createElement("h2");
-        heading.textContent = DEPARTED_TITLES[section.key];
-        list.appendChild(heading);
-        for (const entry of section.rows) {
-          list.appendChild(departedRow(entry, section.key));
+      } else {
+        for (const section of view.sections) {
+          if (!section.rows.length) continue;
+          const heading = document.createElement("h2");
+          heading.textContent = DEPARTED_TITLES[section.key];
+          list.appendChild(heading);
+          for (const entry of section.rows) {
+            list.appendChild(departedRow(entry, section.key));
+          }
+        }
+        if (view.hasMore) {
+          const more = document.createElement("button");
+          more.type = "button";
+          more.className = "secondary";
+          more.textContent = "More";
+          more.addEventListener("click", function () {
+            departedRevealed += DEPARTED_PAGE_SIZE;
+            renderDeparted();
+          });
+          list.appendChild(more);
         }
       }
-      if (!view.hasMore) return;
-      const more = document.createElement("button");
-      more.type = "button";
-      more.className = "secondary";
-      more.textContent = "More";
-      more.addEventListener("click", function () {
-        departedRevealed += DEPARTED_PAGE_SIZE;
-        renderDeparted();
-      });
-      list.appendChild(more);
+      /* The footer is the last line of the card in EVERY state,
+       * including the empty one: a group whose fifty candidates are all
+       * still members shows no rows at all, and the empty sentence on
+       * its own would read as the whole group checked and cleared -
+       * "Showing 0 (checked 50 of 120)" is exactly the case the three
+       * numbers exist for.
+       *
+       * view.total is the count of rows that ARRIVED, not the twenty
+       * this render revealed, which is the number the owner's first
+       * word is about. */
+      const capNote = departedCapNote(departedPayload, view.total);
+      if (!capNote) return;
+      const footer = document.createElement("p");
+      footer.className = "hint";
+      footer.textContent = capNote;
+      list.appendChild(footer);
     }
 
     async function loadDeparted() {
@@ -2061,25 +2157,14 @@
     /* own picture toggle already uses rather than a shared component - */
     /* the [role="tab"]/[role="tablist"] family and the selected-mark   */
     /* rule are theme.css's own, built for exactly this. The ~150ms     */
-    /* fade on the panel that appears is fadeIn(), below, using a       */
-    /* transition rather than a refused @keyframes (#273); it needs one */
-    /* forced reflow to fire on an element that just stopped being      */
-    /* `hidden`, and the site's blanket prefers-reduced-motion rule     */
-    /* already collapses it to nothing.                                 */
+    /* fade on the panel that appears is UI.fadeIn() (0.9-M3-S33, #457, */
+    /* lifted from this page's own first build to apps/web/ui.js, whose */
+    /* own comment on fadeIn() carries the mechanism), using a          */
+    /* transition rather than a refused @keyframes (#273); the site's   */
+    /* blanket prefers-reduced-motion rule already collapses it to      */
+    /* nothing.                                                         */
 
-    // Adds `.fade-in` (opacity: 0, theme.css), forces one reflow so the
-    // browser paints that value before the next line removes the class,
-    // then lets the element's own `transition: opacity 150ms` (theme.css,
-    // shared by every `[role="tabpanel"]` and `.toast`) carry it back to
-    // opaque. Skipped harmlessly where there is no layout engine to
-    // force (this suite's Node DOM stub) - void discards whatever
-    // `offsetHeight` reads there.
-    function fadeIn(el) {
-      if (!el) return;
-      el.className = (el.className ? el.className + " " : "") + "fade-in";
-      void el.offsetHeight;
-      el.className = el.className.replace(/\s*fade-in\b/, "");
-    }
+    const fadeIn = UI.fadeIn;
 
     const TABS = [
       { tab: "tab-settings", panel: "settings-card" },
@@ -2109,29 +2194,26 @@
     selectTab("settings-card");
 
     /* ------------------------------------------------------------ */
-    /* The toast (#454 item 8) - the one element (#toast) and the one   */
-    /* function this page needs, so 0.9-M3-S33 can lift both site-wide  */
-    /* unchanged. Used for this card's own write confirmations          */
-    /* (Added./Retired./Restored./Renamed./Reordered.), and also for    */
-    /* the Departed card's own erase result, success or the Worker's    */
-    /* refusal verbatim (#454 item 8, this ticket, #458) - loading and  */
-    /* refusal on every OTHER card still stay on the inline status line */
-    /* beside the control, since those need to persist and stay         */
-    /* readable rather than fade; converting every other card's         */
-    /* feedback site-wide is S33's own scope (Prime's map on #454), not */
-    /* this ticket's.                                                   */
-    let toastTimer = null;
-    function showToast(message) {
-      const toast = $("toast");
-      if (!toast) return;
-      root.clearTimeout(toastTimer);
-      toast.textContent = message;
-      show(toast, true);
-      fadeIn(toast);
-      toastTimer = root.setTimeout(function () {
-        show(toast, false);
-      }, 3000);
-    }
+    /* The toast (#454 item 8): apps/web/ui.js's BinderUI.showToast(),  */
+    /* not a second copy of it. This page minted the one element        */
+    /* (#toast) and the one function (0.9-M3-S30, #452); 0.9-M3-S33     */
+    /* (#457) lifted the function itself to ui.js so every page could   */
+    /* use it with no second copy, and aliases it back to the name      */
+    /* every call site on this page already used rather than touching   */
+    /* each of them. Used for this card's own write confirmations       */
+    /* (Added./Retired./Restored./Renamed./Reordered.), for the         */
+    /* Departed card's own erase result, success or the Worker's        */
+    /* refusal verbatim (#458), and - since 0.9-M3-S33's fix wave 1,    */
+    /* #457, F7 - for Settings' and Roles' own save/add/remove results  */
+    /* too (both success and refusal, the Worker's reason verbatim the  */
+    /* same way Departed's already was): loading states ("Saving…",     */
+    /* "Adding…", "Removing…") and                                      */
+    /* CLIENT validation caught before a request is even sent stay on   */
+    /* the inline status line beside the control, since a pending state */
+    /* has nothing to hand a toast yet and a field-level validation note */
+    /* is #454 items 11-12's concern, not item 8's - what moved to the  */
+    /* toast is the answer a request actually came back with.           */
+    const showToast = UI.showToast;
 
     wireIdle();
     loadSettings();

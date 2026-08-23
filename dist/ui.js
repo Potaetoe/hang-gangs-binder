@@ -28,6 +28,31 @@
 
   
 
+  function fadeIn(element) {
+    if (!element) return;
+    element.className = (element.className ? element.className + " " : "") +
+      "fade-in";
+    void element.offsetHeight;
+    element.className = element.className.replace(/\s*fade-in\b/, "");
+  }
+
+  
+
+  let toastTimer = null;
+  function showToast(message) {
+    const toast = byId("toast");
+    if (!toast) return;
+    root.clearTimeout(toastTimer);
+    toast.textContent = message;
+    show(toast, true);
+    fadeIn(toast);
+    toastTimer = root.setTimeout(function () {
+      show(toast, false);
+    }, 3000);
+  }
+
+  
+
   function boot(setUp, onError) {
     if (typeof document === "undefined") return;
 
@@ -56,6 +81,8 @@
     show,
     checkedValue,
     setStatus,
+    fadeIn,
+    showToast,
     boot,
   });
 })(globalThis);
