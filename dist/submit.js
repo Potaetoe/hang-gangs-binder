@@ -354,7 +354,12 @@
    
    
 
-  async function deleteEntry(id, statusLine) {
+   
+   
+   
+   
+   
+  async function deleteEntry(id) {
     const config = root.BINDER_CONFIG || {};
     if (!config.endpoint) return false;
     try {
@@ -371,16 +376,14 @@
       }
       if (response.status < 200 || response.status >= 300) {
         detail("DELETE /submission/" + id + " answered " + response.status);
-        statusLine.textContent = "That entry could not be removed — try again.";
-        statusLine.hidden = false;
+        UI.showToast("That entry could not be removed — try again.");
         return false;
       }
       return true;
     } catch (error) {
       detail(error && error.message ? error.message : "the delete could not " +
         "be sent");
-      statusLine.textContent = "That entry could not be removed — try again.";
-      statusLine.hidden = false;
+      UI.showToast("That entry could not be removed — try again.");
       return false;
     }
   }
@@ -389,7 +392,6 @@
 
   function buildActionCell(row, system, onDeleted) {
     const cell = el("td");
-    const status = el("p", { class: "status", hidden: "" });
 
     function showConfirm() {
       emptyOut(cell);
@@ -405,13 +407,16 @@
       yes.addEventListener("click", async function () {
         yes.disabled = true;
         no.disabled = true;
-        const ok = await deleteEntry(row.id, status);
-        if (ok) onDeleted();
-        else showButton();
+        const ok = await deleteEntry(row.id);
+        if (ok) {
+          UI.showToast("Removed.");
+          onDeleted();
+        } else {
+          showButton();
+        }
       });
       no.addEventListener("click", showButton);
       cell.appendChild(el("div", { class: "row buttons" }, [yes, no]));
-      cell.appendChild(status);
     }
 
     function showButton() {
@@ -420,7 +425,6 @@
         text: "Delete" });
       button.addEventListener("click", showConfirm);
       cell.appendChild(button);
-      cell.appendChild(status);
     }
 
     showButton();

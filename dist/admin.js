@@ -745,13 +745,19 @@
             button.disabled = false;
             const refusal = refusalFor(response.status,
               await refusalBody(response));
-            saySettings(refusal.message, "bad");
+             
+             
+             
+             
+            saySettings("", null);
+            showToast(refusal.message);
             return;
           }
         } catch (error) {
           button.disabled = false;
           detail(why(error));
-          saySettings("That could not be sent.", "bad");
+          saySettings("", null);
+          showToast("That could not be sent.");
           return;
         }
         button.disabled = false;
@@ -760,7 +766,13 @@
           $("settings-floor-notice").textContent =
             root.BinderAdmin.floorNotice(verdict.value);
         }
-        saySettings("Saved.", null);
+         
+         
+         
+         
+         
+        saySettings("", null);
+        showToast("Saved.");
         loadLog();
       });
     }
@@ -855,13 +867,20 @@
       }
     }
 
-    function handleRefusal(status, payload) {
+     
+     
+     
+     
+     
+    function handleRefusal(status, payload, where) {
+      const say = where || sayRoles;
       const refusal = refusalFor(status, payload);
       if (refusal.action === "signed-out") {
         sessionEnded(sayRoles);
         return true;
       }
-      sayRoles(refusal.message, "bad");
+      if (say !== sayRoles) sayRoles("", null);
+      say(refusal.message, "bad");
       return false;
     }
 
@@ -918,20 +937,28 @@
         });
         if (!response.ok) {
           $("member-add").disabled = false;
-          handleRefusal(response.status, await refusalBody(response));
+           
+           
+           
+          handleRefusal(response.status, await refusalBody(response),
+            showToast);
           return;
         }
       } catch (error) {
         $("member-add").disabled = false;
         detail(why(error));
-        sayRoles("That could not be sent.", "bad");
+        sayRoles("", null);
+        showToast("That could not be sent.");
         return;
       }
 
       $("member-telegram-id").value = "";
       $("member-add").disabled = false;
       await readMembership();
-      sayRoles(addedNotice(label), null);
+       
+       
+      sayRoles("", null);
+      showToast(addedNotice(label));
       loadLog();
     });
 
@@ -949,20 +976,27 @@
           });
         if (!response.ok) {
           button.disabled = false;
+           
+           
+           
           const left = handleRefusal(response.status,
-            await refusalBody(response));
+            await refusalBody(response), showToast);
           if (!left) await readMembership();
           return;
         }
       } catch (error) {
         button.disabled = false;
         detail(why(error));
-        sayRoles("That could not be removed.", "bad");
+        sayRoles("", null);
+        showToast("That could not be removed.");
         return;
       }
 
       await readMembership();
-      sayRoles("Removed.", null);
+       
+       
+      sayRoles("", null);
+      showToast("Removed.");
       loadLog();
     }
 
@@ -1900,20 +1934,9 @@
      
      
      
+     
 
-     
-     
-     
-     
-     
-     
-     
-    function fadeIn(el) {
-      if (!el) return;
-      el.className = (el.className ? el.className + " " : "") + "fade-in";
-      void el.offsetHeight;
-      el.className = el.className.replace(/\s*fade-in\b/, "");
-    }
+    const fadeIn = UI.fadeIn;
 
     const TABS = [
       { tab: "tab-settings", panel: "settings-card" },
@@ -1954,18 +1977,15 @@
      
      
      
-    let toastTimer = null;
-    function showToast(message) {
-      const toast = $("toast");
-      if (!toast) return;
-      root.clearTimeout(toastTimer);
-      toast.textContent = message;
-      show(toast, true);
-      fadeIn(toast);
-      toastTimer = root.setTimeout(function () {
-        show(toast, false);
-      }, 3000);
-    }
+     
+     
+     
+     
+     
+     
+     
+     
+    const showToast = UI.showToast;
 
     wireIdle();
     loadSettings();

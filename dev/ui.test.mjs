@@ -43,7 +43,7 @@ const UI = globalThis.BinderUI;
  * a confident summary over the checks that still reached. See
  * dev/harness.mjs.
  */
-const { check, report } = nodeTestSuite("ui.js", 22);
+const { check, report } = nodeTestSuite("ui.js", 36);
 
 check("the shipped file exposes one frozen helper object",
   UI && Object.isFrozen(UI));
@@ -82,6 +82,128 @@ UI.setStatus(status, "");
 check("setStatus clears and hides an empty status",
   status.textContent === "" && status.hidden === true &&
   status.className === "status");
+
+/*
+ * fadeIn and showToast (0.9-M3-S33, #457) - lifted here from admin.js's
+ * own first build (0.9-M3-S30, #452) so every signed-in page shares one
+ * copy. #toast is added to the same `elements` stub the rest of this
+ * suite already reads through byId/getElementById.
+ */
+const toast = { textContent: "", hidden: true, className: "" };
+elements.set("toast", toast);
+
+UI.fadeIn(null);
+check("fadeIn tolerates a missing element", true);
+
+const fadeTarget = { className: "" };
+UI.fadeIn(fadeTarget);
+check("fadeIn adds and removes the fade-in class around one forced " +
+  "reflow, leaving no trace once it returns",
+  fadeTarget.className === "");
+
+const fadeTargetWithClass = { className: "card" };
+UI.fadeIn(fadeTargetWithClass);
+check("fadeIn preserves a class already on the element",
+  fadeTargetWithClass.className === "card");
+
+/*
+ * The two checks above (#457 review, F4) read only the END state, which
+ * a no-op fadeIn (`if (!element) return;`) also leaves unchanged - a
+ * gutted transition and a real one are the same story once it is over.
+ * Caught here instead by watching what fadeIn does WHILE it runs: it
+ * reads `element.offsetHeight` exactly once, to force the one reflow
+ * that lets the browser paint the class it just added before the next
+ * line removes it (ui.js's own comment on fadeIn carries the mechanism).
+ * A getter on offsetHeight below records the className AT THAT MOMENT -
+ * an applied-state assertion, never a wall-clock one (the S35 lesson
+ * dev/ui.test.mjs's own header already lives by for showToast's timer).
+ */
+let reflowReads = 0;
+let classNameDuringReflow = null;
+const watchedFadeTarget = {
+  className: "",
+  get offsetHeight() {
+    reflowReads += 1;
+    classNameDuringReflow = this.className;
+    return 0;
+  },
+};
+UI.fadeIn(watchedFadeTarget);
+check("fadeIn forces exactly one reflow read - a gutted fadeIn " +
+  "reads offsetHeight zero times",
+  reflowReads === 1);
+check("and at that moment the fade-in class is actually applied, not " +
+  "merely toggled on either side of a step that never ran",
+  classNameDuringReflow === "fade-in");
+check("and the class is gone again once the forced reflow returns, " +
+  "the same end state a no-op fadeIn would also leave",
+  watchedFadeTarget.className === "");
+
+let classNameDuringReflowWithClass = null;
+const watchedFadeTargetWithClass = {
+  className: "card",
+  get offsetHeight() {
+    classNameDuringReflowWithClass = this.className;
+    return 0;
+  },
+};
+UI.fadeIn(watchedFadeTargetWithClass);
+check("and an existing class is still present beside fade-in at the " +
+  "moment of that same reflow",
+  classNameDuringReflowWithClass === "card fade-in");
+
+const themeCssForFade = await readFile(
+  new URL("../apps/web/theme.css", import.meta.url), "utf8");
+check("theme.css's own .fade-in rule and the elements fadeIn is used " +
+  "on read the same --motion-duration token this file's comment on " +
+  "fadeIn names, never a second hard-coded duration",
+  /\.fade-in\s*\{\s*opacity:\s*0;?\s*\}/.test(themeCssForFade) &&
+  /transition:\s*opacity\s+var\(--motion-duration\)/.test(themeCssForFade));
+
+// The dismissal timer, captured rather than awaited for real - 3s is
+// real wall time this suite should not spend, and what matters is the
+// contract (message, reveal, an eventual hide, one timer at a time)
+// rather than the literal clock.
+let capturedCallback = null;
+let capturedDelay = null;
+let clearedTimer = null;
+const realSetTimeout = globalThis.setTimeout;
+const realClearTimeout = globalThis.clearTimeout;
+globalThis.setTimeout = (cb, ms) => {
+  capturedCallback = cb;
+  capturedDelay = ms;
+  return "timer-id";
+};
+globalThis.clearTimeout = (id) => { clearedTimer = id; };
+
+UI.showToast("Saved.");
+check("showToast writes the message and reveals #toast",
+  toast.textContent === "Saved." && toast.hidden === false);
+check("showToast times its own dismissal at three seconds",
+  capturedDelay === 3000);
+
+capturedCallback();
+check("and the timer hides the toast when it fires - the toast clears " +
+  "itself, not merely stays readable",
+  toast.hidden === true);
+
+UI.showToast("First.");
+UI.showToast("Second.");
+check("showToast replaces the previous message rather than stacking " +
+  "two toasts",
+  toast.textContent === "Second.");
+check("and a second toast clears the first one's pending timer rather " +
+  "than leaving it to hide the second toast early",
+  clearedTimer === "timer-id");
+
+elements.delete("toast");
+UI.showToast("gone");
+check("showToast tolerates a missing #toast element rather than " +
+  "throwing", true);
+elements.set("toast", toast);
+
+globalThis.setTimeout = realSetTimeout;
+globalThis.clearTimeout = realClearTimeout;
 
 let booted = 0;
 let bootError = null;

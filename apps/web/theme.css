@@ -418,6 +418,45 @@
   --radius-pill: 999px;
 
   /*
+   * Size, reach and motion (owner ruling, #454 items 3-4; 0.9-M3-S33,
+   * #457). --tap-target is the one number the F3 finding (#452's
+   * review) named: the admin page's five text inputs measured 43px
+   * tall at 375px, 1px under this floor, because their padding and
+   * line-height alone landed there by accident rather than by a stated
+   * number - .filter-chip already used this literal value (2.75rem) for
+   * the same reason before this token existed, and now reads it too.
+   * --text-base above is already the 16px body-text floor the same
+   * ruling names; nothing new is needed for that half, since body.font
+   * already reads that token.
+   *
+   * --motion-duration is the ~150ms every gentle transition on this
+   * site uses - the tab/toast fade minted it as a literal (0.9-M3-S30,
+   * #452) and the filter chips minted a second, identical literal
+   * (0.9-M3-S14, #454); one token now, so a future change to "how long
+   * is gentle" is one edit rather than a grep. The blanket
+   * prefers-reduced-motion rule near the foot of this file zeroes
+   * every transition this token reaches, including this one, for a
+   * member who asked for that - the token does not need its own
+   * opt-out because that rule already reaches every transition on the
+   * page by selector (`*`), not by which token a transition happens to
+   * use.
+   */
+  --tap-target: 2.75rem;
+  --motion-duration: 150ms;
+
+  /* The bottom bar's own measured height (0.9-M3-S33, #454 items 5-6),
+     read at 375px in a real browser and pinned here rather than derived,
+     the same way --rail-width is pinned rather than measured live: both
+     numbers exist so .page can clear a fixed sibling it cannot see the
+     size of any other way. Kept in its own token instead of folded into
+     --space-8 because the two answer different questions - one is a
+     page's own breathing room, the other is "how tall is the thing
+     sitting on top of the page's last content" - and a page height that
+     happens to equal a spacing step today would be a coincidence to
+     lean on. */
+  --tab-bar-height: 4.25rem;
+
+  /*
    * Written desktop-first: the rules below are the desktop layout, and
    * the mobile layout is the override at the bottom of this file.
    *
@@ -809,10 +848,16 @@ body.railed {
  * fails is a page somebody can get stranded on. The copies are held to
  * agreeing by tools/check_web.py.
  *
- * No `hidden` anywhere in here, and that is load-bearing rather than an
- * omission: [hidden] is display:none !important at the top of this
- * file, so an attribute-hidden list could not be revealed again by any
- * media query. The four links are always in flow, at every width.
+ * Your page and Charts carry no `hidden` here, and that is load-bearing
+ * rather than an omission: [hidden] is display:none !important at the
+ * top of this file, so an attribute-hidden link could not be revealed
+ * again by any MEDIA QUERY - the reason this block never leaned on one
+ * to reveal a link back. Admin is the one exception (0.9-M3-S33 fix
+ * wave 1, #457, F6): #454 item 6 names the admin destination as gated
+ * to admins on both the bottom bar and this rail, so it ships `hidden`
+ * and apps/web/nav.js's gateAdminItem() reveals it by SCRIPT, the same
+ * way it already reveals the bar's own #tab-bar-admin - not by a media
+ * query, so the concern above does not apply to it.
  */
 .rail-links {
   display: flex;
@@ -824,7 +869,14 @@ body.railed {
 }
 
 .rail-links a {
-  display: block;
+  display: flex;
+  align-items: center;
+  /* --tap-target (owner ruling, #454 item 3; 0.9-M3-S33, #457) - a
+     link's own padding and line-height landed under the floor here,
+     the same shape the admin inputs' F3 finding named, so the floor
+     is stated rather than inherited from whatever the type scale
+     happens to add up to. */
+  min-height: var(--tap-target);
   padding: var(--space-1) var(--space-3);
   border-left: 2px solid transparent;
   border-radius: 0 var(--radius) var(--radius) 0;
@@ -890,6 +942,100 @@ body.railed {
 .rail-signin { text-align: center; }
 
 /*
+ * The bottom bar (owner ruling, #454 items 5-6; 0.9-M3-S33, #457): four
+ * items, icon over label, fixed to the bottom of the viewport on a
+ * phone (the @media (max-width: 52rem) block below is what actually
+ * shows it - display:none here is the desktop/tablet resting state,
+ * where the rail stays the nav, this ticket's own scope item 1). The
+ * same four items - your page, charts, sign out, admin - as the rail's
+ * own destinations plus its own session control, so nothing is reachable
+ * on a phone that a desktop visitor could not also reach.
+ *
+ * Written out per page rather than built by nav.js, matching the rail's
+ * own reasoning (see your-page.html's header comment): a page whose
+ * navigation vanishes when a script fails is a page somebody can get
+ * stranded on. tools/check_web.py holds the copies identical across
+ * every signed-in page and the admin page.
+ *
+ * Sign out and Admin ship `hidden` and are revealed by script - the
+ * same honest-resting-state rule the rail's own #sign-out already
+ * follows (see .rail-session's comment, above): with scripts dead
+ * there is no confirmed session to end and no adminVia to gate an
+ * admin destination on, so a control offering either would do nothing.
+ * apps/web/nav.js's paintBarSignOut() reveals #tab-bar-signout the same
+ * honest-resting-state way apps/web/signout.js's own paintSession()
+ * reveals #sign-out - wired in nav.js rather than beside signout.js's
+ * own copy so this file's edit stayed normal-tier (0.9-M3-S33, #457;
+ * signout.js is auth/session surface and tiers sensitive regardless of
+ * size, AGENTS.md's "The M3 delivery shape") - and calls the same,
+ * unmodified `BinderSignOut.signOut()` signout.js's own button calls.
+ * apps/web/nav.js's gateAdminItem() reveals #tab-bar-admin and the
+ * rail's own #rail-admin (0.9-M3-S33 fix wave 1, #457, F6) only once
+ * GET /me answers with a non-empty adminVia.
+ */
+.tab-bar {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  justify-content: space-around;
+  align-items: stretch;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  /* The safe-area inset keeps the bar's own bottom edge - and every
+     label inside it - off a device's own home-indicator strip, which
+     is real estate this file cannot see any other way. env() with no
+     supporting engine reads as 0px, which is exactly the plain `bottom:
+     0` this bar already carries, so nothing regresses where the
+     function is unknown. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.tab-bar-item {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  /* --tap-target (owner ruling, #454 item 3) on BOTH axes: a bar item
+     is as wide as one quarter of the strip already, well past the
+     floor, but stating min-height is what keeps the floor true if this
+     component ever grows a fifth item and the row narrows. */
+  min-height: var(--tap-target);
+  padding: var(--space-2) var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: color var(--motion-duration) ease;
+}
+
+.tab-bar-item:hover,
+.tab-bar-item:focus-visible {
+  color: var(--color-text);
+}
+
+/* The page you are on is marked, not removed - the same rule
+   .rail-links a[aria-current="page"] already carries, read the other
+   way for a component with no left edge to rule off: the icon and the
+   label both take the accent color instead. */
+.tab-bar-item[aria-current="page"] {
+  color: var(--color-accent-text);
+}
+
+.tab-bar-icon {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  flex: none;
+}
+
+/*
  * THE SWATCHES: the palette control, wired by theme.js via
  * [data-set-theme], and the whole of what a footer holds.
  *
@@ -921,7 +1067,12 @@ body.railed {
 /*
  * The button is the target and the dot inside it is the whole of what
  * it shows, so the target is sized for a finger rather than for the
- * dot: 2rem square against a 1.25rem dot. The name a member is offered
+ * dot: --tap-target square against a 1.25rem dot (owner ruling, #454
+ * item 3 - was a bare 2rem/32px until 0.9-M3-S33, #457, one square
+ * short of the floor in both dimensions; min-height on the chassis
+ * rule above would have fixed only the block axis and left a
+ * 32px-wide, 44px-tall target, so inline-size is stated here too
+ * rather than left to that cascade). The name a member is offered
  * this palette by is in aria-label, which is what check 23 reads when a
  * chip has no words in it.
  */
@@ -929,8 +1080,8 @@ body.railed {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 2rem;
-  block-size: 2rem;
+  inline-size: var(--tap-target);
+  block-size: var(--tap-target);
   padding: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border-strong);
@@ -1040,6 +1191,15 @@ select {
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
+  /* --tap-target (owner ruling, #454 item 3) - without this, an input's
+     height is whatever its padding and line-height add up to, and on
+     the admin page's five text inputs that landed at 43px (F3, #452's
+     review): one pixel under the floor, from nothing anybody had
+     stated as a number. box-sizing: border-box (this file's own
+     universal rule, above) is what makes min-height include the
+     padding and border already declared here instead of adding to
+     them. */
+  min-height: var(--tap-target);
   width: 100%;
   min-width: 0;
 }
@@ -1144,6 +1304,15 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   gap: var(--space-2);
   font-size: var(--text-sm);
   cursor: pointer;
+  /* --tap-target (owner ruling, #454 item 3; 0.9-M3-S33, #457, measured
+     in a real browser at 375px: this label sized to its own 14px text
+     line-height alone, 22px, half the floor) - the visual dot below
+     stays 1.1rem on purpose (a checkbox drawn at 44px would dominate
+     the row it sits in), and the label's own clickable area is what
+     grows to reach the floor: clicking anywhere in this padding toggles
+     the input, the same as clicking the dot or the word, because this
+     IS the <label> the input is nested inside. */
+  min-height: var(--tap-target);
 }
 
 .choice input {
@@ -1251,6 +1420,12 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+  /* --tap-target (owner ruling, #454 item 3), stated here rather than
+     trusted to each family's own padding: .primary/.secondary already
+     clear it from their padding and line-height alone, and stating the
+     floor explicitly is what keeps that true on purpose rather than by
+     accident of a type-scale change nobody re-measured against it. */
+  min-height: var(--tap-target);
   transition: background-color 120ms ease, color 120ms ease,
               border-color 120ms ease;
 }
@@ -1392,21 +1567,25 @@ button.primary:disabled {
   border-bottom-color: var(--color-accent);
 }
 
-/* A ~150ms fade for the panel a tab reveals and for the toast below
-   (0.9-M3-S30, #452; #454 item 4) - a TRANSITION, never a @keyframes:
-   #273 retired this stylesheet's entrance animation and the
-   live-verification ledger's reduced-motion row went with it, on the
-   grounds that no keyframe and no animated element was left for the
-   setting to reduce; tools/check_web.py now refuses a keyframe from
+/* A ~150ms fade for the panel a tab reveals, for the card below and for
+   the toast below that (0.9-M3-S30, #452; #454 item 4) - a TRANSITION,
+   never a @keyframes: #273 retired this stylesheet's entrance animation
+   and the live-verification ledger's reduced-motion row went with it,
+   on the grounds that no keyframe and no animated element was left for
+   the setting to reduce; tools/check_web.py now refuses a keyframe from
    ever coming back for exactly that reason (its own comment on
    KEYFRAMES says a transition is what it does NOT hold, since the
    blanket prefers-reduced-motion rule below already covers one).
-   admin.js's fadeIn() adds and removes `.fade-in` around one forced
-   reflow, which is the coordination a transition (unlike a keyframe)
-   needs to fire on an element that just stopped being `hidden`. */
+   apps/web/ui.js's fadeIn() adds and removes `.fade-in` around one
+   forced reflow, which is the coordination a transition (unlike a
+   keyframe) needs to fire on an element that just stopped being
+   `hidden`. --motion-duration (0.9-M3-S33, #457) is the token this
+   figure and the filter chips' own identical literal both now read,
+   in place of two separately hand-kept 150ms copies. */
 [role="tabpanel"],
+.card,
 .toast {
-  transition: opacity 150ms ease;
+  transition: opacity var(--motion-duration) ease;
 }
 .fade-in { opacity: 0; }
 
@@ -1431,7 +1610,10 @@ button.primary:disabled {
      toast that CONFIRMS a write is body text, not a caption. */
   font-size: var(--text-base);
   color: var(--color-text);
-  z-index: 20;
+  /* Above the bar (z-index 20, above) rather than merely beside it -
+     the two are both fixed to the same edge and a toast the bar
+     painted over would be a confirmation nobody could read. */
+  z-index: 21;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1815,17 +1997,20 @@ circle.series-5, text.series-5 { fill: var(--color-series-5); }
  * Real <button>s with their own aria-pressed, not a re-skinned .chip
  * span - the read-only group-makeup chips above never receive a click.
  *
- * 44px min tap target and 16px text (owner ruling, #454 item 3) - the
- * one control on this page that needed a rule stated for it rather
- * than inherited from .primary/.secondary, since a pill this small
- * would otherwise size to its own text.
+ * --tap-target and 16px text (owner ruling, #454 item 3) - the one
+ * control on this page that needed a rule stated for it rather than
+ * inherited from .primary/.secondary, since a pill this small would
+ * otherwise size to its own text. Minted the 2.75rem figure as a
+ * literal before --tap-target existed (0.9-M3-S14, #454); reads the
+ * token now (0.9-M3-S33, #457) rather than carrying a second copy of
+ * the same number.
  */
 .filter-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.75rem;
-  min-width: 2.75rem;
+  min-height: var(--tap-target);
+  min-width: var(--tap-target);
   padding: var(--space-2) var(--space-4);
   font: inherit;
   font-size: var(--text-base);
@@ -1836,9 +2021,12 @@ circle.series-5, text.series-5 { fill: var(--color-series-5); }
   cursor: pointer;
   /* The blanket prefers-reduced-motion rule further down this file
      already zeroes this duration for a member who asked for it - see
-     that rule's own comment on why it stays a blanket `*` selector. */
-  transition: background-color 150ms ease, color 150ms ease,
-              border-color 150ms ease;
+     that rule's own comment on why it stays a blanket `*` selector.
+     --motion-duration (0.9-M3-S33, #457) in place of a second 150ms
+     literal - see the tabpanel/toast rule's own comment, above. */
+  transition: background-color var(--motion-duration) ease,
+              color var(--motion-duration) ease,
+              border-color var(--motion-duration) ease;
 }
 
 .filter-chip:hover:not(:disabled) { border-color: var(--color-accent); }
@@ -2125,6 +2313,19 @@ body.instrument main.stack { gap: var(--space-8); }
 
   .wordmark-name { font-size: 1.25rem; }
 
+  /* --tap-target (owner ruling, #454 item 3; 0.9-M3-S33, #457, measured
+     in a real browser at 375px: two lines at this width's smaller
+     --wordmark-name size sized the link to 43px, one pixel under the
+     floor). Desktop is untouched - there the larger name size already
+     clears it, measured, so this stays inside the block that shrinks
+     the name in the first place rather than reaching every width. */
+  .wordmark {
+    min-height: var(--tap-target);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
   /* The session stops being the foot of a column and becomes the end of
      a row. */
   .rail-session {
@@ -2167,6 +2368,47 @@ body.instrument main.stack { gap: var(--space-8); }
   }
 
   body.railed { padding: 0; }
+
+  /*
+   * The bottom bar takes over from the rail below 52rem (owner ruling,
+   * #454 items 5-6; 0.9-M3-S33, #457) - phones, the width this file's
+   * own "one column, full width" cutover above already calls the phone
+   * answer, not the 64rem block above it where the rail turns into a
+   * horizontal strip and stays the nav for a tablet-width screen
+   * untouched. .rail-links and .rail-session are hidden here rather
+   * than left showing beside the bar: the strip's own links and the
+   * bar's four items name almost the same destinations, and two navs
+   * offering the same page is not a second nav, it is the hamburger
+   * problem in a different shape - the reason #150 settled on one
+   * control at every width rather than two. The wordmark stays - .rail
+   * itself is not hidden - so the strip that remains still carries the
+   * site's own name.
+   */
+  .rail-links,
+  .rail-session {
+    display: none;
+  }
+
+  .tab-bar {
+    display: flex;
+  }
+
+  /* The toast rises above the bar rather than sitting under it - both
+     are fixed to the same edge, and a confirmation the bar painted
+     over would be a confirmation nobody read. */
+  .toast {
+    bottom: calc(var(--tab-bar-height) + var(--space-2));
+  }
+
+  /* Clears the bar's own measured height (theme.css's own --tab-bar-
+     height, read at 375px) on top of the page's ordinary bottom
+     padding, so the bar never covers the last card's own content -
+     the same clearance problem a fixed footer always creates, answered
+     the way the rest of this file answers layout questions: a number
+     read off the real thing rather than guessed. */
+  .page {
+    padding-bottom: calc(var(--space-8) + var(--tab-bar-height));
+  }
 
   /* One column, full width. --measure-wide stops applying on a screen
      that has no width to give it. */

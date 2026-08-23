@@ -264,6 +264,15 @@
 
   
 
+  --tap-target: 2.75rem;
+  --motion-duration: 150ms;
+
+  
+
+  --tab-bar-height: 4.25rem;
+
+  
+
   --measure: 46rem;
   --measure-wide: 84rem;
 
@@ -526,7 +535,11 @@ body.railed {
 }
 
 .rail-links a {
-  display: block;
+  display: flex;
+  align-items: center;
+  
+
+  min-height: var(--tap-target);
   padding: var(--space-1) var(--space-3);
   border-left: 2px solid transparent;
   border-radius: 0 var(--radius) var(--radius) 0;
@@ -576,6 +589,62 @@ body.railed {
 
 
 
+.tab-bar {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  justify-content: space-around;
+  align-items: stretch;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  
+
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.tab-bar-item {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  
+
+  min-height: var(--tap-target);
+  padding: var(--space-2) var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: color var(--motion-duration) ease;
+}
+
+.tab-bar-item:hover,
+.tab-bar-item:focus-visible {
+  color: var(--color-text);
+}
+
+
+
+.tab-bar-item[aria-current="page"] {
+  color: var(--color-accent-text);
+}
+
+.tab-bar-icon {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  flex: none;
+}
+
+
+
 .theme-swatches {
   display: flex;
   flex-wrap: wrap;
@@ -588,8 +657,8 @@ body.railed {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 2rem;
-  block-size: 2rem;
+  inline-size: var(--tap-target);
+  block-size: var(--tap-target);
   padding: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border-strong);
@@ -672,6 +741,9 @@ select {
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
+  
+
+  min-height: var(--tap-target);
   width: 100%;
   min-width: 0;
 }
@@ -746,6 +818,9 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   gap: var(--space-2);
   font-size: var(--text-sm);
   cursor: pointer;
+  
+
+  min-height: var(--tap-target);
 }
 
 .choice input {
@@ -799,6 +874,9 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+  
+
+  min-height: var(--tap-target);
   transition: background-color 120ms ease, color 120ms ease,
               border-color 120ms ease;
 }
@@ -891,8 +969,9 @@ button.primary:disabled {
 
 
 [role="tabpanel"],
+.card,
 .toast {
-  transition: opacity 150ms ease;
+  transition: opacity var(--motion-duration) ease;
 }
 .fade-in { opacity: 0; }
 
@@ -912,7 +991,9 @@ button.primary:disabled {
 
   font-size: var(--text-base);
   color: var(--color-text);
-  z-index: 20;
+  
+
+  z-index: 21;
 }
 
  
@@ -1184,8 +1265,8 @@ circle.series-5, text.series-5 { fill: var(--color-series-5); }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.75rem;
-  min-width: 2.75rem;
+  min-height: var(--tap-target);
+  min-width: var(--tap-target);
   padding: var(--space-2) var(--space-4);
   font: inherit;
   font-size: var(--text-base);
@@ -1196,8 +1277,9 @@ circle.series-5, text.series-5 { fill: var(--color-series-5); }
   cursor: pointer;
   
 
-  transition: background-color 150ms ease, color 150ms ease,
-              border-color 150ms ease;
+  transition: background-color var(--motion-duration) ease,
+              color var(--motion-duration) ease,
+              border-color var(--motion-duration) ease;
 }
 
 .filter-chip:hover:not(:disabled) { border-color: var(--color-accent); }
@@ -1371,6 +1453,15 @@ body.instrument main.stack { gap: var(--space-8); }
 
   
 
+  .wordmark {
+    min-height: var(--tap-target);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  
+
   .rail-session {
     margin-top: 0;
     margin-left: auto;
@@ -1407,6 +1498,29 @@ body.instrument main.stack { gap: var(--space-8); }
   }
 
   body.railed { padding: 0; }
+
+  
+
+  .rail-links,
+  .rail-session {
+    display: none;
+  }
+
+  .tab-bar {
+    display: flex;
+  }
+
+  
+
+  .toast {
+    bottom: calc(var(--tab-bar-height) + var(--space-2));
+  }
+
+  
+
+  .page {
+    padding-bottom: calc(var(--space-8) + var(--tab-bar-height));
+  }
 
   
 
