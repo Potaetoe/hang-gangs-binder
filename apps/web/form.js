@@ -540,6 +540,15 @@
    * refusal was total silence - latent today because no shipped choice
    * is required, and exactly the property a fork setting one would hit
    * first.
+   *
+   * Both branches also carry data-field now (0.9-M3-S33 part B, #454
+   * items 11-12): wireFieldValidation() below finds a field's own
+   * controls through inputsFor(), the same lookup showProblems() already
+   * used for aria-invalid on every other kind - a select or a checkbox
+   * with no data-field was invisible to that lookup, so neither could
+   * ever gain the blur-triggered note the ruling asks for, or the
+   * aria-invalid mark a submit-time refusal already gives every other
+   * field kind.
    */
   function buildChoiceField(entry) {
     if (entry.multiple) {
@@ -550,7 +559,7 @@
       (entry.choices || []).forEach(function (choice) {
         choices.appendChild(el("label", { class: "choice" }, [
           el("input", { type: "checkbox", name: entry.name,
-            value: choice.value }),
+            "data-field": entry.name, value: choice.value }),
           el("span", { text: choice.label }),
         ]));
       });
@@ -561,7 +570,8 @@
       return fieldset;
     }
 
-    const select = el("select", { id: "entry-" + entry.name });
+    const select = el("select", { id: "entry-" + entry.name,
+      "data-field": entry.name });
     select.appendChild(el("option", { value: "", text: entry.blank || "" }));
     if (entry.choicesFrom) {
       const countries = root.BINDER_COUNTRIES || {};
@@ -695,6 +705,55 @@
     });
   }
 
+  /*
+   * #454 items 11-12 (owner ruling, 2026-08-22): "validation as the
+   * member leaves each field with a short note under it" - not on
+   * submit, not while typing. This is submit's own validateOne() call,
+   * narrowed to one field, writing to the same slot showProblems()
+   * writes to - a member who fixes a mistake and tabs on sees it clear
+   * the same way a later submit would have cleared it, with no submit
+   * needed at all. `entry` is one of plan()'s own entries (the same
+   * object renderFields() built the field from), not a fresh F.field()
+   * lookup - planField() already carries every property validateOne()
+   * or validateMeasured() reads (kind, name, label, term, required,
+   * multiple), so there is nothing here two lookups could disagree
+   * about.
+   */
+  function validateFieldNow(entry, container) {
+    if (entry.kind === "computed") return;
+    const state = { units: currentUnits(), values: readValues(container) };
+    const problems = validateOne(entry, state);
+    const slot = $("error-" + entry.name);
+    if (slot) {
+      slot.textContent = problems.length ? problems[0].message : "";
+      slot.hidden = !problems.length;
+    }
+    inputsFor(entry.name).forEach(function (ctrl) {
+      if (problems.length) ctrl.setAttribute("aria-invalid", "true");
+      else ctrl.removeAttribute("aria-invalid");
+    });
+  }
+
+  /*
+   * Wired per input, directly - the same shape the units toggle's own
+   * "change" listener already uses below, rather than one delegated
+   * listener on the container. "focusout" rather than "blur": blur does
+   * not bubble and this file wires every control anyway, but focusout
+   * is the DOM's own name for exactly "the member left this field",
+   * which is what the ruling asks for - "as the member leaves each
+   * field", never on keystroke (there is no "input" listener here) and
+   * never held until submit.
+   */
+  function wireFieldValidation(container) {
+    plan().forEach(function (entry) {
+      inputsFor(entry.name).forEach(function (ctrl) {
+        ctrl.addEventListener("focusout", function () {
+          validateFieldNow(entry, container);
+        });
+      });
+    });
+  }
+
   function showProblems(problems) {
     clearProblems();
     problems.forEach(function (problem) {
@@ -775,6 +834,7 @@
         clearProblems();
       }); });
     applyUnits(container);
+    wireFieldValidation(container);
 
     function say(message, tone) {
       UI.setStatus(status, message, tone);

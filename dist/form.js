@@ -439,7 +439,7 @@
       (entry.choices || []).forEach(function (choice) {
         choices.appendChild(el("label", { class: "choice" }, [
           el("input", { type: "checkbox", name: entry.name,
-            value: choice.value }),
+            "data-field": entry.name, value: choice.value }),
           el("span", { text: choice.label }),
         ]));
       });
@@ -450,7 +450,8 @@
       return fieldset;
     }
 
-    const select = el("select", { id: "entry-" + entry.name });
+    const select = el("select", { id: "entry-" + entry.name,
+      "data-field": entry.name });
     select.appendChild(el("option", { value: "", text: entry.blank || "" }));
     if (entry.choicesFrom) {
       const countries = root.BINDER_COUNTRIES || {};
@@ -578,6 +579,35 @@
     });
   }
 
+  
+
+  function validateFieldNow(entry, container) {
+    if (entry.kind === "computed") return;
+    const state = { units: currentUnits(), values: readValues(container) };
+    const problems = validateOne(entry, state);
+    const slot = $("error-" + entry.name);
+    if (slot) {
+      slot.textContent = problems.length ? problems[0].message : "";
+      slot.hidden = !problems.length;
+    }
+    inputsFor(entry.name).forEach(function (ctrl) {
+      if (problems.length) ctrl.setAttribute("aria-invalid", "true");
+      else ctrl.removeAttribute("aria-invalid");
+    });
+  }
+
+  
+
+  function wireFieldValidation(container) {
+    plan().forEach(function (entry) {
+      inputsFor(entry.name).forEach(function (ctrl) {
+        ctrl.addEventListener("focusout", function () {
+          validateFieldNow(entry, container);
+        });
+      });
+    });
+  }
+
   function showProblems(problems) {
     clearProblems();
     problems.forEach(function (problem) {
@@ -655,6 +685,7 @@
         clearProblems();
       }); });
     applyUnits(container);
+    wireFieldValidation(container);
 
     function say(message, tone) {
       UI.setStatus(status, message, tone);
