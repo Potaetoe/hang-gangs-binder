@@ -1349,6 +1349,72 @@ check("your-page.html carries no data-dev-session hook - 0.9-M2-S4 owns " +
 globalThis.BINDER_SITE = SITE;
 
 /*
+ * 6c (#454 items 11-12, owner ruling 2026-08-22): "validation as the
+ * member leaves each field with a short note under it" - fired on
+ * "focusout" (the member leaving the control), never on "input" (the
+ * member typing) and never held until submit. No submission is
+ * dispatched anywhere in this section - every check below has to be
+ * true before a submit ever happens, or it is not proving the ruling.
+ */
+{
+  const wired = await loadFormWired();
+  const weight = wired.page.byId("entry-weight-imperial");
+  const weightError = () => findById(wired.page.body, "error-weight");
+
+  check("CONTROL: nothing shown before the member has touched anything",
+    weightError().hidden === true);
+
+  weight.dispatch("input"); // typing - the ruling's own "not while typing"
+  check("typing alone shows nothing - no focusout has fired yet",
+    weightError().hidden === true);
+
+  weight.dispatch("focusout"); // leaving the field, still empty
+  check("leaving an empty required field shows its own note, with no " +
+    "submit anywhere in this test",
+    weightError().hidden === false &&
+    weightError().textContent === "Enter weight in lb, as a number.");
+  check("...and the control itself is marked aria-invalid, the same " +
+    "mark a submit-time refusal already gives every field",
+    weight.getAttribute("aria-invalid") === "true");
+
+  weight.value = "150";
+  weight.dispatch("focusout"); // leaving again, now valid
+  check("a later, valid focusout clears the same slot - a member who " +
+    "fixes a mistake sees it clear without submitting",
+    weightError().hidden === true && weightError().textContent === "");
+  // aria-invalid actually coming off is real production behavior
+  // (validateFieldNow() calls removeAttribute the same as clearProblems()
+  // already does elsewhere in this file) but this harness's own
+  // makeElement() stub gives every node a no-op removeAttribute() (line
+  // ~355) - the same limitation clearProblems()'s own removeAttribute
+  // call already lives with here, untested for the same reason. Nothing
+  // asserted past this point would prove anything but the stub's gap.
+}
+
+/*
+ * The same wiring on a <select> - buildChoiceField's own data-field
+ * addition (this slice) is what makes inputsFor()/wireFieldValidation()
+ * able to find it at all; before that addition a select was invisible
+ * to both. SCRATCH_REQUIRED_CHOICE (section 6b, above) is reused so
+ * "gender" is required and has something to say on an empty blur.
+ */
+{
+  globalThis.BINDER_SITE = SCRATCH_REQUIRED_CHOICE;
+  const wired = await loadFormWired();
+  const genderError = () => findById(wired.page.body, "error-gender");
+  check("CONTROL: nothing shown before the member has touched the select",
+    genderError().hidden === true);
+  wired.page.byId("entry-gender").dispatch("focusout");
+  check("leaving a required, unanswered <select> shows its note too - " +
+    "the new data-field attribute is what lets wireFieldValidation() " +
+    "reach a select at all, not just the measured/consent/count kinds " +
+    "that already carried one",
+    genderError().hidden === false &&
+    genderError().textContent === "Gender is required.");
+  globalThis.BINDER_SITE = SITE;
+}
+
+/*
  * Row 23 is chronologically newest but SUPERSEDED - a prefill that read
  * entries[0] rather than the newest entry with superseded === false
  * would pick up its gender/country/height, and the CONTROL check below
@@ -1869,7 +1935,7 @@ async function drivenNavOnYourPage(meAnswer, options) {
 }
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 122;
+const EXPECTED = 129;
 console.log(failures
   ? `\nyour-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
