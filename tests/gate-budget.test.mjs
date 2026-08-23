@@ -227,10 +227,26 @@ for (const seamValue of [undefined, "0"]) {
   check(label + ": the lying arm still exits 0", result.code === 0);
   const printed = /tests\/liar\.test\.mjs\s+ok\s+([\d.]+)s/.exec(
     result.output);
-  check(label + ": the printed duration is real measured time (a few "
-        + "seconds at most on any machine), not the arm's own claim of "
-        + "~999000ms" + (printed ? " (printed " + printed[1] + "s)" : ""),
-        printed !== null && Number(printed[1]) < 30);
+  /* Fix wave 4 (re-fire #3, finding F2): this used to read
+     `Number(printed[1]) < 30` - a real measured duration compared
+     against a fixed ceiling, the exact shape the ruling closed
+     everywhere in this apparatus but the one named exception (the
+     hung-arm kill, further down). The property this check actually
+     wants - "the runner ignored the marker and reported what really
+     happened" - names its own un-flakable test with no clock at all:
+     if the seam mistakenly read the arm's injected lie, the printed
+     figure would read the EXACT literal string "999.0" (999000ms,
+     `toFixed(1)`), the same injected value the arm chose. Checking
+     that the printed string is not that one specific literal is an
+     exact-value comparison against an INJECTED number, like every
+     other check in this file - not a ceiling a busy machine could
+     ever cross by running slowly, since a slow real duration would
+     land anywhere except exactly "999.0". */
+  check(label + ": the printed duration is real measured time, not the "
+        + "arm's own lied claim of 999000ms - the printed figure is not "
+        + "the literal \"999.0\" the lie would produce if the seam read "
+        + "it" + (printed ? " (printed " + printed[1] + "s)" : ""),
+        printed !== null && printed[1] !== "999.0");
   check(label + ": the lie's own number never reaches the output at all",
         !result.output.includes("999000"));
 }

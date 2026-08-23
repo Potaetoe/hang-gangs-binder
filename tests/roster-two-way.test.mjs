@@ -120,18 +120,31 @@ async function buildFixture(rosterText, arms) {
    reads its arms, so a message this arm greps for is read exactly the
    way a human reading the real gate's log would see it. */
 function runFixture(root) {
-  // The pool's own two environment overrides (0.9-M3-S35, #460) are
-  // cleared before this spawns, not merely left unset here - an
+  // All five of the runner's own environment levers (0.9-M3-S35, #460)
+  // are cleared before this spawns, not merely left unset here - an
   // inherited BINDER_GATE_BUDGET_SECONDS from whatever ran THIS file
   // (found the hard way in tests/gate-budget.test.mjs's own fixture,
   // which shares this exact pattern: a low outer budget makes every
   // "exits 0"/"all green" scenario here false-red on its own timing,
   // nothing to do with the roster logic these scenarios are actually
   // about) would make this file's own green scenarios fail for a
-  // reason that has nothing to do with what they test.
+  // reason that has nothing to do with what they test. Fix wave 4
+  // (re-fire #3, finding F4): this used to clear only the first two -
+  // tests/gate-budget.test.mjs, the sibling this comment already cites
+  // as sharing the pattern, clears all five for exactly the reason
+  // given above, and nothing here explained why this fixture stopped
+  // at two. Nothing sets the other three today, so this was a hole in
+  // the seal rather than a live bug - but CI is about to set
+  // BINDER_GATE_ENFORCE_BUDGET, and a small outer
+  // BINDER_ARM_TIMEOUT_SECONDS (which a builder debugging the hang
+  // guard would set) would kill this fixture's arms for a reason that
+  // has nothing to do with the roster.
   const env = Object.assign({}, process.env);
   delete env.BINDER_GATE_POOL;
   delete env.BINDER_GATE_BUDGET_SECONDS;
+  delete env.BINDER_ARM_TIMEOUT_SECONDS;
+  delete env.BINDER_GATE_TEST_DURATIONS_MS;
+  delete env.BINDER_GATE_ENFORCE_BUDGET;
   const done = spawnSync(process.execPath, [join(root, "tests", "run.mjs")],
     { encoding: "utf8", env });
   return {

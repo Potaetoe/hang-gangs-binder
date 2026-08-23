@@ -349,11 +349,17 @@ guards, never as the pattern for a new one.
   ruling 2026-08-22, "the class is closed whole this time: no pass/fail
   decision in this apparatus may depend on real wall-clock timing of a
   contended machine, one exception only"): arms run concurrently, a
-  worker pool sized to the CPU count by default — `tests/run.mjs`'s own
-  header names the environment variable that overrides the size, rather
-  than a second copy of that name living here to drift from it —
-  printed in the same fixed roster order regardless of which one
-  finishes first — `tests/gate-pool.mjs` carries that ordering
+  worker pool sized to a fixed default width, **never the CPU count**
+  (fix wave 4, re-fire #3 finding F1: on the reviewer's 12-core machine,
+  a pool sized to the CPU count exhausted the machine's own memory
+  commit under ordinary fleet load — 10 of 15 full-gate runs at that
+  width went red from node processes and `git` spawns dying, never from
+  the arms' own logic, while the identical head was green and just as
+  fast at the narrower default) — `tests/run.mjs`'s own header names the
+  default and the environment variable that overrides it, rather than a
+  second copy of either living here to drift from it — printed in the
+  same fixed roster order regardless of which one finishes first —
+  `tests/gate-pool.mjs` carries that ordering
   guarantee, proven DETERMINISTICALLY in `tests/gate-pool.test.mjs`
   (hand-resolved promises and observed start order, never a real
   elapsed time compared against a threshold — a real-timer version of

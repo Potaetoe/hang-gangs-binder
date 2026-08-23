@@ -209,7 +209,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { cpus } from "node:os";
 import { runPool } from "./gate-pool.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -256,15 +255,29 @@ const NOT_ARMS = new Set([rel(fileURLToPath(import.meta.url)), PREFLIGHT,
    here as a comment nothing re-checks - the READING is what licenses
    the pool, and the twenty-run proof is what confirms the reading was
    right, not a substitute for either half.
-   POOL SIZE defaults to the CPU count (falling back to 4 if that comes
-   back empty or zero, which `os.cpus()` can on some containers) and
-   `BINDER_GATE_POOL` overrides it - the suppressed lever the mutation
-   battery uses to prove pool size 1 restores the old sequential wall
-   time. Read with `envNumber` below, not a bare `Number(...) || default`
-   - `0` is a legitimate override for a lever like this (gate-budget.
-   test.mjs's own "forced 0s budget" scenario needs it to mean zero, not
-   "unset"), and `||` treats the falsy number 0 exactly like an absent
-   variable, silently discarding it back to the default. */
+   POOL SIZE DEFAULTS TO 4, NEVER THE CPU COUNT (fix wave 4, re-fire #3,
+   finding F1, Prime's ruling 2026-08-22: "the pool's DEFAULT width is 4
+   ... never default to the CPU count"). It used to default to
+   `cpus().length` - on the 12-core machine this ticket was built on,
+   that opened 12 concurrent arms plus their own `python`/`git`
+   children, and under ordinary fleet load (this machine running other
+   agents at the same time) that exhausted the machine's own memory
+   commit: 10 of the reviewer's 15 full-gate runs at pool 12 went red,
+   with node processes dying mid-arm (`0xC0000409`) and `git` spawns
+   returning nothing, never the arms' own logic failing. The same head
+   was green at pool 1 and green at pool 4, and pool 4 was AS FAST as
+   pool 12 (87.0s vs 82.3s in the reviewer's own back-to-back run) - the
+   width that broke the machine bought no speed a narrower width did
+   not already have. `BINDER_GATE_POOL` still overrides it - the
+   suppressed lever the mutation battery uses to prove pool size 1
+   restores the old sequential wall time, and the lever a machine known
+   to have room for more may raise, with a reason stated where it is
+   raised. Read with `envNumber` below, not a bare `Number(...) ||
+   default` - `0` is a legitimate override for a lever like this
+   (gate-budget.test.mjs's own "forced 0s budget" scenario needs it to
+   mean zero, not "unset"), and `||` treats the falsy number 0 exactly
+   like an absent variable, silently discarding it back to the
+   default. */
 function envNumber(name, fallback) {
   const raw = process.env[name];
   if (raw === undefined || raw === "") return fallback;
@@ -272,7 +285,7 @@ function envNumber(name, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-const DEFAULT_POOL = cpus().length || 4;
+const DEFAULT_POOL = 4;
 const POOL_SIZE = envNumber("BINDER_GATE_POOL", DEFAULT_POOL);
 
 /* THE BUDGET (0.9-M3-S35, #460; ENFORCEMENT SPLIT at re-fire #2, F1-F5's
