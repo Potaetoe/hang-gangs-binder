@@ -1880,17 +1880,33 @@
       UI.setStatus($("log-status"), message, tone);
     }
 
-    function drawLog(entries) {
+    /*
+     * #454 item 13 (owner ruling, 2026-08-22), DESIGN.md's own words:
+     * "A long list ... shows the newest 20 with a 'more' button." The
+     * same LOG_PAGE_SIZE/logRevealed/More shape Departed's own
+     * DEPARTED_PAGE_SIZE/departedRevealed already uses below - one
+     * pattern, not two, for the one property both lists need. GET
+     * /admin-log already answers newest-first (server/worker.js's own
+     * "ORDER BY at DESC, id DESC"), so windowing here never reorders
+     * anything; it only decides how much of an already-sorted list to
+     * show.
+     */
+    const LOG_PAGE_SIZE = 20;
+    let logEntries = [];
+    let logRevealed = LOG_PAGE_SIZE;
+
+    function drawLog() {
       const list = $("log-list");
       list.textContent = "";
-      if (!entries.length) {
+      if (!logEntries.length) {
         const empty = document.createElement("p");
         empty.className = "hint";
         empty.textContent = "No changes yet.";
         list.appendChild(empty);
         return;
       }
-      for (const entry of entries) {
+      const shown = logEntries.slice(0, logRevealed);
+      for (const entry of shown) {
         const line = logLine(entry);
         const row = document.createElement("div");
         // "row wrap-row" - this row's own contract data is exactly
@@ -1915,6 +1931,17 @@
 
         list.appendChild(row);
       }
+      if (logEntries.length > logRevealed) {
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "secondary";
+        more.textContent = "More";
+        more.addEventListener("click", function () {
+          logRevealed += LOG_PAGE_SIZE;
+          drawLog();
+        });
+        list.appendChild(more);
+      }
     }
 
     async function loadLog() {
@@ -1930,7 +1957,13 @@
         const entries = Array.isArray(payload && payload.log)
           ? payload.log
           : [];
-        drawLog(entries);
+        logEntries = entries;
+        // Reset the window on every fresh load - the same rule
+        // loadDeparted() holds departedRevealed to below, so a member
+        // who pressed More, then re-opened this tab, sees the newest 20
+        // again rather than however far they had scrolled last time.
+        logRevealed = LOG_PAGE_SIZE;
+        drawLog();
         sayLog("", null);
       } catch (error) {
         detail(why(error));

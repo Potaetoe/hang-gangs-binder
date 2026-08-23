@@ -1660,17 +1660,24 @@
       UI.setStatus($("log-status"), message, tone);
     }
 
-    function drawLog(entries) {
+    
+
+    const LOG_PAGE_SIZE = 20;
+    let logEntries = [];
+    let logRevealed = LOG_PAGE_SIZE;
+
+    function drawLog() {
       const list = $("log-list");
       list.textContent = "";
-      if (!entries.length) {
+      if (!logEntries.length) {
         const empty = document.createElement("p");
         empty.className = "hint";
         empty.textContent = "No changes yet.";
         list.appendChild(empty);
         return;
       }
-      for (const entry of entries) {
+      const shown = logEntries.slice(0, logRevealed);
+      for (const entry of shown) {
         const line = logLine(entry);
         const row = document.createElement("div");
          
@@ -1695,6 +1702,17 @@
 
         list.appendChild(row);
       }
+      if (logEntries.length > logRevealed) {
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "secondary";
+        more.textContent = "More";
+        more.addEventListener("click", function () {
+          logRevealed += LOG_PAGE_SIZE;
+          drawLog();
+        });
+        list.appendChild(more);
+      }
     }
 
     async function loadLog() {
@@ -1710,7 +1728,13 @@
         const entries = Array.isArray(payload && payload.log)
           ? payload.log
           : [];
-        drawLog(entries);
+        logEntries = entries;
+         
+         
+         
+         
+        logRevealed = LOG_PAGE_SIZE;
+        drawLog();
         sayLog("", null);
       } catch (error) {
         detail(why(error));
