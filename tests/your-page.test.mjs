@@ -1536,6 +1536,31 @@ check("no history: the form renders exactly as today - nothing prefills",
   emptyPage.byId("entry-height-metric").value === "" &&
   emptyPage.byId("units-imperial").checked === true);
 
+/*
+ * #454 item 10 (owner ruling, 2026-08-22): "one friendly sentence and
+ * the next step ('No entries yet - add your first one.' with the
+ * button...)". Before this fix, the empty entries list read "Nothing
+ * recorded yet - fill in the form above and it starts here." - a
+ * sentence with no actual control, only prose pointing up the page.
+ * The button is a real <a class="primary" href="#entry-section">, the
+ * same link-styled-as-a-button pattern the rail's own Sign in link
+ * already uses (theme.css's a.primary/a.secondary) - jumping the
+ * member straight to the form rather than asking them to scroll for
+ * it themselves.
+ */
+{
+  const slot = emptyPage.byId("entries-slot");
+  const sentence = slot.children.find((c) => c.tag === "p");
+  const cta = slot.children.find((c) => c.tag === "a");
+  check("the empty entries list carries the ruled sentence",
+    Boolean(sentence) && sentence.textContent === "No entries yet.");
+  check("...and a real button - a primary link to the form above, not " +
+    "just prose telling the member to scroll",
+    Boolean(cta) && cta.className === "primary" &&
+    cta.getAttribute("href") === "#entry-section" &&
+    cta.textContent === "Add your first one");
+}
+
 const failedPage = await loadCombinedForPrefill(
   { entries: PREFILL_ENTRIES, failFetch: true });
 check("a failed load: the form renders exactly as today - the prefill is " +
@@ -1844,7 +1869,7 @@ async function drivenNavOnYourPage(meAnswer, options) {
 }
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 120;
+const EXPECTED = 122;
 console.log(failures
   ? `\nyour-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
