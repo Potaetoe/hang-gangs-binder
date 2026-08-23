@@ -257,17 +257,18 @@ const NOT_ARMS = new Set([rel(fileURLToPath(import.meta.url)), PREFLIGHT,
    right, not a substitute for either half.
    POOL SIZE DEFAULTS TO 4, NEVER THE CPU COUNT (fix wave 4, re-fire #3,
    finding F1, Prime's ruling 2026-08-22: "the pool's DEFAULT width is 4
-   ... never default to the CPU count"). It used to default to
-   `cpus().length` - on the 12-core machine this ticket was built on,
-   that opened 12 concurrent arms plus their own `python`/`git`
-   children, and under ordinary fleet load (this machine running other
-   agents at the same time) that exhausted the machine's own memory
-   commit: 10 of the reviewer's 15 full-gate runs at pool 12 went red,
-   with node processes dying mid-arm (`0xC0000409`) and `git` spawns
-   returning nothing, never the arms' own logic failing. The same head
-   was green at pool 1 and green at pool 4, and pool 4 was AS FAST as
-   pool 12 (87.0s vs 82.3s in the reviewer's own back-to-back run) - the
-   width that broke the machine bought no speed a narrower width did
+   (the reviewer's measured point - as fast as 12 and green under fleet
+   load; 12 exhausts the commit limit), with the env override kept"). It
+   used to default to `cpus().length` - on the 12-core machine this
+   ticket was built on, that opened 12 concurrent arms plus their own
+   `python`/`git` children, and under ordinary fleet load (this machine
+   running other agents at the same time) that exhausted the machine's
+   own memory commit: 10 of the reviewer's 15 full-gate runs at pool 12
+   went red, with node processes dying mid-arm (`0xC0000409`) and `git`
+   spawns returning nothing, never the arms' own logic failing. The same
+   head was green at pool 1 and green at pool 4, and pool 4 was AS FAST
+   as pool 12 (87.0s vs 82.3s in the reviewer's own back-to-back run) -
+   the width that broke the machine bought no speed a narrower width did
    not already have. `BINDER_GATE_POOL` still overrides it - the
    suppressed lever the mutation battery uses to prove pool size 1
    restores the old sequential wall time, and the lever a machine known

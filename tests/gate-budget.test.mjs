@@ -296,6 +296,40 @@ for (const seamValue of [undefined, "0"]) {
 }
 
 /* ================================================================== */
+/* THE RULED DEFAULT, ARMED (fix wave 5, #460, review 5388869388,       */
+/* finding F2, Prime's ruling: the reviewer's cheap remedy, ordered -   */
+/* "one exact-value scenario in gate-budget's fixture, BINDER_GATE_POOL */
+/* deleted, asserting the runner prints '(pool size 4)'. No clock,      */
+/* mutation both ways."). Every other scenario in this file either SETS */
+/* BINDER_GATE_POOL explicitly (to drive concurrency for its own        */
+/* purpose) or, like roster-two-way's own fixture, deletes it without   */
+/* reading what the runner then falls back to - so before this          */
+/* scenario, nothing anywhere told the ruled fixed default (4) apart    */
+/* from the retired one (this machine's own CPU count): a straight      */
+/* revert of tests/run.mjs's DEFAULT_POOL back to `cpus().length`       */
+/* passed every other check in this file green (F2's own evidence,      */
+/* reproduced below in this file's own mutation record). This scenario  */
+/* reads the runner's OWN printed wall-time line - "wall time  N.Ns     */
+/* (pool size 4)" - an exact string match against the literal figure    */
+/* 4, never a real measured duration: exact-value and un-flakable the   */
+/* same way every other check in this file is, per the ruling's own     */
+/* "no clock" instruction. `runFixture` already deletes BINDER_GATE_    */
+/* POOL from the base environment before layering `env` on top (see     */
+/* its own header above); this scenario's `env` does not set it either, */
+/* so it reaches the runner genuinely absent. */
+
+{
+  const DEFAULT_POOL_ARMS = [["alpha", 100], ["beta", 50], ["gamma", 10]];
+  const result = await scenario(DEFAULT_POOL_ARMS,
+    { BINDER_GATE_TEST_DURATIONS_MS: "1" },
+    fakeDurationArm);
+  check("THE RULED DEFAULT: with BINDER_GATE_POOL absent from the child "
+        + "env, the runner's own wall-time line reads pool size 4, the "
+        + "ruled fixed default - never this machine's own CPU count",
+        /\(pool size 4\)/.test(result.output));
+}
+
+/* ================================================================== */
 /* THE BUDGET, BOTH MODES (re-fire #2, F1/F5, Prime's ruling            */
 /* 2026-08-22): a forced, tiny budget against three arms that all pass  */
 /* - SEAM ON but unused by any assertion here, since the fixture's arms */
@@ -518,7 +552,7 @@ for (const seamValue of [undefined, "0"]) {
 /* ------------------------------------------------------------------ */
 for (const root of roots) await rm(root, { recursive: true, force: true });
 
-const EXPECTED = 38;
+const EXPECTED = 39;
 console.log(failures
   ? `\ngate-budget FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

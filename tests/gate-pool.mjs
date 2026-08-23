@@ -41,9 +41,10 @@ export async function runPool(tasks, concurrency) {
   // negative - a pool that runs nothing on a bad argument is a silent
   // no-op gate, the same "armed-looking-but-not" failure tests/run.mjs's
   // own header refuses elsewhere. Never more workers than tasks: an
-  // idle worker that never claims an index is harmless, but a size
-  // computed from a large CPU count against a short roster is a pool
-  // that never demonstrates its own concurrency ceiling in a small test.
+  // idle worker that never claims an index is harmless, but a size set
+  // large by hand (BINDER_GATE_POOL, never the fixed default this
+  // gate ships with) against a short roster is a pool that never
+  // demonstrates its own concurrency ceiling in a small test.
   const size = Math.max(1, Math.min(concurrency, tasks.length || 1));
   const workers = [];
   for (let i = 0; i < size; i += 1) workers.push(worker());
