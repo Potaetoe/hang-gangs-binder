@@ -2341,6 +2341,62 @@ check("Fields never fetches per-member counts - no /charts-data call " +
     /No changes yet/.test(byId.get("log-list").textContent));
 }
 
+/*
+ * #454 item 13 (owner ruling, 2026-08-22), DESIGN.md's own words: "A
+ * long list ... shows the newest 20 with a 'more' button." Departed
+ * already had this (departedSections()/DEPARTED_PAGE_SIZE, tested
+ * below); the change log did not - drawLog() rendered every row GET
+ * /admin-log sent with no window and no button at all. GET /admin-log
+ * already answers newest-first (server/worker.js's own "ORDER BY at
+ * DESC, id DESC"), so the client's only job is to window what already
+ * arrived in the right order, the same job departedSections() does.
+ */
+{
+  const LOG_25 = Array.from({ length: 25 }, (_, i) => ({
+    at: "2026-08-21T" + String(23 - i).padStart(2, "0") + ":00:00.000Z",
+    accountId: "a1", action: "content.set", name: "site.groupName",
+    summary: "entry " + i }));
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-log": () => ok({ ok: true, log: LOG_25 }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const list = byId.get("log-list");
+  const rows = list.children.filter((c) => c.className === "row wrap-row");
+  // logLine() composes "changed a setting: " ahead of the raw summary
+  // for a content.set action (checked elsewhere, above) - .endsWith()
+  // reads past that prefix to the one fact this block is about.
+  check("25 entries: only the newest 20 render",
+    rows.length === 20 &&
+    rows[0].children[2].textContent.endsWith("entry 0") &&
+    rows[19].children[2].textContent.endsWith("entry 19"));
+  const more = list.children.find((c) => c.tag === "button");
+  check("...and a More button is offered, since there are more than 20",
+    Boolean(more) && more.textContent === "More");
+
+  await more.dispatch("click");
+  const rowsAfter = list.children.filter((c) => c.className === "row wrap-row");
+  check("pressing More reveals the rest - all 25, still newest first",
+    rowsAfter.length === 25 &&
+    rowsAfter[24].children[2].textContent.endsWith("entry 24"));
+  check("...and the button is gone now there is nothing left to reveal",
+    !list.children.some((c) => c.tag === "button"));
+}
+
+{
+  const LOG_20 = Array.from({ length: 20 }, (_, i) => ({
+    at: "2026-08-21T12:00:00.000Z", accountId: "a1",
+    action: "content.set", name: "site.groupName", summary: "entry " + i }));
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-log": () => ok({ ok: true, log: LOG_20 }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const list = byId.get("log-list");
+  check("exactly 20 entries: all render and no More button appears - " +
+    "there is nothing more to reveal",
+    list.children.filter((c) => c.className === "row wrap-row").length === 20 &&
+    !list.children.some((c) => c.tag === "button"));
+}
+
 /* -- Departed: three sections in order, the empty state, confirm IN     */
 /* PLACE, refusals rendered as the Worker states them, the re-read after */
 /* a result, 20-then-more, and no handle/no numeric id anywhere (#420;   */
@@ -3038,7 +3094,7 @@ check("no download/export id survives in the real shipped markup - the " +
 // gateAdminItem/paintBarSignOut arms, the rail-admin gate, the
 // Settings/Roles toast routing): 215 + 6 + 12 = 233. Merging both
 // disjoint additions over the same 215 base gives the real total below.
-const EXPECTED = 251;
+const EXPECTED = 256;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
