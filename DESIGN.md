@@ -830,6 +830,17 @@ section with each reason in plain words, and an allowed section naming
 the operator's-list entry to remove first — never a handle, never a
 numeric id. Erase confirms in place, the button becoming the real
 sentence and consequence (#454 item 9), and the result is a toast.
+**How much the route did not look at is part of its answer** (#454
+item 23; 0.9-M3-S38, #471): one request asks the bot about at most
+`DEPARTED_LIST_CAP` accounts, so `GET /admin-departed` sends that cap
+and the count of stale candidates behind it, both read in the one
+statement that builds the list, and the card's last line reads
+"Showing 43 (checked 50 of 120)" whenever the total is past the cap —
+the rows on the page, the accounts examined, the candidates there
+were. The first number is the card's own count of what it drew, since
+a candidate the bot calls a current member never becomes a row. A list
+that stopped short says so; without it, a short list and a complete one
+read the same and the "more" button cannot reach past the cap.
 
 **Content lives as one admin-owned config the pages read** (#385 rule
 9, "content-as-data"). Nothing here bypasses **Where configuration

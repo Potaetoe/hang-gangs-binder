@@ -252,12 +252,35 @@ function makeDb(seed) {
        served from the same two collections the sign-in path already
        fills, so an arm cannot accidentally check a row the Worker did
        not write. */
-    if (sql.startsWith("SELECT account_id, last_seen_at FROM directory")) {
-      const results = [...directory.values()]
-        .filter((row) => row.last_seen_at < args[0])
-        .sort((a, b) => (a.last_seen_at < b.last_seen_at ? -1 : 1))
+    /* The statement carries `COUNT(*) OVER ()` since 0.9-M3-S38 (#471):
+       the route sends the candidate count beside the capped list, and
+       the count is evaluated over every row the WHERE clause admits and
+       before LIMIT truncates. Modelled in that order, with the ORDER
+       BY's direction read out of the statement and the cap applied, so
+       this stub and tests/departed-cleanup.test.mjs's - the arm that
+       decides the counting rules - describe one statement rather than
+       two. This fixture holds a row or two, far under any cap, so the
+       truncation never bites here.
+
+       The direction is here for that agreement and not for an
+       assertion: no arm in this file reads the list's order. Modelling
+       it anyway is what keeps the two stubs from drifting into two
+       different statements, which is how the other one came to serve
+       a Worker an order it had never asked for. */
+    if (sql.startsWith("SELECT account_id, last_seen_at, " +
+        "COUNT(*) OVER () AS candidates FROM directory")) {
+      const limit = Number(/LIMIT (\d+)/.exec(sql)[1]);
+      const descending = /ORDER BY last_seen_at DESC/.test(sql);
+      const matching = [...directory.values()]
+        .filter((row) => row.last_seen_at < args[0]);
+      const results = matching
+        .slice()
+        .sort((a, b) => (descending ? -1 : 1) *
+          String(a.last_seen_at).localeCompare(b.last_seen_at))
+        .slice(0, limit)
         .map((row) => ({
           account_id: row.account_id, last_seen_at: row.last_seen_at,
+          candidates: matching.length,
         }));
       return { results: results };
     }
