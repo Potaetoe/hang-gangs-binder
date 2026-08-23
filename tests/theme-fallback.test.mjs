@@ -239,6 +239,43 @@ function pressedOnly(buttons, name) {
 }
 
 /* ------------------------------------------------------------------ */
+/* #456 F4, CARRIED TO 0.9-M3-S33 PART B: a stored "hgb-palette" value  */
+/* naming NO real palette - not "custom", not one of the four known      */
+/* names, a typo or a hand-edited value or a future name this build      */
+/* predates - must not paint verbatim either. Before this fix, theme-    */
+/* init.js's own guard excluded only the literal string "custom" and     */
+/* let everything else through unchecked, so an unknown value painted    */
+/* straight onto the page and then flashed to the real resting palette   */
+/* a moment later when theme.js's own already-validated read (the BG     */
+/* map check, this file's line ~110) corrected it - a dark-to-light or   */
+/* light-to-dark flash a member would see on every load until they       */
+/* picked a real palette. "banana" is the canary: a distinctive value    */
+/* nothing else in this repository uses as a real setting.                */
+
+{
+  const { documentElement, metas, buttons } =
+    await driven("banana", undefined, undefined);
+  check("a stored choice naming no real palette never reaches " +
+    "data-theme=\"banana\" - theme-init.js's pre-paint script paints " +
+    "the resting scheme palette instead of guessing at an unknown value",
+    documentElement.getAttribute("data-theme") === "daylight");
+  check("the browser-chrome meta color is painted too - an unknown " +
+    "stored value does not leave stale chrome behind",
+    metas[0].attrs.content !== undefined);
+  check("the resting palette's own chip - the one actually applied - " +
+    "is the one marked pressed, and only that one",
+    pressedOnly(buttons, "daylight"));
+}
+
+{
+  const { documentElement } = await driven("banana", undefined, true);
+  check("the same unknown value, under a phone that prefers dark, falls " +
+    "to the dark half of the same resting rule - proving the fallback " +
+    "reads the scheme rather than returning a fixed palette",
+    documentElement.getAttribute("data-theme") === "midnight");
+}
+
+/* ------------------------------------------------------------------ */
 /* THE REWRITTEN S12 ARM (0.9-M3-S12, #418, superseded by the owner's    */
 /* ruling in UX record #454 item 15; 0.9-M3-S32, #456). S12 pinned that  */
 /* a cached admin default PAINTS before first paint once learned - the   */
@@ -420,6 +457,32 @@ async function drivenNoPicker(storedPalette, defaultTheme, darkMatches) {
     "after it to correct a mistake: a stored \"custom\" choice paints " +
     "the resting scheme palette (light, with no matchMedia support to " +
     "report otherwise), never the literal string \"custom\"",
+    documentElement.getAttribute("data-theme") === "daylight");
+}
+
+/*
+ * #456 F4, CARRIED TO 0.9-M3-S33 PART B, isolated the same way - the
+ * combined driven() case above cannot by itself prove theme-init.js's
+ * OWN guard rejects an unknown value, since theme.js runs second and
+ * always overwrites data-theme with its own validated read regardless
+ * of what theme-init.js painted first. This block never imports
+ * theme.js, so nothing can correct a wrong first frame before this
+ * check reads it - the exact flash a member would otherwise see.
+ */
+{
+  const documentElement = documentElementStub();
+  const g = globalThis;
+  g.localStorage = storage({ "hgb-palette": "banana" });
+  g.window = {};
+  delete g.matchMedia;
+  g.document = { documentElement, querySelectorAll: () => [] };
+  await import("data:text/javascript," +
+    encodeURIComponent(themeInitSrc) + "#theme-init-alone-banana-" +
+    Math.random());
+  check("theme-init.js's OWN pre-paint guard, with nothing running " +
+    "after it to correct a mistake: a stored value naming no real " +
+    "palette paints the resting scheme palette, never the literal " +
+    "unknown string - this is the fix for #456 F4",
     documentElement.getAttribute("data-theme") === "daylight");
 }
 
