@@ -523,9 +523,14 @@
     const system = currentUnits();
 
     if (!entries.length) {
+      // #454 item 10 (owner ruling, 2026-08-22): "one friendly sentence
+      // and the next step" - a real button, not prose asking the member
+      // to scroll up and find the form themselves. #entry-section is
+      // the form's own card, above this one in the page's stack.
       container.appendChild(el("p", { class: "muted",
-        text: "Nothing recorded yet — fill in the form above and it " +
-          "starts here." }));
+        text: "No entries yet." }));
+      container.appendChild(el("a", { class: "primary",
+        href: "#entry-section", text: "Add your first one" }));
       return;
     }
 

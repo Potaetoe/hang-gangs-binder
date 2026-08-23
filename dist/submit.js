@@ -440,9 +440,14 @@
     const system = currentUnits();
 
     if (!entries.length) {
+       
+       
+       
+       
       container.appendChild(el("p", { class: "muted",
-        text: "Nothing recorded yet — fill in the form above and it " +
-          "starts here." }));
+        text: "No entries yet." }));
+      container.appendChild(el("a", { class: "primary",
+        href: "#entry-section", text: "Add your first one" }));
       return;
     }
 
