@@ -523,10 +523,11 @@
     const system = currentUnits();
 
     if (!entries.length) {
-      // #454 item 10 (owner ruling, 2026-08-22): "one friendly sentence
-      // and the next step" - a real button, not prose asking the member
-      // to scroll up and find the form themselves. #entry-section is
-      // the form's own card, above this one in the page's stack.
+      // #454 item 10 (owner ruling, 2026-08-22), DESIGN.md's own words:
+      // "An empty state is one friendly sentence and the next step" - a
+      // real button, not prose asking the member to scroll up and find
+      // the form themselves. #entry-section is the form's own card,
+      // above this one in the page's stack.
       container.appendChild(el("p", { class: "muted",
         text: "No entries yet." }));
       container.appendChild(el("a", { class: "primary",

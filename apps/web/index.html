@@ -65,8 +65,16 @@
 </p>
 
 <header class="stack-tight">
-  <p class="runner"><span>Members</span></p>
-  <h1>Sign in</h1>
+  <!-- The runner and the heading stay in the file - PAGE_HEADERS above
+       pins their words from the FILE, not from a browser - but paint
+       nothing at 375 px (#454 item 14, owner ruling 2026-08-22),
+       DESIGN.md's own words: "The door carries the group's name, the
+       admin's welcome sentence, and the Telegram sign-in button —
+       nothing else above the fold." The wordmark above this header
+       already names the site for a sighted visitor; a screen reader
+       still gets both the section name and the page's own <h1>. -->
+  <p class="runner sr-only"><span>Members</span></p>
+  <h1 class="sr-only">Sign in</h1>
   <!-- The first sentence anybody reads. It carries the two facts a
        reader needs - one sign-in, this tab only - as an invitation
        rather than as a notice. The pinned name is the heading above it;
@@ -128,13 +136,18 @@
   </p>
 
   <div class="card narrow">
-    <p class="runner"><span>Telegram</span></p>
-    <h2>Member sign-in</h2>
+    <!-- Same fold ruling as the masthead above (#454 item 14): the
+         card's own runner, heading and explanation are real content for
+         a screen reader, painting nothing for a sighted visitor at
+         375 px - only the sign-in button itself, right below, is meant
+         to be seen here. -->
+    <p class="runner sr-only"><span>Telegram</span></p>
+    <h2 class="sr-only">Member sign-in</h2>
     <!-- Which account, and how long the sign-in lasts. Both are things
          somebody has to act on, so the warmth here is one phrase and no
          more: a threshold is not the place to be charming at the
          expense of being followed. -->
-    <p>
+    <p class="sr-only">
       Use the Telegram account this group knows you by — the sign-in is
       kept only for this tab.
     </p>

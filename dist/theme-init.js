@@ -3,7 +3,7 @@
 (function () {
   "use strict";
 
-  var PALETTES = ["midnight", "pink", "daylight", "contrast"];
+  const PALETTES = ["midnight", "pink", "daylight", "contrast"];
 
   function schemeDefault() {
     return (window.matchMedia &&

@@ -706,9 +706,10 @@
   }
 
   /*
-   * #454 items 11-12 (owner ruling, 2026-08-22): "validation as the
-   * member leaves each field with a short note under it" - not on
-   * submit, not while typing. This is submit's own validateOne() call,
+   * #454 items 11-12 (owner ruling, 2026-08-22), DESIGN.md's own
+   * words: "A mistake is pointed out as the member leaves the field, in
+   * a short note under it — never on submit, never while typing." This
+   * is submit's own validateOne() call,
    * narrowed to one field, writing to the same slot showProblems()
    * writes to - a member who fixes a mistake and tabs on sees it clear
    * the same way a later submit would have cleared it, with no submit

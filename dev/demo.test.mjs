@@ -2152,7 +2152,14 @@ await check("the root sends a visitor to the sign-in page", async () => {
 await check("a bare directory is answered with the page a host serves there",
   async () => {
     const answer = await fetchText(MIRROR_PREFIX);
-    return answer.status === 200 && answer.body.includes("<h1>Sign in</h1>");
+    // <h1[^>]*> rather than the old literal <h1>: 0.9-M3-S33 part B
+    // (#457, #454 item 14) gives this heading a class attribute
+    // (sr-only, painting nothing at 375px so nothing but the door's
+    // three ruled things shows above the fold) - this check's own job
+    // is "is this genuinely the sign-in page", which the heading's own
+    // text still answers regardless of what attribute it carries.
+    return answer.status === 200 &&
+      /<h1[^>]*>Sign in<\/h1>/.test(answer.body);
   });
 
 await check("the mirror serves a page the demo has booted", async () => {
