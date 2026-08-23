@@ -79,6 +79,8 @@ tests/door.test.mjs
 tests/entry-rows.test.mjs
 tests/fields-overlay.test.mjs
 tests/fleet-status.test.mjs
+tests/gate-budget.test.mjs
+tests/gate-pool.test.mjs
 tests/member-page-imports.test.mjs
 tests/mockup-tokens.test.mjs
 tests/operations-bot-rotation.test.mjs

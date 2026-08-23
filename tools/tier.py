@@ -6,8 +6,15 @@
   sensitive  any path under server/, the page-side auth/session modules,
              deploy configuration (wrangler.toml, .github/workflows/),
              the deployed response-header layer (_headers: the noindex
-             and no-referrer posture), or crypto. One sensitive file
-             makes the whole slice sensitive.
+             and no-referrer posture), crypto, or (Prime's ruling on
+             #460, 2026-08-22, amending this list) tools/reaper.py or
+             tools/prime_lock.py by themselves - the reaper deletes
+             worktrees and branches, the lock gates Prime sessions, and
+             neither one is server/, auth, deploy configuration or
+             crypto, so the mechanical tier had no room for "this
+             program performs irreversible local deletes" until this
+             amendment. One sensitive file makes the whole slice
+             sensitive.
   trivial    every path is documentation, a test ARM (tests/*.test.mjs),
              or site configuration text (apps/web/site.config.js and its
              dist mirror). Nothing else. The 0.9 gate's own machinery -
@@ -46,6 +53,7 @@ was judged as. Exit 0 always (this is a reading, not a gate); a gate
 that wants to refuse reads the first line - `ship_check.py`'s own
 `stage_tier()` is that gate for this repository.
 """
+import posixpath
 import re
 import sys
 
@@ -59,6 +67,16 @@ SENSITIVE = [
     (re.compile(r"^\.github/workflows/"), "CI/deploy workflow"),
     (re.compile(r"store-crypto|crypto\.js$"), "crypto"),
     (re.compile(r"(^|/)_headers$"), "deployed response headers"),
+    # F4, Prime's ruling on #460 (2026-08-22), amending #402's tier-by-
+    # file rule for these two files ONLY - not everything under tools/:
+    # tools/reaper.py deletes worktrees and branches, tools/prime_lock.py
+    # gates Prime sessions, and 0.9-M3-S35's own review found the
+    # mechanical tier had no room for "this program performs irreversible
+    # local deletes" (F4, review comment 5379811881) - Prime raised the
+    # bar by hand for that slice; this makes the bar mechanical instead.
+    (re.compile(r"^tools/reaper\.py$"),
+     "the reaper (deletes worktrees and branches)"),
+    (re.compile(r"^tools/prime_lock\.py$"), "the Prime session lock"),
 ]
 TRIVIAL = [
     (re.compile(r"\.md$"), "documentation"),
@@ -77,11 +95,45 @@ TRIVIAL = [
 ]
 
 
+def normalize_path(path):
+    """Repo-relative path normal form for judge()'s own matching (re-fire
+    #2, #460, finding F7, Prime's ruling 2026-08-22).
+
+    Fix wave 2 (re-fire #1, finding F4) stripped a leading "./" in a
+    loop, after a backslash-to-forward-slash replace - which fixed the
+    ONE spelling the review's probe demonstrated ("./tools/reaper.py")
+    but is not a real path normalizer, so re-fire #2 found neighbors it
+    still missed: a doubled slash ("tools//reaper.py") and a "../"
+    detour ("a/../tools/reaper.py") both tiered normal, because neither
+    is a leading "./" and the old loop only ever looked at the front of
+    the string.
+
+    The fix is a real normalizer, not a third hand-rolled string trick:
+    backslashes to forward slashes, then `posixpath.normpath`, which
+    collapses doubled slashes, resolves "." and ".." segments, and
+    strips a leading "./" as a side effect of doing all three uniformly
+    - "./tools/reaper.py", "tools//reaper.py", "a/../tools/reaper.py"
+    and "tools\\reaper.py" (once backslash-replaced) all normalize to
+    the bare "tools/reaper.py" the anchored SENSITIVE rows already
+    match. A leading "/" is stripped afterward too (`normpath` leaves an
+    absolute path absolute): this repository's declared paths are
+    always repo-relative, and a caller who typed a leading slash by
+    accident should still match the row the bare spelling matches, the
+    same generosity the anchored rows already extend to a leading "./"."""
+    p = path.strip().replace("\\", "/")
+    if not p:
+        return ""
+    p = posixpath.normpath(p)
+    while p.startswith("/"):
+        p = p[1:]
+    return p
+
+
 def judge(path):
     """(tier, why) for one repo-relative path - "sensitive", "trivial"
     or "normal", never None for a non-empty path (the fallback IS
     "normal", per the ruling's "everything in between")."""
-    p = path.strip().replace("\\", "/")
+    p = normalize_path(path)
     if not p:
         return None, ""
     for rx, why in SENSITIVE:

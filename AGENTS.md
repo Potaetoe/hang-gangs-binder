@@ -58,7 +58,11 @@ brief that names one is quoting them.
 ruling 2026-08-21, the M3 delivery shape, #402). A slice is
 **sensitive** if any declared file is under `server/`, is an
 auth/session module, is deploy configuration (`wrangler.toml`,
-`.github/workflows/`, the deployed `_headers` layer) or crypto;
+`.github/workflows/`, the deployed `_headers` layer), crypto, or (Prime's
+ruling on #460, 2026-08-22, amending this list) `tools/reaper.py` or
+`tools/prime_lock.py` by themselves — the reaper deletes worktrees and
+branches, the lock gates Prime sessions, and neither file matched any
+existing sensitive pattern before this;
 **trivial** if every declared file is documentation, a test ARM
 (`tests/*.test.mjs`), or site-configuration text; **normal**
 otherwise — including the 0.9 gate's own runner, preflight and
@@ -340,6 +344,54 @@ guards, never as the pattern for a new one.
   (`.github/workflows/deploy.yml`, step "Run the 0.9 gate"), so it is
   registered exactly where its apparatus registers checks — nothing
   here is the registration-suspended exception it once was.
+- **The gate runs its arms through a pool, and reds its own slowness —
+  in CI only** (0.9-M3-S35, #460, sharpened at re-fire #2, Prime's
+  ruling 2026-08-22, "the class is closed whole this time: no pass/fail
+  decision in this apparatus may depend on real wall-clock timing of a
+  contended machine, one exception only"): arms run concurrently, a
+  worker pool sized to a fixed default width, **never the CPU count**
+  (fix wave 4, re-fire #3 finding F1: on the reviewer's 12-core machine,
+  a pool sized to the CPU count exhausted the machine's own memory
+  commit under ordinary fleet load — 10 of 15 full-gate runs at that
+  width went red from node processes and `git` spawns dying, never from
+  the arms' own logic, while the identical head was green and just as
+  fast at the narrower default) — `tests/run.mjs`'s own header names the
+  default and the environment variable that overrides it, rather than a
+  second copy of either living here to drift from it — printed in the
+  same fixed roster order regardless of which one finishes first —
+  `tests/gate-pool.mjs` carries that ordering
+  guarantee, proven DETERMINISTICALLY in `tests/gate-pool.test.mjs`
+  (hand-resolved promises and observed start order, never a real
+  elapsed time compared against a threshold — a real-timer version of
+  its own "pool of size N overlaps N tasks" check reded 1 run in 8 under
+  synthetic load before re-fire #2 replaced it). The runner prints the
+  whole run's wall time and the three slowest arms, and a run over 300s
+  (the same file names the override for this figure too, with a reason
+  for raising it) prints ADVISORY OVER BUDGET everywhere except CI:
+  `BINDER_GATE_ENFORCE_BUDGET=1` — set only by
+  `.github/workflows/deploy.yml` — is what turns the identical line into
+  a red, because "this specific machine, right now, was slow" is not a
+  fact a local run should fail a build over. The gate is expected under
+  five minutes; a run that routinely misses that on an otherwise-idle
+  machine is a slice worth cutting the way 0.9-M3-S35 cut
+  `tests/reaper.test.mjs`, not a budget worth silently raising.
+  **A single arm that never finishes is a separate failure from a slow
+  one** (0.9-M3-S35 fix wave 1, #460, F3): the whole-run budget above
+  only fires after every arm has already returned, so a hung arm — a
+  deadlock, a wedged subprocess — used to hang the gate forever with no
+  budget line ever printed. Each arm now carries its own timeout
+  (`tests/run.mjs`'s own header names the environment variable that
+  overrides it, the same one-home-per-fact rule as the pool and budget
+  levers above) — a HANG guard, not a slowness ceiling, so its default is
+  large on purpose; past it, the arm's whole process tree is killed and
+  the gate reds by the arm's name and the timeout in seconds, rather
+  than waiting on it. **`tests/preflight.mjs` is explicitly exempt from
+  this timeout** (re-fire #2, F1/F3): it used to run through the same
+  timeout as an arm, and under load it was the one getting killed
+  instead of a genuinely hung arm, which graded a scenario that never
+  ran what it claimed to — preflight is a handful of fast, local checks,
+  not a suite that can spawn arbitrary long work, so a hang there is an
+  environment problem this gate does not try to solve by killing it.
 - **A sensitive slice's fix wave is re-fired by an agent who did not
   author the fix, before any landing order issues** (owner ruling A1,
   audit finding F1, 2026-08-14; narrowed to the sensitive tier by

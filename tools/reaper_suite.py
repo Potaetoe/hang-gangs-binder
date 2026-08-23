@@ -94,8 +94,19 @@ performed = 0
 # nothing compares against still prints a confident pass when a check
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
-# no check at all.
-EXPECTED = 221
+# no check at all. 221 before 0.9-M3-S35 (#460); the four added there
+# prove the mainline-resolution cache in tools/reaper.py never survives
+# past the plan() call that made it. F2 fix wave 1 (#460, review comment
+# 5379811881) added three more: the original four could not tell a
+# per-call cache from a permanent one (they moved a mainline's TIP,
+# which ancestry() always resolves live regardless of caching), so this
+# wave adds the scenario that actually can - a mainline CREATED between
+# two calls - proven both at head (correct) and under a simulated
+# permanent module-level cache (wrong, but still safe: see the check
+# text). 221, then 225, then 228 - the suite's own count is not
+# permitted to drop, only to grow, and this is the direction it kept
+# moving.
+EXPECTED = 228
 
 
 def check(label, condition):
@@ -402,6 +413,47 @@ def steps(item):
     return item["plan"] if item else []
 
 
+def retire(wt, branch=None):
+    """Remove a worktree fixture, and its branch, once its own checks
+    are done.
+
+    0.9-M3-S35 (#460): every later `reaper.plan()` and `run_reaper()`
+    call re-enumerates every REGISTERED worktree AND every local branch
+    `branch_items()` does not otherwise skip, spending a proof's worth
+    of git spawns on each one - so a fixture left standing after its
+    own assertions finish is not merely idle, it is a toll every
+    remaining section of this suite pays, once each, for the rest of
+    the run. Left unretired, this is how the suite grows quadratically
+    with its own fixture count rather than linearly with its own check
+    count.
+
+    BOTH halves matter, measured the hard way: retiring only the
+    worktree (BLOCKER 3's original shape, kept as `branch=None` below
+    for the six fixtures that pass their own branch straight through
+    `--act`'s own delete) still left this file's busiest section at
+    29.5s, because a retired worktree's own record stops licensing its
+    branch's protection - `spoken_for` and the live-record set in
+    tools/reaper.py both key off a worktree that still exists in some
+    form - so the branch becomes an ordinary loose ref, and every
+    section after it now pays branch_items()'s ancestry proof for that
+    ref too. A dozen such orphans, each read by a dozen remaining
+    sections, is its own quadratic term hiding behind the first one.
+    Passing `branch` here closes it: `git branch -D` because several of
+    these fixtures earned their checks by carrying unmerged or
+    off-mainline work on purpose, which a plain `-d` would refuse.
+
+    `--force` on the worktree removal because the mutation a fixture
+    ran to earn its checks often left it dirty, detached, or off its
+    recorded HEAD on purpose. Every branch name this suite invents is
+    unique, so a `-D` here never reaches for a name any later fixture
+    still wants.
+    """
+    if os.path.isdir(wt):
+        git(primary, "worktree", "remove", "--force", wt)
+    if branch:
+        git(primary, "branch", "-D", branch)
+
+
 # ----------------------------------------------------------------------
 
 parent = tempfile.gettempdir()
@@ -582,6 +634,10 @@ try:
     check("park succeeds over it rather than refusing an uncommitted "
           "path",
           code == 0)
+    # Nothing below reads `nondir` again - retiring it here (0.9-M3-S35,
+    # #460) keeps it, and its branch, off every later plan's
+    # enumeration.
+    retire(nondir, "slice-nondir-nodemodules")
 
     print("\n--- the plan survives one candidate it cannot walk ---")
 
@@ -638,6 +694,17 @@ try:
           os.path.isdir(relocated))
     check("the neighbor IS reaped in the same act",
           not os.path.exists(neighbor))
+    # `selflinked` (registered at a path that is now ITSELF a junction
+    # to `relocated`) is deliberately NOT retired by 0.9-M3-S35's
+    # fixture-retirement pass (#460): the field note this suite exists
+    # to keep true is that `git worktree remove --force` follows a
+    # junction inside a worktree and deletes what it points at, and
+    # `relocated` holds this fixture's own live worktree data at a path
+    # that IS the worktree's registration - retiring it through the
+    # same call every other fixture uses would be exercising that exact
+    # hazard against a real directory rather than reading about it. One
+    # lingering worktree candidate is a bounded, known cost paid by
+    # every remaining section, not a growing one.
 
     print("\n--- the live worktree is never touched ---")
 
@@ -682,6 +749,9 @@ try:
     code, said = run_reaper(["--act", "--repo", primary, "--state", state,
                              "--roots", os.pathsep.join(roots)])
     check("that branch survives an act", "b-livework" in branches(primary))
+    # Not read again - dropped here (0.9-M3-S35, #460) so `for-each-ref`
+    # has one fewer loose branch to hand to every later branch_items().
+    git(primary, "branch", "-D", "b-livework")
 
     print("\n--- a parked record under a held lease is refused ---")
 
@@ -706,6 +776,10 @@ try:
                 leased)
     check("dropping the lease makes it reapable again",
           verdict(item) == "reap")
+    # Reapable is the claim, not an act this arm needs to perform to
+    # prove it - retiring here (0.9-M3-S35, #460) is cheaper than an
+    # extra `--act` round trip and keeps `leased` off every later plan.
+    retire(leased, "slice-leased")
 
     print("\n--- the unprovable cases are reported, never deleted ---")
 
@@ -768,6 +842,20 @@ try:
           "slice-unlanded" in branches(primary))
     check("nothing unprovable was deleted", "deleted" not in reason(
         find(reaper.plan(primary, state, roots), "parked worktree", dirty)))
+    # None of these five is read again - retiring them here (0.9-M3-S35,
+    # #460) is what keeps their unprovable-forever state, and their
+    # branches, from being re-proved by every remaining section.
+    # `locked` needs unlocking first, the same as the wt-race-lock
+    # fixture below does. `-D` on `slice-unlanded` is a plain fixture
+    # teardown, not the reaper's own delete_branch - the branch
+    # genuinely carries unmerged work on purpose (that is what this
+    # fixture proved), and this suite is done with it now.
+    git(primary, "worktree", "unlock", locked)
+    for path, name in ((dirty, "slice-dirty"), (moved, "slice-moved"),
+                       (slipped, "slice-slipped"),
+                       (unlanded, "slice-unlanded"),
+                       (locked, "slice-locked")):
+        retire(path, name)
 
     print("\n--- containment at worktree size ---")
 
@@ -799,6 +887,10 @@ try:
                              "--roots", os.pathsep.join(roots)])
     check("the outside worktree survives an act", os.path.isdir(outside))
     check("the prefix-sibling survives an act", os.path.isdir(sibling))
+    # Neither is read again - retired here (0.9-M3-S35, #460) for the
+    # same reason as the block above.
+    retire(outside, "slice-outside")
+    retire(sibling, "slice-sibling")
 
     print("\n--- the prune class: a registered worktree with no directory "
           "---")
@@ -883,6 +975,11 @@ try:
     check("main survives", "main" in now_there)
     check("the act named an ancestry proof for every branch it deleted",
           said.count("ancestor of") >= 3)
+    # Neither survivor is read again - dropped here (0.9-M3-S35, #460)
+    # so every remaining section's branch_items() has two fewer ancestry
+    # proofs to spend a git spawn on.
+    git(primary, "branch", "-D", "worktree-agent-unmerged")
+    git(primary, "branch", "-D", "0.9-m0-s2")
 
     print("\n--- the harness branch of a live worktree is left alone "
           "(0.9-M3-S21, #431) ---")
@@ -1100,6 +1197,18 @@ try:
     check("both harness branches survive being acted on directly",
           "worktree-agent-harnesslive" in branches(primary)
           and "worktree-agent-harnessnorecord" in branches(primary))
+    # Nothing below reads either worktree or either harness branch
+    # again. Retiring the worktrees (0.9-M3-S35, #460) drops the
+    # registration that was `worktree-agent-harnessnorecord`'s only
+    # protection and `worktree-agent-harnesslive`'s only protection too
+    # (the live record here names `slice-harnesslive`, the branch this
+    # worktree switched TO, not its original harness branch) - so both
+    # harness branches are taken with their worktrees, and
+    # `slice-harnesslive` goes with them rather than being left as a
+    # newly-orphaned, still-live-recorded loose ref.
+    retire(harness_live, "slice-harnesslive")
+    git(primary, "branch", "-D", "worktree-agent-harnesslive")
+    retire(harness_norecord, "worktree-agent-harnessnorecord")
 
     said_parked = reaper.act(primary, orphaned_debris, state, roots)
     check("the orphaned parked-record's harness branch IS deleted, with "
@@ -1146,6 +1255,9 @@ try:
           any("live harness ref" in line for line in said_actgap))
     check("THE RACED HARNESS BRANCH SURVIVES THE ACT",
           "worktree-agent-actgap" in branches(primary))
+    # Not read again - dropped here (0.9-M3-S35, #460), same reasoning
+    # as the branch classes section above.
+    git(primary, "branch", "-D", "worktree-agent-actgap")
 
     print("\n--- no branch is deleted without the proof in the output ---")
 
@@ -1342,6 +1454,10 @@ try:
     check("it is reapable again once merge-base answers",
           verdict(find(reaper.plan(primary, state, roots),
                        "parked worktree", survivor)) == "reap")
+    # Nothing below this line reads `survivor` again - retired here
+    # (0.9-M3-S35, #460) rather than left to be re-proved reapable, and
+    # its branch re-proved unmerged-or-not, by every remaining section.
+    retire(survivor, "slice-timeout")
 
     print("\n--- --report is a real flag, not only the shape typing "
           "nothing gets you ---")
@@ -1433,6 +1549,9 @@ try:
           sha(primary, "b-race-merged") == raced_b)
     check("AND COMMIT B IS STILL A REACHABLE OBJECT",
           git(primary, "cat-file", "-e", raced_b)[0] == 0)
+    # Not read again - dropped here (0.9-M3-S35, #460); `-D` because it
+    # genuinely carries the unmerged commit this fixture proved survives.
+    git(primary, "branch", "-D", "b-race-merged")
 
     print("\n--- BLOCKER 3: every parked-worktree licensing proof is "
           "re-established at act time ---")
@@ -1456,16 +1575,9 @@ try:
     def reported(said):
         return any(line.startswith("REPORTED") for line in said)
 
-    def retire(wt):
-        # Each survival is asserted before this runs, so the fixture has
-        # done its job; retiring it keeps it out of every later plan's
-        # enumeration. The enumeration is one git spawn per registered
-        # worktree, so an accumulating fixture makes the whole suite grow
-        # quadratically - measured on Windows, where a git spawn is the
-        # dominant cost. `--force` because the mutation left the tree
-        # dirty or off its recorded HEAD on purpose.
-        if os.path.isdir(wt):
-            git(primary, "worktree", "remove", "--force", wt)
+    # retire() itself is now a top-level helper (0.9-M3-S35, #460) - this
+    # section is where the lesson it carries was first learned, not
+    # where it lives any more.
 
     # A lease taken after the plan.
     wt, it = fresh_parked("wt-race-lease", "slice-race-lease")
@@ -1485,7 +1597,7 @@ try:
     # reaches the arms below.
     if os.path.isfile(lease_race):
         os.remove(lease_race)
-    retire(wt)
+    retire(wt, "slice-race-lease")
 
     # A git worktree lock set after the plan.
     wt, it = fresh_parked("wt-race-lock", "slice-race-lock")
@@ -1496,7 +1608,7 @@ try:
           any("lock" in line for line in said))
     check("the raced-lock worktree survives", os.path.isdir(wt))
     git(primary, "worktree", "unlock", wt)
-    retire(wt)
+    retire(wt, "slice-race-lock")
 
     # HEAD moved off the certificate's recorded SHA after the plan.
     wt, it = fresh_parked("wt-race-head", "slice-race-head")
@@ -1506,7 +1618,7 @@ try:
     check("the refusal names HEAD",
           any("HEAD" in line for line in said))
     check("the raced-head worktree survives", os.path.isdir(wt))
-    retire(wt)
+    retire(wt, "slice-race-head")
 
     # An untracked file written into the worktree after the plan.
     wt, it = fresh_parked("wt-race-dirty", "slice-race-dirty")
@@ -1519,7 +1631,7 @@ try:
           any("raced-unsaved.txt" in line for line in said))
     check("the raced-dirty worktree keeps its unsaved work",
           os.path.isfile(os.path.join(wt, "raced-unsaved.txt")))
-    retire(wt)
+    retire(wt, "slice-race-dirty")
 
     # The worktree's own branch advanced onto unmerged work after the
     # plan - BLOCKER 2's tip check reached as one of BLOCKER 3's proof
@@ -1543,7 +1655,7 @@ try:
           sha(primary, "slice-race-tip") == tip_b)
     check("and the unmerged commit survives as a reachable object",
           git(primary, "cat-file", "-e", tip_b)[0] == 0)
-    retire(wt)
+    retire(wt, "slice-race-tip")
 
     # Registration withdrawn after the plan: the worktree is moved out
     # from under git so it is no longer a linked worktree of this
@@ -1557,6 +1669,11 @@ try:
     said = reaper.act(primary, it, state, roots)
     check("a worktree git no longer registers is refused, not deleted",
           reported(said))
+    # The worktree removal above already left `slice-race-unreg`
+    # orphaned the same way retiring any other fixture here does -
+    # dropped explicitly (0.9-M3-S35, #460) so MAJOR 1 below does not
+    # pay to re-prove it every time it plans.
+    git(primary, "branch", "-D", "slice-race-unreg")
 
     print("\n--- MAJOR 1: a registration that survives the prune is an "
           "incomplete reap, not a success ---")
@@ -1615,6 +1732,177 @@ try:
               os.path.isfile(lease_survive))
     finally:
         reaper.worktree_table = honest_tbl
+
+    print("\n--- 0.9-M3-S35 (#460): a mainline resolved for one plan() "
+          "call is never carried into the next ---")
+
+    # A throwaway repo, isolated from the shared `primary` above so this
+    # can move `accounts` ITSELF without disturbing any assumption a
+    # later section of this suite makes about the shared machine's
+    # mainline tip. reaper.plan()'s mainline resolution is now cached
+    # for the DURATION of one call (resolved_mainlines(), tools/
+    # reaper.py) rather than asked fresh per candidate.
+    #
+    # F2 fix wave 1 (#460, review comment 5379811881): this scenario -
+    # `accounts` already exists and only its TIP moves between the two
+    # calls - passes IDENTICALLY under a real per-call cache and under a
+    # PERMANENT one, because ancestry() hands git the mainline's LABEL,
+    # not the sha `resolved` cached beside it, and git re-resolves a
+    # label to its current tip on every call regardless of when
+    # `resolved_mainlines()` itself last ran (see ancestry()'s own
+    # docstring). It is kept below because it is still a real, true
+    # property - a moved tip is always caught - but it does NOT prove
+    # the cache is per-call. The section further down, "the SET OF
+    # MAINLINES a call can see", is the one built to actually
+    # distinguish the two.
+    cache_root = os.path.join(root, "mainline-cache-check")
+    os.makedirs(cache_root)
+    git(cache_root, "init", "-b", "accounts")
+    write(os.path.join(cache_root, "one.txt"), "one\n")
+    git(cache_root, "add", "-A")
+    git(cache_root, "commit", "-m", "first")
+    cache_first = sha(cache_root, "HEAD")
+
+    git(cache_root, "branch", "not-yet-landed", cache_first)
+    git(cache_root, "checkout", "not-yet-landed")
+    write(os.path.join(cache_root, "two.txt"), "two\n")
+    git(cache_root, "add", "-A")
+    git(cache_root, "commit", "-m", "unlanded work")
+    unlanded_tip = sha(cache_root, "not-yet-landed")
+    git(cache_root, "checkout", "accounts")
+
+    cache_state = os.path.join(cache_root, "state-unused")
+    cache_roots = [os.path.join(cache_root, "no-worktrees-here")]
+
+    before = find(reaper.plan(cache_root, cache_state, cache_roots),
+                 "merged branch", "not-yet-landed")
+    check("before accounts moves, the unlanded branch is reported, not "
+          "reaped", before is not None and verdict(before) == "report")
+    check("the refusal says it carries work that has not landed",
+          before is not None and "has not landed" in reason(before))
+
+    # Fast-forward `accounts` itself onto the branch's own tip - the one
+    # mutation this program never performs on its own, and the one this
+    # check exists to simulate: another process landing a PR between two
+    # separate calls into this file. `git branch -f` refuses to move a
+    # branch this checkout still has checked out, so HEAD is detached
+    # first - a real landing moves `accounts` from a DIFFERENT clone,
+    # never from under its own checkout either.
+    git(cache_root, "checkout", "--detach", "accounts")
+    git(cache_root, "branch", "-f", "accounts", unlanded_tip)
+
+    after = find(reaper.plan(cache_root, cache_state, cache_roots),
+                "merged branch", "not-yet-landed")
+    check("A FRESH plan() call resolves accounts again and sees the "
+          "moved tip: the same branch is now reap-eligible",
+          after is not None and verdict(after) == "reap")
+    check("its proof cites the NEW tip, not a resolution carried over "
+          "from the call before",
+          after is not None
+          and any("is an ancestor of accounts" in proof.said
+                  for proof in after["proofs"]))
+
+    print("\n--- F2 fix wave 1 (#460, review comment 5379811881): "
+          "the SET OF MAINLINES a call can see is what makes the cache "
+          "per-call, not the tip of one that already existed ---")
+
+    # The scenario above cannot tell a per-call cache from a permanent
+    # one, because `accounts` exists at BOTH calls and ancestry() asks
+    # git about it live either way (see resolved_mainlines()'s own
+    # docstring, amended in this fix wave). What a permanent cache WOULD
+    # get wrong is a mainline that does not exist yet at the first call -
+    # its label is simply absent from `resolved`, so ancestry() never
+    # even tries it, no matter how fresh a SECOND call's own `resolved`
+    # would have been. This reproduces the reviewer's own probe-verified
+    # scenario: start with NO `accounts` branch at all, prove the branch
+    # is reported, THEN create `accounts` for the first time at the
+    # branch's own tip (a landing that makes this branch the new
+    # accounts, the simplest way a mainline someone is watching becomes
+    # ancestor-eligible), and prove a fresh call reaps it.
+    scope_count = [0]
+
+    def mainline_creation_scenario():
+        """(verdict before accounts exists, verdict after it is created)
+        for a branch merged into a mainline that did not exist at the
+        first plan() call - the property a PERMANENT cache cannot see,
+        because its first call's resolution never had that label to
+        offer a later ancestry test."""
+        scope_root = os.path.join(root, "mainline-scope-check-%d"
+                                  % scope_count[0])
+        scope_count[0] += 1
+        os.makedirs(scope_root)
+        git(scope_root, "init", "-b", "main")
+        write(os.path.join(scope_root, "one.txt"), "one\n")
+        git(scope_root, "add", "-A")
+        git(scope_root, "commit", "-m", "first")
+
+        git(scope_root, "checkout", "-b", "not-yet-landed")
+        write(os.path.join(scope_root, "two.txt"), "two\n")
+        git(scope_root, "add", "-A")
+        git(scope_root, "commit", "-m", "unlanded work")
+        tip = sha(scope_root, "not-yet-landed")
+        git(scope_root, "checkout", "main")
+
+        scope_state = os.path.join(scope_root, "state-unused")
+        scope_roots = [os.path.join(scope_root, "no-worktrees-here")]
+
+        before_item = find(reaper.plan(scope_root, scope_state,
+                                       scope_roots),
+                          "merged branch", "not-yet-landed")
+
+        # `accounts` is created here for the FIRST TIME, at the branch's
+        # own tip - there was no "accounts" entry for a permanent cache
+        # to have carried forward from the first call, because there was
+        # no "accounts" at all when that call ran.
+        git(scope_root, "branch", "accounts", tip)
+
+        after_item = find(reaper.plan(scope_root, scope_state,
+                                      scope_roots),
+                         "merged branch", "not-yet-landed")
+        return verdict(before_item), verdict(after_item)
+
+    before_live, after_live = mainline_creation_scenario()
+    check("AT HEAD (real per-call resolution): before accounts exists "
+          "at all, the branch is reported, not reaped",
+          before_live == "report")
+    check("AT HEAD: a FRESH plan() call resolves mainlines again and "
+          "sees the brand-new accounts branch - the same branch is now "
+          "reap-eligible", after_live == "reap")
+
+    # The differential half. `reaper.resolved_mainlines` is replaced with
+    # a PERMANENT, process-lifetime memo keyed by repo path - exactly the
+    # module-level cache Prime's ruling forbids ("never cached across
+    # calls or processes... no module-level state") - and the SAME
+    # scenario is run again. A real per-call cache and this mutation must
+    # now disagree, or this arm proves nothing about which one shipped.
+    real_resolved_mainlines = reaper.resolved_mainlines
+    permanent_memo = {}
+
+    def permanently_cached(repo):
+        if repo not in permanent_memo:
+            permanent_memo[repo] = real_resolved_mainlines(repo)
+        return permanent_memo[repo]
+
+    reaper.resolved_mainlines = permanently_cached
+    try:
+        before_mutated, after_mutated = mainline_creation_scenario()
+    finally:
+        reaper.resolved_mainlines = real_resolved_mainlines
+
+    check("MUTATION: under a PERMANENT module-level cache, the first "
+          "call's resolution (no accounts label at all) is frozen and "
+          "reused - the newly created accounts branch stays invisible "
+          "to the second call, so the branch is reported forever, never "
+          "reaped, which is WRONG (it should be reap-eligible the "
+          "moment accounts exists) but SAFE (report is the direction "
+          "that never deletes anything - 'stale never reaps' holds "
+          "either way)",
+          before_mutated == "report" and after_mutated == "report")
+    print("    at head (per-call, correct):        before=%s after=%s"
+          % (before_live, after_live))
+    print("    under a permanent module-level cache (the regression "
+          "this arm exists to catch): before=%s after=%s"
+          % (before_mutated, after_mutated))
 
 finally:
     agent_init.rmtree_hard(root)
