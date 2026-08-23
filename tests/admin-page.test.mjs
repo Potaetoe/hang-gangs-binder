@@ -103,6 +103,38 @@ check("the idle timer's own markup survives - it is not part of the " +
   "page",
   adminHtml.includes('id="idle-warning"'));
 
+/*
+ * The voice audit (#454 item 7, owner ruling 2026-08-22), DESIGN.md's
+ * own words: "The voice is plain and warm ... never jargon." Six
+ * generic network-failure fallbacks on this page all read "That could
+ * not be sent."/"That could not be removed." - passive, and out of
+ * step with the warmer "Nothing was sent - reload and try again."/
+ * "Nothing was stored - try again." shape apps/web/form.js already
+ * uses for the identical situation (a write whose request never
+ * reached the Worker at all). A source-text check rather than a
+ * simulated network failure per call site: nothing here was tested for
+ * its EXACT wording before this slice (five of six had no check at
+ * all), so this proves the words landed everywhere the audit found
+ * them, in both apps/web and dist, without inventing six new
+ * fetch-throws harnesses for a wording-only change.
+ */
+check("no \"That could not be sent.\" survives in apps/web/admin.js - " +
+  "reworded to match form.js's own \"Nothing was ... - try again.\" " +
+  "voice",
+  !adminJs.includes("That could not be sent."));
+check("...nor \"That could not be removed.\"",
+  !adminJs.includes("That could not be removed."));
+check("the reworded text is there instead, at all six call sites (four " +
+  "\"Nothing was sent\", two \"Nothing was removed\")",
+  (adminJs.match(/Nothing was sent — try again\./g) || []).length === 4 &&
+  (adminJs.match(/Nothing was removed — try again\./g) || []).length === 2);
+check("dist/admin.js carries the same reworded strings - a build, not a " +
+  "hand edit only one copy ever sees",
+  !distJs.includes("That could not be sent.") &&
+  !distJs.includes("That could not be removed.") &&
+  (distJs.match(/Nothing was sent — try again\./g) || []).length === 4 &&
+  (distJs.match(/Nothing was removed — try again\./g) || []).length === 2);
+
 check("the keyfile tool's own words are gone from the page",
   !/Fetch and decrypt/.test(adminHtml) &&
   !/Private key/.test(adminHtml) &&
@@ -3094,7 +3126,7 @@ check("no download/export id survives in the real shipped markup - the " +
 // gateAdminItem/paintBarSignOut arms, the rail-admin gate, the
 // Settings/Roles toast routing): 215 + 6 + 12 = 233. Merging both
 // disjoint additions over the same 215 base gives the real total below.
-const EXPECTED = 256;
+const EXPECTED = 260;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

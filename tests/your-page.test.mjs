@@ -1024,9 +1024,11 @@ await findTag(refusedCell, "button").dispatch("click");
 const refusedButtons = refusedCell.children[1];
 await refusedButtons.children[0].dispatch("click"); // "Yes, delete"
 check("a delete refused with a non-2xx status toasts the retry message, " +
-  "not a silent success (#454 item 8)",
+  "not a silent success (#454 item 8) - reworded to \"Nothing was " +
+  "removed\" (item 7's voice audit, matching form.js's own \"Nothing " +
+  "was sent/stored\" shape for the identical situation)",
   deleteRefused.toastCalls.length === 1 &&
-  deleteRefused.toastCalls[0] === "That entry could not be removed — try again.");
+  deleteRefused.toastCalls[0] === "Nothing was removed — try again.");
 check("and the confirm step reverts to the plain Delete button rather " +
   "than staying armed on a failure",
   refusedCell.children.length === 1 &&
