@@ -973,7 +973,11 @@
           button.disabled = false;
           detail(why(error));
           saySettings("", null);
-          showToast("That could not be sent.");
+          // #454 item 7 (owner ruling 2026-08-22), DESIGN.md's own
+          // words: "The voice is plain and warm" - matches form.js's
+          // own "Nothing was sent" for the identical situation (a write
+          // that never reached the Worker at all).
+          showToast("Nothing was sent — try again.");
           return;
         }
         button.disabled = false;
@@ -1164,7 +1168,10 @@
         $("member-add").disabled = false;
         detail(why(error));
         sayRoles("", null);
-        showToast("That could not be sent.");
+        // #454 item 7, DESIGN.md's own words: "The voice is plain and
+        // warm" - see the Settings save catch above for the full
+        // reasoning; same situation, same reworded text.
+        showToast("Nothing was sent — try again.");
         return;
       }
 
@@ -1204,7 +1211,10 @@
         button.disabled = false;
         detail(why(error));
         sayRoles("", null);
-        showToast("That could not be removed.");
+        // #454 item 7, DESIGN.md's own words: "The voice is plain and
+        // warm" - matches form.js's own "Nothing was stored" for the
+        // same never-reached-the-Worker situation.
+        showToast("Nothing was removed — try again.");
         return;
       }
 
@@ -1358,7 +1368,12 @@
         response = await request();
       } catch (error) {
         detail(why(error));
-        sayFields("That could not be sent.", "bad");
+        // #454 item 7, DESIGN.md's own words: "The voice is plain and
+        // warm" - matches form.js's own "Nothing was sent" for the
+        // same never-reached-the-Worker situation. This one stays
+        // inline (sayFields), not a toast - the Fields card's own
+        // refusal shape, untouched by this slice.
+        sayFields("Nothing was sent — try again.", "bad");
         return false;
       }
       if (sessionRefused(response, sayFields)) return false;
@@ -2107,13 +2122,19 @@
           { method: "DELETE", headers: root.BinderSession.authorization() });
       } catch (error) {
         detail(why(error));
-        showToast("That could not be sent.");
+        // #454 item 7, DESIGN.md's own words: "The voice is plain and
+        // warm" - matches form.js's own "Nothing was sent" for the
+        // same never-reached-the-Worker situation.
+        showToast("Nothing was sent — try again.");
         return;
       }
       if (sessionRefused(response, showToast)) return;
       const payload = await refusalBody(response);
+      // The Worker's own reason wins when it sent one; the fallback
+      // below is reworded the same way as every other generic-catch
+      // fallback on this page (#454 item 7).
       showToast(response.ok ? "Removed." :
-        (payload && payload.error) || "That could not be removed.");
+        (payload && payload.error) || "Nothing was removed — try again.");
       await loadDeparted();
     }
 

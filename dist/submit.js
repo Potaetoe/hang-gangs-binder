@@ -359,6 +359,11 @@
    
    
    
+   
+   
+   
+   
+   
   async function deleteEntry(id) {
     const config = root.BINDER_CONFIG || {};
     if (!config.endpoint) return false;
@@ -376,14 +381,14 @@
       }
       if (response.status < 200 || response.status >= 300) {
         detail("DELETE /submission/" + id + " answered " + response.status);
-        UI.showToast("That entry could not be removed — try again.");
+        UI.showToast("Nothing was removed — try again.");
         return false;
       }
       return true;
     } catch (error) {
       detail(error && error.message ? error.message : "the delete could not " +
         "be sent");
-      UI.showToast("That entry could not be removed — try again.");
+      UI.showToast("Nothing was removed — try again.");
       return false;
     }
   }

@@ -757,7 +757,11 @@
           button.disabled = false;
           detail(why(error));
           saySettings("", null);
-          showToast("That could not be sent.");
+           
+           
+           
+           
+          showToast("Nothing was sent — try again.");
           return;
         }
         button.disabled = false;
@@ -948,7 +952,10 @@
         $("member-add").disabled = false;
         detail(why(error));
         sayRoles("", null);
-        showToast("That could not be sent.");
+         
+         
+         
+        showToast("Nothing was sent — try again.");
         return;
       }
 
@@ -988,7 +995,10 @@
         button.disabled = false;
         detail(why(error));
         sayRoles("", null);
-        showToast("That could not be removed.");
+         
+         
+         
+        showToast("Nothing was removed — try again.");
         return;
       }
 
@@ -1138,7 +1148,12 @@
         response = await request();
       } catch (error) {
         detail(why(error));
-        sayFields("That could not be sent.", "bad");
+         
+         
+         
+         
+         
+        sayFields("Nothing was sent — try again.", "bad");
         return false;
       }
       if (sessionRefused(response, sayFields)) return false;
@@ -1870,13 +1885,19 @@
           { method: "DELETE", headers: root.BinderSession.authorization() });
       } catch (error) {
         detail(why(error));
-        showToast("That could not be sent.");
+         
+         
+         
+        showToast("Nothing was sent — try again.");
         return;
       }
       if (sessionRefused(response, showToast)) return;
       const payload = await refusalBody(response);
+       
+       
+       
       showToast(response.ok ? "Removed." :
-        (payload && payload.error) || "That could not be removed.");
+        (payload && payload.error) || "Nothing was removed — try again.");
       await loadDeparted();
     }
 

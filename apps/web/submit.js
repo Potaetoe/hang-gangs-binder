@@ -437,7 +437,12 @@
   // per-row status paragraph beside the button - a deleted row simply
   // leaves the list via onDeleted(), which is feedback enough for the
   // success case, so this is the one path that ever had anything to
-  // say and it says it in the toast.
+  // say and it says it in the toast. Both failure branches below read
+  // "Nothing was removed — try again." (#454 item 7, DESIGN.md's own
+  // words: "The voice is plain and warm") - matching the shape
+  // form.js's own submit failures already use ("Nothing was sent",
+  // "Nothing was stored") rather than the older, passive "That entry
+  // could not be removed."
   async function deleteEntry(id) {
     const config = root.BINDER_CONFIG || {};
     if (!config.endpoint) return false;
@@ -455,14 +460,14 @@
       }
       if (response.status < 200 || response.status >= 300) {
         detail("DELETE /submission/" + id + " answered " + response.status);
-        UI.showToast("That entry could not be removed — try again.");
+        UI.showToast("Nothing was removed — try again.");
         return false;
       }
       return true;
     } catch (error) {
       detail(error && error.message ? error.message : "the delete could not " +
         "be sent");
-      UI.showToast("That entry could not be removed — try again.");
+      UI.showToast("Nothing was removed — try again.");
       return false;
     }
   }
