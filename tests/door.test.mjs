@@ -33,7 +33,7 @@ import { fileURLToPath } from "node:url";
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 const read = (path) => readFile(HERE(path), "utf8");
 
-const EXPECTED = 30;
+const EXPECTED = 37;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -391,6 +391,40 @@ function localStorageStub() {
   check("...and nothing cached for the next load",
     !localStore._values.has("hgb-default-theme"));
 }
+
+/* ------------------------------------------------------------------ */
+/* 5. The fold (#454 item 14, owner ruling 2026-08-22): "the group's    */
+/* name, the welcome sentence the admin wrote, and the Telegram sign-in */
+/* button. Nothing else above the fold." A structural check, not a      */
+/* geometry one - the real pixel measurement is a browser-time claim    */
+/* this suite cannot make (AGENTS.md, "Verification": "a geometry claim */
+/* needs geometry evidence from a real rendering engine"). What this    */
+/* CAN prove from source: every piece of masthead/card copy besides the */
+/* welcome sentence carries sr-only (paints nothing), and the welcome   */
+/* sentence itself does not (it is one of the three named things).      */
+
+check("the masthead's runner carries sr-only - real for a screen " +
+  "reader, painting nothing at 375 px",
+  /<p class="runner sr-only"><span>Members<\/span><\/p>/.test(indexSource));
+check("...and the masthead's own <h1> too",
+  /<h1 class="sr-only">Sign in<\/h1>/.test(indexSource));
+check("the welcome sentence itself carries NO sr-only - it is one of " +
+  "the three things the ruling names",
+  !/id="welcome-text"[^>]*class="[^"]*sr-only/.test(indexSource) &&
+  !/class="[^"]*sr-only[^"]*"[^>]*id="welcome-text"/.test(indexSource));
+check("the sign-in card's own runner carries sr-only",
+  /<p class="runner sr-only"><span>Telegram<\/span><\/p>/.test(indexSource));
+check("...and its <h2>",
+  /<h2 class="sr-only">Member sign-in<\/h2>/.test(indexSource));
+check("...and its explanation paragraph",
+  /<p class="sr-only">\s*Use the Telegram account this group knows you/
+    .test(indexSource));
+
+const themeCssSource = await read("../apps/web/theme.css");
+check(".sr-only is defined as the real visually-hidden-but-accessible " +
+  "shape, not `display:none` (which a screen reader also skips) and " +
+  "not merely a class name with no rule behind it",
+  /\.sr-only\s*\{[^}]*clip:\s*rect\(0,\s*0,\s*0,\s*0\)/.test(themeCssSource));
 
 console.log(failures
   ? `\ndoor FAILED ${failures} of ${performed} check(s)`
