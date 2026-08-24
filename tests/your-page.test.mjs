@@ -292,6 +292,11 @@ check("buildRecord ignores a stray 'date' value on the input - the record's " +
 // tell that call apart from an unrelated one, so this records WHICH
 // element, and the F6 arm below reads it by id.
 const SCROLL_CALLS = [];
+// The options object each scrollIntoView call was given, parallel to
+// SCROLL_CALLS by index (0.9-M3-S33b trailing wave, #457 re-fire #1,
+// F3) - showProblems()'s reduced-motion arm below reads .behavior off
+// the last entry.
+const SCROLL_OPTIONS = [];
 
 function makeElement(id, registry) {
   const listeners = new Map();
@@ -320,8 +325,15 @@ function makeElement(id, registry) {
     // preventDefault is a no-op rather than absent: form.js's own submit
     // listener calls it unconditionally, and every other listener this
     // file drives simply never reaches for it.
-    dispatch(type) {
-      const event = { type: type, preventDefault: function () {} };
+    // `extra` merges onto the event object - the DOM fields a listener
+    // reads off a real event and this stub has no way to synthesize on
+    // its own. focusout's `relatedTarget` (where the focus WENT) is the
+    // first of them: form.js has to tell "left this field" from "moved
+    // to the next box inside this field", and that is the only fact
+    // that answers it. Callers passing one argument are untouched.
+    dispatch(type, extra) {
+      const event = Object.assign(
+        { type: type, preventDefault: function () {} }, extra || {});
       const results = [];
       for (const fn of listeners.get(type) || []) results.push(fn.call(this, event));
       return Promise.all(results);
@@ -372,7 +384,10 @@ function makeElement(id, registry) {
     // updates the attribute and the registry (see the comment above
     // findById() for the same distinction). Reading the closure `id`
     // here would record which TAG scrolled, not which SLOT.
-    scrollIntoView() { SCROLL_CALLS.push(node.getAttribute("id") || id); },
+    scrollIntoView(options) {
+      SCROLL_CALLS.push(node.getAttribute("id") || id);
+      SCROLL_OPTIONS.push(options);
+    },
   };
   return node;
 }
@@ -1024,9 +1039,11 @@ await findTag(refusedCell, "button").dispatch("click");
 const refusedButtons = refusedCell.children[1];
 await refusedButtons.children[0].dispatch("click"); // "Yes, delete"
 check("a delete refused with a non-2xx status toasts the retry message, " +
-  "not a silent success (#454 item 8)",
+  "not a silent success (#454 item 8) - reworded to \"Nothing was " +
+  "removed\" (item 7's voice audit, matching form.js's own \"Nothing " +
+  "was sent/stored\" shape for the identical situation)",
   deleteRefused.toastCalls.length === 1 &&
-  deleteRefused.toastCalls[0] === "That entry could not be removed — try again.");
+  deleteRefused.toastCalls[0] === "Nothing was removed — try again.");
 check("and the confirm step reverts to the plain Delete button rather " +
   "than staying armed on a failure",
   refusedCell.children.length === 1 &&
@@ -1306,6 +1323,62 @@ check("and say() carries text - the general status is never left blank " +
   choiceResult.sayCalls[choiceResult.sayCalls.length - 1].message ===
     "Gender is required.");
 
+/*
+ * 6b-1 (0.9-M3-S33b trailing wave, #457 re-fire #1, F3). The scroll to
+ * the first error respects prefers-reduced-motion. An explicit
+ * `behavior` argument OVERRIDES theme.css's blanket reduced-motion
+ * rule (a JS option wins over CSS - the CSS scroll-behavior property is
+ * only consulted when the argument is "auto" or absent), so this can
+ * only be proven by reading what form.js itself hands scrollIntoView,
+ * never by reading theme.css. Same required-choice trigger as F6
+ * above - BINDER_SITE is still SCRATCH_REQUIRED_CHOICE here.
+ *
+ * Nothing before this point in the file sets globalThis.window, and
+ * form.js's own guard (typeof window !== "undefined") reads that
+ * absence as "no preference support" - matchMediaAnswers(undefined)
+ * leaves window unset on purpose, to prove the untouched default still
+ * comes out "smooth" as it always did, not merely "not auto".
+ */
+function matchMediaAnswers(reducesMotion) {
+  if (reducesMotion === undefined) {
+    delete globalThis.window;
+    delete globalThis.matchMedia;
+    return;
+  }
+  const mm = (query) => ({ matches: reducesMotion &&
+    /prefers-reduced-motion:\s*reduce/.test(query) });
+  globalThis.window = { matchMedia: mm };
+  globalThis.matchMedia = mm;
+}
+
+async function scrollBehaviorAfterRequiredChoiceFails() {
+  const result = await loadFormWired();
+  fillValidEntry(result.page.byId);
+  await result.page.submission.dispatch("submit");
+  const last = SCROLL_OPTIONS[SCROLL_OPTIONS.length - 1];
+  return last && last.behavior;
+}
+
+matchMediaAnswers(undefined);
+check("no matchMedia support at all (globalThis.window unset, the " +
+  "baseline every earlier check in this file already ran under): the " +
+  "scroll to the first error is smooth, the pre-existing behavior",
+  await scrollBehaviorAfterRequiredChoiceFails() === "smooth");
+
+matchMediaAnswers(true);
+check("prefers-reduced-motion: reduce - the scroll is instant, never " +
+  "smooth, because form.js reads the media query itself rather than " +
+  "leaving it to theme.css's rule, which a JS behavior argument would " +
+  "silently override",
+  await scrollBehaviorAfterRequiredChoiceFails() === "auto");
+
+matchMediaAnswers(false);
+check("a phone that supports matchMedia but does NOT prefer reduced " +
+  "motion still gets the smooth scroll - the guard reads the query's " +
+  "answer, not merely whether matchMedia exists",
+  await scrollBehaviorAfterRequiredChoiceFails() === "smooth");
+matchMediaAnswers(undefined);
+
 /* ------------------------------------------------------------------ */
 /* F7 (owner ruling on #355, comment 5337476261, carried into this      */
 /* page by the #353 fix-wave review, finding F7): the pre-leave slot    */
@@ -1347,6 +1420,128 @@ check("your-page.html carries no data-dev-session hook - 0.9-M2-S4 owns " +
 // pointed at its own scratch copy, and nothing between there and here
 // puts it back.
 globalThis.BINDER_SITE = SITE;
+
+/*
+ * 6c (#454 items 11-12, owner ruling 2026-08-22): "validation as the
+ * member leaves each field with a short note under it" - fired on
+ * "focusout" (the member leaving the control), never on "input" (the
+ * member typing) and never held until submit. No submission is
+ * dispatched anywhere in this section - every check below has to be
+ * true before a submit ever happens, or it is not proving the ruling.
+ */
+{
+  const wired = await loadFormWired();
+  const weight = wired.page.byId("entry-weight-imperial");
+  const weightError = () => findById(wired.page.body, "error-weight");
+
+  check("CONTROL: nothing shown before the member has touched anything",
+    weightError().hidden === true);
+
+  weight.dispatch("input"); // typing - the ruling's own "not while typing"
+  check("typing alone shows nothing - no focusout has fired yet",
+    weightError().hidden === true);
+
+  weight.dispatch("focusout"); // leaving the field, still empty
+  check("leaving an empty required field shows its own note, with no " +
+    "submit anywhere in this test",
+    weightError().hidden === false &&
+    weightError().textContent === "Enter weight in lb, as a number.");
+  check("...and the control itself is marked aria-invalid, the same " +
+    "mark a submit-time refusal already gives every field",
+    weight.getAttribute("aria-invalid") === "true");
+
+  weight.value = "150";
+  weight.dispatch("focusout"); // leaving again, now valid
+  check("a later, valid focusout clears the same slot - a member who " +
+    "fixes a mistake sees it clear without submitting",
+    weightError().hidden === true && weightError().textContent === "");
+  // aria-invalid actually coming off is real production behavior
+  // (validateFieldNow() calls removeAttribute the same as clearProblems()
+  // already does elsewhere in this file) but this harness's own
+  // makeElement() stub gives every node a no-op removeAttribute() (line
+  // ~355) - the same limitation clearProblems()'s own removeAttribute
+  // call already lives with here, untested for the same reason. Nothing
+  // asserted past this point would prove anything but the stub's gap.
+}
+
+/*
+ * The same wiring on a <select> - buildChoiceField's own data-field
+ * addition (this slice) is what makes inputsFor()/wireFieldValidation()
+ * able to find it at all; before that addition a select was invisible
+ * to both. SCRATCH_REQUIRED_CHOICE (section 6b, above) is reused so
+ * "gender" is required and has something to say on an empty blur.
+ */
+{
+  globalThis.BINDER_SITE = SCRATCH_REQUIRED_CHOICE;
+  const wired = await loadFormWired();
+  const genderError = () => findById(wired.page.body, "error-gender");
+  check("CONTROL: nothing shown before the member has touched the select",
+    genderError().hidden === true);
+  wired.page.byId("entry-gender").dispatch("focusout");
+  check("leaving a required, unanswered <select> shows its note too - " +
+    "the new data-field attribute is what lets wireFieldValidation() " +
+    "reach a select at all, not just the measured/consent/count kinds " +
+    "that already carried one",
+    genderError().hidden === false &&
+    genderError().textContent === "Gender is required.");
+  globalThis.BINDER_SITE = SITE;
+}
+
+/*
+ * A FIELD IS NOT A CONTROL (#457 review, finding F6; 0.9-M3-S33 part B
+ * fix wave 1). Item 11 rules the note "as the member leaves each
+ * FIELD". wireFieldValidation() listens on every control, and a
+ * multi-checkbox field is several controls in one field - so tabbing
+ * from the first box to the second used to run the whole field's
+ * validation while the member was still answering it, telling them
+ * they had not answered a question they were mid-way through.
+ *
+ * focusout's own relatedTarget is what tells the two apart: where the
+ * focus WENT. Both directions are driven here, because a fix that
+ * simply stopped validating on focusout would pass the first check
+ * alone - the second is what proves the note still arrives when the
+ * member really does leave.
+ */
+const SCRATCH_REQUIRED_MULTI = Object.freeze({
+  ...SITE,
+  fields: Object.freeze(SITE.fields.map((field) =>
+    field.name === "roles"
+      ? Object.freeze({ ...field, required: true })
+      : field)),
+});
+{
+  globalThis.BINDER_SITE = SCRATCH_REQUIRED_MULTI;
+  const wired = await loadFormWired();
+  const rolesError = () => findById(wired.page.body, "error-roles");
+  const boxes = wired.page.document
+    .querySelectorAll('[data-field="roles"]');
+  check("CONTROL: the multi-checkbox field really rendered several " +
+    "controls, so the two cases below are distinguishable at all",
+    boxes.length > 1);
+  check("CONTROL: nothing shown before the member has touched a box",
+    rolesError().hidden === true);
+
+  boxes[0].dispatch("focusout", { relatedTarget: boxes[1] });
+  check("leaving one checkbox for another INSIDE the same field says " +
+    "nothing - the member has not left the field yet",
+    rolesError().hidden === true && rolesError().textContent === "");
+
+  boxes[0].dispatch("focusout",
+    { relatedTarget: wired.page.byId("entry-gender") });
+  check("...and leaving the field for a control in a DIFFERENT field " +
+    "shows the note, exactly as the ruling asks",
+    rolesError().hidden === false &&
+    rolesError().textContent === "Feedism affiliations is required.");
+
+  rolesError().hidden = true;
+  rolesError().textContent = "";
+  boxes[0].dispatch("focusout");
+  check("...and so does leaving for nothing at all - a focusout with " +
+    "no relatedTarget (the member clicked the page background, or " +
+    "tabbed out of the document) is still a field exit",
+    rolesError().hidden === false);
+  globalThis.BINDER_SITE = SITE;
+}
 
 /*
  * Row 23 is chronologically newest but SUPERSEDED - a prefill that read
@@ -1535,6 +1730,87 @@ check("no history: the form renders exactly as today - nothing prefills",
   emptyPage.byId("entry-country").value === "" &&
   emptyPage.byId("entry-height-metric").value === "" &&
   emptyPage.byId("units-imperial").checked === true);
+
+/*
+ * #454 item 10 (owner ruling, 2026-08-22): "one friendly sentence and
+ * the next step ('No entries yet - add your first one.' with the
+ * button...)". Before this fix, the empty entries list read "Nothing
+ * recorded yet - fill in the form above and it starts here." - a
+ * sentence with no actual control, only prose pointing up the page.
+ * The button is a real <a class="primary" href="#entry-section">, the
+ * same link-styled-as-a-button pattern the rail's own Sign in link
+ * already uses (theme.css's a.primary/a.secondary) - jumping the
+ * member straight to the form rather than asking them to scroll for
+ * it themselves.
+ */
+{
+  const slot = emptyPage.byId("entries-slot");
+  const sentence = slot.children.find((c) => c.tag === "p");
+  const cta = slot.children.find((c) => c.tag === "a");
+  check("the empty entries list carries the ruled sentence",
+    Boolean(sentence) && sentence.textContent === "No entries yet.");
+  check("...and a real button - a primary link to the form above, not " +
+    "just prose telling the member to scroll",
+    Boolean(cta) && cta.className === "primary" &&
+    cta.getAttribute("href") === "#entry-section" &&
+    cta.textContent === "Add your first one");
+}
+
+/*
+ * THE SAME EMPTY STATE, ONE CARD HIGHER (#457 review, finding F1;
+ * 0.9-M3-S33 part B fix wave 1). Item 10's rewrite reached
+ * renderEntries() and not renderTrend(), so a member with nothing
+ * recorded met the retired sentence FIRST - "Nothing recorded yet -
+ * fill in the form above and it starts here.", prose telling them to
+ * scroll up, printed directly above the button that does the jump for
+ * them. Both cards paint on the same page load and neither is
+ * conditional on the other, so one arm reading one slot could never
+ * have caught it: this reads the trend slot itself.
+ *
+ * The trend card carries no second button. The next step item 10 asks
+ * for is one card below and is the same act - a member with no entries
+ * is not offered "Add your first one" twice on one screen.
+ */
+{
+  const slot = emptyPage.byId("trend-slot");
+  const sentence = slot.children.find((c) => c.tag === "p");
+  check("the empty trend card speaks the same voice as the list below " +
+    "it - no scroll-up instruction, and not the retired sentence",
+    Boolean(sentence) &&
+    sentence.textContent ===
+      "No entries yet — a line appears here once you have two.");
+  check("...and it offers no second copy of the button one card down",
+    !slot.children.some((c) => c.tag === "a"));
+}
+
+/*
+ * The sweep, done MECHANICALLY rather than by eye (#457 review, F1;
+ * AGENTS.md, "A sweep is claimed complete only when it was
+ * mechanical"). Every sentence part B's voice table listed as replaced,
+ * refused across BOTH trees at once - the shipped source and the built
+ * copy - so a second slot keeping a retired sentence fails here even
+ * when no rendering arm happens to read that slot. dist/ is read for
+ * the reason tests/admin-page.test.mjs reads it for the same audit: a
+ * build, not a hand edit only one copy ever sees.
+ */
+{
+  const submitJs = await read("../apps/web/submit.js");
+  const distSubmitJs = await read("../dist/submit.js");
+  // Matched on the opening words rather than on the whole sentence:
+  // the retired one wrapped across two source lines, so a whole-
+  // sentence search would have found nothing in either file and passed
+  // while the sentence was still there.
+  const RETIRED = ["Nothing recorded yet", "That entry could not be removed"];
+  const RULED = "No entries yet — a line appears here once you have two.";
+  check("no retired empty-state or delete-failure sentence survives " +
+    "anywhere in apps/web/submit.js - the whole file, not one render " +
+    "path",
+    RETIRED.every((sentence) => !submitJs.includes(sentence)));
+  check("...nor anywhere in dist/submit.js",
+    RETIRED.every((sentence) => !distSubmitJs.includes(sentence)));
+  check("and the ruled trend sentence is what both trees carry instead",
+    submitJs.includes(RULED) && distSubmitJs.includes(RULED));
+}
 
 const failedPage = await loadCombinedForPrefill(
   { entries: PREFILL_ENTRIES, failFetch: true });
@@ -1844,7 +2120,15 @@ async function drivenNavOnYourPage(meAnswer, options) {
 }
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 120;
+// 129 through 0.9-M3-S33 part B's own build; fix wave 1 (#457 review)
+// adds 10 - five for finding F1 (two on the trend card's own empty
+// state, three sweeping both trees for every sentence the voice table
+// listed as replaced) and five for finding F6 (leaving one checkbox
+// for another inside the same field is not leaving the field). The
+// 0.9-M3-S33b trailing wave (#457 re-fire #1, F3) adds 3 - the scroll
+// to the first error under no matchMedia support, under reduced
+// motion, and under matchMedia support with no preference set.
+const EXPECTED = 142;
 console.log(failures
   ? `\nyour-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

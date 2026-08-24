@@ -973,7 +973,11 @@
           button.disabled = false;
           detail(why(error));
           saySettings("", null);
-          showToast("That could not be sent.");
+          // #454 item 7 (owner ruling 2026-08-22), DESIGN.md's own
+          // words: "The voice is plain and warm" - matches form.js's
+          // own "Nothing was sent" for the identical situation (a write
+          // that never reached the Worker at all).
+          showToast("Nothing was sent — try again.");
           return;
         }
         button.disabled = false;
@@ -1164,7 +1168,10 @@
         $("member-add").disabled = false;
         detail(why(error));
         sayRoles("", null);
-        showToast("That could not be sent.");
+        // #454 item 7, DESIGN.md's own words: "The voice is plain and
+        // warm" - see the Settings save catch above for the full
+        // reasoning; same situation, same reworded text.
+        showToast("Nothing was sent — try again.");
         return;
       }
 
@@ -1204,7 +1211,10 @@
         button.disabled = false;
         detail(why(error));
         sayRoles("", null);
-        showToast("That could not be removed.");
+        // #454 item 7, DESIGN.md's own words: "The voice is plain and
+        // warm" - matches form.js's own "Nothing was stored" for the
+        // same never-reached-the-Worker situation.
+        showToast("Nothing was removed — try again.");
         return;
       }
 
@@ -1358,7 +1368,12 @@
         response = await request();
       } catch (error) {
         detail(why(error));
-        sayFields("That could not be sent.", "bad");
+        // #454 item 7, DESIGN.md's own words: "The voice is plain and
+        // warm" - matches form.js's own "Nothing was sent" for the
+        // same never-reached-the-Worker situation. This one stays
+        // inline (sayFields), not a toast - the Fields card's own
+        // refusal shape, untouched by this slice.
+        sayFields("Nothing was sent — try again.", "bad");
         return false;
       }
       if (sessionRefused(response, sayFields)) return false;
@@ -1880,17 +1895,33 @@
       UI.setStatus($("log-status"), message, tone);
     }
 
-    function drawLog(entries) {
+    /*
+     * #454 item 13 (owner ruling, 2026-08-22), DESIGN.md's own words:
+     * "A long list ... shows the newest 20 with a 'more' button." The
+     * same LOG_PAGE_SIZE/logRevealed/More shape Departed's own
+     * DEPARTED_PAGE_SIZE/departedRevealed already uses below - one
+     * pattern, not two, for the one property both lists need. GET
+     * /admin-log already answers newest-first (server/worker.js's own
+     * "ORDER BY at DESC, id DESC"), so windowing here never reorders
+     * anything; it only decides how much of an already-sorted list to
+     * show.
+     */
+    const LOG_PAGE_SIZE = 20;
+    let logEntries = [];
+    let logRevealed = LOG_PAGE_SIZE;
+
+    function drawLog() {
       const list = $("log-list");
       list.textContent = "";
-      if (!entries.length) {
+      if (!logEntries.length) {
         const empty = document.createElement("p");
         empty.className = "hint";
         empty.textContent = "No changes yet.";
         list.appendChild(empty);
         return;
       }
-      for (const entry of entries) {
+      const shown = logEntries.slice(0, logRevealed);
+      for (const entry of shown) {
         const line = logLine(entry);
         const row = document.createElement("div");
         // "row wrap-row" - this row's own contract data is exactly
@@ -1915,6 +1946,17 @@
 
         list.appendChild(row);
       }
+      if (logEntries.length > logRevealed) {
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "secondary";
+        more.textContent = "More";
+        more.addEventListener("click", function () {
+          logRevealed += LOG_PAGE_SIZE;
+          drawLog();
+        });
+        list.appendChild(more);
+      }
     }
 
     async function loadLog() {
@@ -1930,7 +1972,13 @@
         const entries = Array.isArray(payload && payload.log)
           ? payload.log
           : [];
-        drawLog(entries);
+        logEntries = entries;
+        // Reset the window on every fresh load - the same rule
+        // loadDeparted() holds departedRevealed to below, so a member
+        // who pressed More, then re-opened this tab, sees the newest 20
+        // again rather than however far they had scrolled last time.
+        logRevealed = LOG_PAGE_SIZE;
+        drawLog();
         sayLog("", null);
       } catch (error) {
         detail(why(error));
@@ -2074,13 +2122,19 @@
           { method: "DELETE", headers: root.BinderSession.authorization() });
       } catch (error) {
         detail(why(error));
-        showToast("That could not be sent.");
+        // #454 item 7, DESIGN.md's own words: "The voice is plain and
+        // warm" - matches form.js's own "Nothing was sent" for the
+        // same never-reached-the-Worker situation.
+        showToast("Nothing was sent — try again.");
         return;
       }
       if (sessionRefused(response, showToast)) return;
       const payload = await refusalBody(response);
+      // The Worker's own reason wins when it sent one; the fallback
+      // below is reworded the same way as every other generic-catch
+      // fallback on this page (#454 item 7).
       showToast(response.ok ? "Removed." :
-        (payload && payload.error) || "That could not be removed.");
+        (payload && payload.error) || "Nothing was removed — try again.");
       await loadDeparted();
     }
 

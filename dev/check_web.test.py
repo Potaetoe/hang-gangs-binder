@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 581
+EXPECTED = 588
 
 
 def check(label, condition):
@@ -3478,35 +3478,98 @@ check("nothing shipped is styled by anything but the one stylesheet",
 
 RULED = '<p class="status" id="signed-out">%s</p>'
 
-# index.html carries two ruled lines since the privacy-line pin (owner
-# ruling on #355, 2026-08-19), so both stand in every fixture here - the
-# same reason your-page.html's KEY_CHECK + SEALED pair does below. A
-# fixture that omitted PRIVACY_LINE would make every assertion read off
-# ITS absence instead of off the signed-out sentence under test.
+# A two-line fixture PAGE THIS SUITE REGISTERS, rather than whichever
+# live page happens to hold two pins today. The parser is what is under
+# test here, and reading its fixtures off a live pin makes it go red on
+# a ruling that never touched it: the door's own "Signed out." entry did
+# exactly that when the owner re-sited the acknowledgement to a toast
+# (2026-08-23, #454 comment 5389445914) and the words moved to
+# RULED_TOAST_LINES. Two entries, because "one ruled line missing does
+# not excuse the page's others" needs a page with more than one - the
+# same reason the SLOT_PAGE block below registers two.
+RULED_PAGE = "test-fixture-ruled-lines.html"
+check_web.RULED_LINES[RULED_PAGE] = {
+    "signed-out": "Signed out.",
+    "privacy-line": "[Privacy line — the owner writes this sentence at "
+                    "the 0.9-M4 register sitting.]",
+}
 PRIVACY_LINE = (
     '<p class="muted" id="privacy-line" data-pending-copy="0.9-M4">'
     "[Privacy line — the owner writes this sentence at the 0.9-M4 "
     "register sitting.]</p>")
 
-check("the ruled line is read off the element that renders it",
-      check_web.ruled_line_problems(
-          RULED % "Signed out." + PRIVACY_LINE, "index.html") == [])
-check("and the sentence the ruling removed is not the ruled line",
-      check_web.ruled_line_problems(
-          RULED % "Signed out. This browser now holds nothing of yours."
-          + PRIVACY_LINE, "index.html") != [])
-check("a paragraph broken over lines still reads as one sentence",
-      check_web.ruled_line_problems(
-          '<p id="signed-out">\n  Signed out.\n</p>' + PRIVACY_LINE,
-          "index.html") == [])
-check("an id nothing renders is a missing ruling, not a passing one",
-      len(check_web.ruled_line_problems(
-          "<p>Signed out.</p>" + PRIVACY_LINE, "index.html")) == 1)
-check("one ruled line missing does not excuse the page's others",
-      len(check_web.ruled_line_problems(PRIVACY_LINE, "index.html")) == 1)
-check("a page with no ruled line of its own has nothing to say",
-      check_web.ruled_line_problems("<p>anything at all</p>", "404.html")
+try:
+    check("the ruled line is read off the element that renders it",
+          check_web.ruled_line_problems(
+              RULED % "Signed out." + PRIVACY_LINE, RULED_PAGE) == [])
+    check("and the sentence the ruling removed is not the ruled line",
+          check_web.ruled_line_problems(
+              RULED % "Signed out. This browser now holds nothing of yours."
+              + PRIVACY_LINE, RULED_PAGE) != [])
+    check("a paragraph broken over lines still reads as one sentence",
+          check_web.ruled_line_problems(
+              '<p id="signed-out">\n  Signed out.\n</p>' + PRIVACY_LINE,
+              RULED_PAGE) == [])
+    check("an id nothing renders is a missing ruling, not a passing one",
+          len(check_web.ruled_line_problems(
+              "<p>Signed out.</p>" + PRIVACY_LINE, RULED_PAGE)) == 1)
+    check("one ruled line missing does not excuse the page's others",
+          len(check_web.ruled_line_problems(PRIVACY_LINE, RULED_PAGE)) == 1)
+    check("a page with no ruled line of its own has nothing to say",
+          check_web.ruled_line_problems("<p>anything at all</p>", "404.html")
+          == [])
+finally:
+    # Removed for the reason the SLOT_PAGE block below removes its own:
+    # left registered, it is a page with no file behind it that every
+    # later arm in this run has to treat as real.
+    del check_web.RULED_LINES[RULED_PAGE]
+
+# ------------------------------------------------------------------
+# The same ruling's words when a TOAST speaks them (owner ruling
+# 2026-08-23, #454 comment 5389445914; #457 review, F2). Four things
+# have to hold at once, and each is driven to fail on its own here -
+# a pin whose four halves are only ever exercised together is a pin
+# whose weakest half is untested.
+
+TOAST_ROW = ("auth.js", "SIGNED_OUT_LINE", "Signed out.", "index.html")
+TOAST_CODE = ('const SIGNED_OUT_LINE = "Signed out.";\n'
+              "  UI.showToast(SIGNED_OUT_LINE);\n")
+TOAST_MARKUP = ('<p class="toast" id="toast" role="status" '
+                'aria-live="polite" hidden></p>')
+
+check("a script holding the ruled words and showing them passes",
+      check_web.ruled_toast_problems(TOAST_ROW, TOAST_CODE, TOAST_MARKUP)
       == [])
+check("a word changed in the constant fails - the ruling is the WORDS, "
+      "and the vehicle moving did not soften them",
+      len(check_web.ruled_toast_problems(
+          TOAST_ROW, TOAST_CODE.replace("Signed out.", "Signed off."),
+          TOAST_MARKUP)) == 1)
+check("the sentence the ruling removed is refused here too, exactly as "
+      "the markup pin refuses it",
+      len(check_web.ruled_toast_problems(
+          TOAST_ROW,
+          TOAST_CODE.replace(
+              "Signed out.",
+              "Signed out. This browser now holds nothing of yours."),
+          TOAST_MARKUP)) == 1)
+check("no constant at all is a missing ruling, not a passing one",
+      len(check_web.ruled_toast_problems(
+          TOAST_ROW, "UI.showToast(SIGNED_OUT_LINE);", TOAST_MARKUP)) == 1)
+check("a constant nobody hands to the toast fails - the words would be "
+      "in the file and on nobody's screen",
+      len(check_web.ruled_toast_problems(
+          TOAST_ROW, 'const SIGNED_OUT_LINE = "Signed out.";',
+          TOAST_MARKUP)) == 1)
+check("a page with no #toast fails - showToast() finds its element by "
+      "that id and returns silently, so the acknowledgement would be a "
+      "no-op with every text pin green",
+      len(check_web.ruled_toast_problems(
+          TOAST_ROW, TOAST_CODE, "<p>a door with no toast</p>")) == 1)
+check("and a page that is not in apps/web at all is named as that, "
+      "rather than read as a page with no toast",
+      any("not a page in apps/web" in problem for _file, problem
+          in check_web.ruled_toast_problems(TOAST_ROW, TOAST_CODE, None)))
 
 # The runtime slot: a ruled line rendered by an element the page fills
 # at runtime rather than by static prose, matched with `{}` standing in

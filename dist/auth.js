@@ -97,6 +97,7 @@
   
 
   const SIGNED_OUT_KEY = "hgb-signed-out";
+  const SIGNED_OUT_LINE = "Signed out.";
 
   function acknowledgeSignOut() {
     let marked = false;
@@ -113,8 +114,9 @@
       return;
     }
     if (!marked) return;
-    const line = document.getElementById("signed-out");
-    if (line && UI && typeof UI.show === "function") UI.show(line, true);
+    if (UI && typeof UI.showToast === "function") {
+      UI.showToast(SIGNED_OUT_LINE);
+    }
   }
 
   if (typeof document !== "undefined" && UI) {

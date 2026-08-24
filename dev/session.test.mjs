@@ -16,7 +16,7 @@ const formSource = await readFile(
 // Counted AND asserted - see the note in dev/check_budget.test.py.
 // Printing the number keeps it out of prose; comparing it catches a
 // check that quietly stops running, which otherwise still prints "OK".
-const { check, report } = nodeTestSuite("session/auth", 55);
+const { check, report } = nodeTestSuite("session/auth", 56);
 
 const values = new Map();
 
@@ -625,12 +625,19 @@ check("signing out leaves a mark for the page it is sending the member to",
  * And the door reads it exactly once. Two loads of the same file, the
  * second differing from the first only in what the first left behind -
  * which is the whole claim, so both halves are one arm's business.
+ *
+ * THE VEHICLE IS A TOAST (owner ruling 2026-08-23, UX record #454
+ * comment 5389445914): an inline line on this page would be a fourth
+ * thing painting above the sign-in button on the commonest way back
+ * here, which item 14's fold does not admit. The ruled WORDS are
+ * asserted too, so this arm proves the sentence a member actually
+ * reads rather than only that something was revealed.
  */
 const ack = { hidden: true, textContent: "" };
-rail["signed-out"] = ack;
-const realShow = globalThis.BinderUI.show;
-globalThis.BinderUI.show = function (element, visible) {
-  if (element) element.hidden = !visible;
+const realShowToast = globalThis.BinderUI.showToast;
+globalThis.BinderUI.showToast = function (message) {
+  ack.hidden = false;
+  ack.textContent = String(message);
 };
 
 Session.clear();
@@ -646,6 +653,9 @@ await import("data:text/javascript," + encodeURIComponent(authSource) +
 
 check("the sign-in page says so on arrival from a sign-out",
   revealed && redirects.length === 0);
+check("and it says it in the owner's own ruled words, through the " +
+  "shared toast rather than an inline line above the button",
+  ack.textContent === "Signed out.");
 check("and the mark is spent, so an ordinary visit says nothing",
   consumed && ack.hidden === true);
 
@@ -663,6 +673,6 @@ const signOutMark = /"(hgb-signed-out)"/.exec(signOutSource);
 check("the sign-out mark is one name written the same way in both files",
   signOutMark !== null && authSource.includes('"' + signOutMark[1] + '"'));
 
-if (globalThis.BinderUI) globalThis.BinderUI.show = realShow;
+if (globalThis.BinderUI) globalThis.BinderUI.showToast = realShowToast;
 
 report();

@@ -540,6 +540,15 @@
    * refusal was total silence - latent today because no shipped choice
    * is required, and exactly the property a fork setting one would hit
    * first.
+   *
+   * Both branches also carry data-field now (0.9-M3-S33 part B, #454
+   * items 11-12): wireFieldValidation() below finds a field's own
+   * controls through inputsFor(), the same lookup showProblems() already
+   * used for aria-invalid on every other kind - a select or a checkbox
+   * with no data-field was invisible to that lookup, so neither could
+   * ever gain the blur-triggered note the ruling asks for, or the
+   * aria-invalid mark a submit-time refusal already gives every other
+   * field kind.
    */
   function buildChoiceField(entry) {
     if (entry.multiple) {
@@ -550,7 +559,7 @@
       (entry.choices || []).forEach(function (choice) {
         choices.appendChild(el("label", { class: "choice" }, [
           el("input", { type: "checkbox", name: entry.name,
-            value: choice.value }),
+            "data-field": entry.name, value: choice.value }),
           el("span", { text: choice.label }),
         ]));
       });
@@ -561,7 +570,8 @@
       return fieldset;
     }
 
-    const select = el("select", { id: "entry-" + entry.name });
+    const select = el("select", { id: "entry-" + entry.name,
+      "data-field": entry.name });
     select.appendChild(el("option", { value: "", text: entry.blank || "" }));
     if (entry.choicesFrom) {
       const countries = root.BINDER_COUNTRIES || {};
@@ -695,6 +705,77 @@
     });
   }
 
+  /*
+   * #454 items 11-12 (owner ruling, 2026-08-22), DESIGN.md's own
+   * words: "A mistake is pointed out as the member leaves the field, in
+   * a short note under it — never on submit, never while typing." This
+   * is submit's own validateOne() call,
+   * narrowed to one field, writing to the same slot showProblems()
+   * writes to - a member who fixes a mistake and tabs on sees it clear
+   * the same way a later submit would have cleared it, with no submit
+   * needed at all. `entry` is one of plan()'s own entries (the same
+   * object renderFields() built the field from), not a fresh F.field()
+   * lookup - planField() already carries every property validateOne()
+   * or validateMeasured() reads (kind, name, label, term, required,
+   * multiple), so there is nothing here two lookups could disagree
+   * about.
+   */
+  function validateFieldNow(entry, container) {
+    if (entry.kind === "computed") return;
+    const state = { units: currentUnits(), values: readValues(container) };
+    const problems = validateOne(entry, state);
+    const slot = $("error-" + entry.name);
+    if (slot) {
+      slot.textContent = problems.length ? problems[0].message : "";
+      slot.hidden = !problems.length;
+    }
+    inputsFor(entry.name).forEach(function (ctrl) {
+      if (problems.length) ctrl.setAttribute("aria-invalid", "true");
+      else ctrl.removeAttribute("aria-invalid");
+    });
+  }
+
+  /*
+   * Wired per input, directly - the same shape the units toggle's own
+   * "change" listener already uses below, rather than one delegated
+   * listener on the container. "focusout" rather than "blur": blur does
+   * not bubble and this file wires every control anyway, but focusout
+   * is the DOM's own name for leaving a control, and the ruling is
+   * about leaving a FIELD - "as the member leaves each field", never on
+   * keystroke (there is no "input" listener here) and never held until
+   * submit.
+   *
+   * A FIELD IS NOT A CONTROL, and several field kinds are more than one
+   * control: a multi-choice field is a checkbox per option, and a
+   * measured field is an imperial box (two, for a compound one like
+   * feet-and-inches) beside a metric one. Tabbing from one of those to
+   * the next is a member still answering the same question, so
+   * validating there tells them they have not answered something they
+   * are in the middle of. focusout's own relatedTarget - where the
+   * focus WENT - is the only thing that can tell the two apart, and it
+   * is compared against this field's own controls rather than against a
+   * container element, because the field kinds wrap their controls in
+   * different shapes (a <fieldset>, a <div>, a units group) and a
+   * markup-shaped test would be right about some of them.
+   *
+   * relatedTarget is null when the focus left the document entirely, or
+   * went to something that cannot hold it - that IS a field exit, and
+   * falls through to validating, which is the state a member who
+   * clicked the page background is in.
+   */
+  function wireFieldValidation(container) {
+    plan().forEach(function (entry) {
+      const controls = inputsFor(entry.name);
+      controls.forEach(function (ctrl) {
+        ctrl.addEventListener("focusout", function (event) {
+          const went = event && event.relatedTarget;
+          if (went && controls.indexOf(went) !== -1) return;
+          validateFieldNow(entry, container);
+        });
+      });
+    });
+  }
+
   function showProblems(problems) {
     clearProblems();
     problems.forEach(function (problem) {
@@ -708,7 +789,32 @@
       });
     });
     const first = problems[0] && $("error-" + problems[0].field);
-    if (first) first.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (first) {
+      /*
+       * A "smooth" behavior argument OVERRIDES theme.css's blanket
+       * reduced-motion rule (scroll-behavior: auto !important) - the CSS
+       * property is only consulted when the argument is "auto" or
+       * absent, so a member who asked their phone for reduced motion
+       * still got an animated jump to their first error (pre-existing
+       * since 0.9-M2-S2, #353; fixed here at 0.9-M3-S33b, #457 re-fire
+       * #1, F3, per the owner's item 4 ruling: no motion at all under
+       * reduced motion). Read the same way theme-init.js and theme.js
+       * read prefers-color-scheme.
+       */
+      // typeof window, not the bare identifier: every DOM stub the
+      // suites in tests/ build for this file sets globalThis.document
+      // but not globalThis.window, and a bare reference would throw
+      // ReferenceError in every one of them rather than reading as "no
+      // preference support", which is what a real browser missing
+      // matchMedia would give it.
+      const reducedMotion = typeof window !== "undefined" &&
+        window.matchMedia &&
+        matchMedia("(prefers-reduced-motion: reduce)").matches;
+      first.scrollIntoView({
+        block: "center",
+        behavior: reducedMotion ? "auto" : "smooth",
+      });
+    }
   }
 
   /*
@@ -775,6 +881,7 @@
         clearProblems();
       }); });
     applyUnits(container);
+    wireFieldValidation(container);
 
     function say(message, tone) {
       UI.setStatus(status, message, tone);

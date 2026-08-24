@@ -65,8 +65,18 @@
 </p>
 
 <header class="stack-tight">
-  <p class="runner"><span>Members</span></p>
-  <h1>Sign in</h1>
+  <!-- The runner and the heading stay in the file - PAGE_HEADERS above
+       pins their words from the FILE, not from a browser - but paint
+       nothing AT ANY WIDTH (#454 item 14, owner ruling 2026-08-22,
+       read as minimal-at-every-width by the owner on 2026-08-23, #454
+       comment 5389445914), DESIGN.md's own words: "The door carries
+       the group's name, the admin's welcome sentence, and the Telegram
+       sign-in button — nothing else above the fold." The wordmark above
+       this header already names the site for a sighted visitor; a
+       screen reader still gets both the section name and the page's
+       own <h1>. -->
+  <p class="runner sr-only"><span>Members</span></p>
+  <h1 class="sr-only">Sign in</h1>
   <!-- The first sentence anybody reads. It carries the two facts a
        reader needs - one sign-in, this tab only - as an invitation
        rather than as a notice. The pinned name is the heading above it;
@@ -85,8 +95,9 @@
        element is never touched, so the sentence below is also the
        whole of what a fork with no admin edits ever shows: the same
        property WORDMARK_PAGES/RULED_LINES already give the mark above
-       and the #signed-out line below, extended to reach a sentence this
-       gate now leaves free for an admin to change. tools/check_web.py's
+       and RULED_TOAST_LINES gives the sign-out acknowledgement,
+       extended to reach a sentence this gate now leaves free for an
+       admin to change. tools/check_web.py's
        PAGE_HEADERS pin reads this header's rendered text from the FILE,
        never from a browser, so it still pins exactly the words below. -->
   <p class="muted" id="welcome-text">
@@ -98,43 +109,49 @@
 <main class="stack">
   <!--
     What a sign-out leaves behind, and the only thing on this page that
-    is ever about the visit before this one - #265, owner-ruled, and the
-    mockup rules its wording and this position.
+    is ever about the visit before this one - #265, owner-ruled.
 
-    It ships `hidden`, which is its honest resting state: most arrivals
-    here are not arrivals from a Sign out press, and a line saying
-    otherwise would be a page claiming to know something it does not.
-    auth.js reveals it only on the mark signout.js writes, and spends
-    that mark in the same breath, so the next ordinary load says
-    nothing.
+    A TOAST, NOT A LINE IN THE PAGE (owner ruling 2026-08-23, UX record
+    #454 comment 5389445914). Signing out is an act, and item 8 sends
+    the result of an act to the brief shared toast. An inline line here
+    would be a fourth thing painting between the top of the page and
+    the sign-in button on the commonest way back to this door, which
+    item 14's fold does not admit - so the acknowledgement rides the
+    toast and the fold holds on a first arrival and on a return alike.
+
+    The WORDS did not change (#275, from the register bar on #265): the
+    second sentence - "This browser now holds nothing of yours." - was
+    accurate and was vetoed anyway, because an acknowledgement is the
+    act and the inventory of what the act cleared is a fact nobody
+    standing on this page has to do anything with. apps/web/auth.js
+    holds them as SIGNED_OUT_LINE, and tools/check_web.py's
+    RULED_TOAST_LINES pins that constant, the showToast() call that
+    reads it, and this element - showToast() finds its element by id
+    and returns silently when a page has none.
+
+    Nothing paints here without scripts, and that costs nothing:
+    sign-out itself is a script, so a browser that cannot show this is
+    one that could not have produced the state it describes.
 
     role="status" rather than an alert: it reports something that has
     already finished and needs nobody's attention, which is the same
     reading #auth-status carries below.
-
-    TWO WORDS, RULED (#275, from the register bar on #265). The second
-    sentence - "This browser now holds nothing of yours." - was accurate
-    and was vetoed anyway: an acknowledgement is the act, and the
-    inventory of what the act cleared is a fact nobody standing on this
-    page has to do anything with. What was omitted was never claimed
-    away, which is the floor rule the shorter line still meets.
-
-    tools/check_web.py's RULED_LINES pins this as the WHOLE of what the
-    element renders, because the ruled words are the front of the
-    sentence they replaced.
   -->
-  <p class="status" id="signed-out" role="status" hidden>
-    Signed out.
-  </p>
+  <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
 
   <div class="card narrow">
-    <p class="runner"><span>Telegram</span></p>
-    <h2>Member sign-in</h2>
+    <!-- Same fold ruling as the masthead above (#454 item 14): the
+         card's own runner, heading and explanation are real content for
+         a screen reader, painting nothing for a sighted visitor at any
+         width - only the sign-in button itself, right below, is meant
+         to be seen here. -->
+    <p class="runner sr-only"><span>Telegram</span></p>
+    <h2 class="sr-only">Member sign-in</h2>
     <!-- Which account, and how long the sign-in lasts. Both are things
          somebody has to act on, so the warmth here is one phrase and no
          more: a threshold is not the place to be charming at the
          expense of being followed. -->
-    <p>
+    <p class="sr-only">
       Use the Telegram account this group knows you by — the sign-in is
       kept only for this tab.
     </p>

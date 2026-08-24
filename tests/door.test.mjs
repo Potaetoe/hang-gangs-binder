@@ -33,7 +33,10 @@ import { fileURLToPath } from "node:url";
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 const read = (path) => readFile(HERE(path), "utf8");
 
-const EXPECTED = 30;
+// 37 through 0.9-M3-S33 part B's own build; fix wave 1 (#457 review)
+// adds 6 - one for F4's every-width trim, five for F2's move of the
+// sign-out acknowledgement into the shared toast.
+const EXPECTED = 43;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -391,6 +394,130 @@ function localStorageStub() {
   check("...and nothing cached for the next load",
     !localStore._values.has("hgb-default-theme"));
 }
+
+/* ------------------------------------------------------------------ */
+/* 5. The fold (#454 item 14, owner ruling 2026-08-22): "the group's    */
+/* name, the welcome sentence the admin wrote, and the Telegram sign-in */
+/* button. Nothing else above the fold." A structural check, not a      */
+/* geometry one - the real pixel measurement is a browser-time claim    */
+/* this suite cannot make (AGENTS.md, "Verification": "a geometry claim */
+/* needs geometry evidence from a real rendering engine"). What this    */
+/* CAN prove from source: every piece of masthead/card copy besides the */
+/* welcome sentence carries sr-only (paints nothing), and the welcome   */
+/* sentence itself does not (it is one of the three named things).      */
+
+check("the masthead's runner carries sr-only - real for a screen " +
+  "reader, painting nothing at any width",
+  /<p class="runner sr-only"><span>Members<\/span><\/p>/.test(indexSource));
+check("...and the masthead's own <h1> too",
+  /<h1 class="sr-only">Sign in<\/h1>/.test(indexSource));
+check("the welcome sentence itself carries NO sr-only - it is one of " +
+  "the three things the ruling names",
+  !/id="welcome-text"[^>]*class="[^"]*sr-only/.test(indexSource) &&
+  !/class="[^"]*sr-only[^"]*"[^>]*id="welcome-text"/.test(indexSource));
+check("the sign-in card's own runner carries sr-only",
+  /<p class="runner sr-only"><span>Telegram<\/span><\/p>/.test(indexSource));
+check("...and its <h2>",
+  /<h2 class="sr-only">Member sign-in<\/h2>/.test(indexSource));
+check("...and its explanation paragraph",
+  /<p class="sr-only">\s*Use the Telegram account this group knows you/
+    .test(indexSource));
+
+const themeCssSource = await read("../apps/web/theme.css");
+check(".sr-only is defined as the real visually-hidden-but-accessible " +
+  "shape, not `display:none` (which a screen reader also skips) and " +
+  "not merely a class name with no rule behind it",
+  /\.sr-only\s*\{[^}]*clip:\s*rect\(0,\s*0,\s*0,\s*0\)/.test(themeCssSource));
+
+/*
+ * The trim is minimal AT EVERY WIDTH, not phone-only (owner ruling
+ * 2026-08-23, UX record #454 comment 5389445914, raised as F4 by the
+ * #457 review). The shipped behavior was already this - `.sr-only`
+ * carries no media query - and the ruling settled that it is the
+ * intent rather than an overreach. This pins the CODE that makes it
+ * true, so a later "fix" wrapping the rule in a width query has to
+ * argue with a check rather than sail past one.
+ *
+ * STRUCTURAL, NOT COLUMN POSITION (0.9-M3-S33b trailing wave, #457
+ * re-fire #1, F1). A column-0 regex (`/(^|\n)\.sr-only\s*\{/`) asks
+ * whether the selector starts a line - true whether or not a media
+ * query wraps it, since CSS does not care about indentation, so
+ * `@media (max-width: 480px) {\n.sr-only {` (the rule left un-indented)
+ * sailed straight past the old check while genuinely restoring the
+ * width scope the ruling removed. braceDepthBefore walks the file from
+ * the top, skipping comments and quoted strings, and counts open minus
+ * close braces up to the rule's own position: depth 0 means nothing
+ * encloses it, indented or not.
+ */
+function braceDepthBefore(source, index) {
+  let depth = 0;
+  let inComment = false;
+  let quote = null;
+  for (let i = 0; i < index; i++) {
+    const c = source[i];
+    if (inComment) {
+      if (c === "*" && source[i + 1] === "/") {
+        inComment = false;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (c === "\\") {
+        i++;
+        continue;
+      }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === "/" && source[i + 1] === "*") {
+      inComment = true;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      continue;
+    }
+    if (c === "{") depth++;
+    else if (c === "}") depth--;
+  }
+  return depth;
+}
+const srOnlyRuleMatch = /\.sr-only\s*\{/.exec(themeCssSource);
+check(".sr-only is not scoped to a width - the door is this minimal at " +
+  "every size, and a media query around this rule (indented or not) " +
+  "would quietly restore the desktop copy the ruling removed",
+  srOnlyRuleMatch !== null &&
+  braceDepthBefore(themeCssSource, srOnlyRuleMatch.index) === 0);
+
+/* ------------------------------------------------------------------ */
+/* 6. The sign-out acknowledgement is a TOAST (owner ruling 2026-08-23, */
+/* #454 comment 5389445914; #457 review, F2). Item 8 already sends the  */
+/* result of an act to the shared toast, and a sign-out is an act -     */
+/* so the ruled words move into that vehicle and the inline status      */
+/* line goes, which is what makes item 14's fold hold in the return-    */
+/* from-sign-out state as well as on a first arrival. The WORDS are     */
+/* unchanged (#265/#275) and tools/check_web.py's RULED_TOAST_LINES     */
+/* pins them; this suite pins the wiring around them.                   */
+
+check("index.html no longer ships an inline #signed-out line - the " +
+  "fourth thing that used to paint above the sign-in button on a " +
+  "return from Sign out",
+  !/id="signed-out"/.test(indexSource));
+check("...and carries the shared #toast instead, the element " +
+  "BinderUI.showToast() finds by id",
+  /<p class="toast" id="toast" role="status" aria-live="polite" hidden>/
+    .test(indexSource));
+check("auth.js holds the owner's ruled words as one constant rather " +
+  "than composing them at the call site",
+  /const SIGNED_OUT_LINE = "Signed out\.";/.test(authSource));
+check("...and hands that constant, and nothing read from storage or " +
+  "the URL, to the toast",
+  /showToast\(SIGNED_OUT_LINE\)/.test(authSource));
+check("the mark is still the only trigger, and is still spent on " +
+  "sight - a reload after a sign-out says nothing",
+  /removeItem\(SIGNED_OUT_KEY\)/.test(authSource));
 
 console.log(failures
   ? `\ndoor FAILED ${failures} of ${performed} check(s)`

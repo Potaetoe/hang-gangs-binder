@@ -359,6 +359,11 @@
    
    
    
+   
+   
+   
+   
+   
   async function deleteEntry(id) {
     const config = root.BINDER_CONFIG || {};
     if (!config.endpoint) return false;
@@ -376,14 +381,14 @@
       }
       if (response.status < 200 || response.status >= 300) {
         detail("DELETE /submission/" + id + " answered " + response.status);
-        UI.showToast("That entry could not be removed — try again.");
+        UI.showToast("Nothing was removed — try again.");
         return false;
       }
       return true;
     } catch (error) {
       detail(error && error.message ? error.message : "the delete could not " +
         "be sent");
-      UI.showToast("That entry could not be removed — try again.");
+      UI.showToast("Nothing was removed — try again.");
       return false;
     }
   }
@@ -440,9 +445,15 @@
     const system = currentUnits();
 
     if (!entries.length) {
+       
+       
+       
+       
+       
       container.appendChild(el("p", { class: "muted",
-        text: "Nothing recorded yet — fill in the form above and it " +
-          "starts here." }));
+        text: "No entries yet." }));
+      container.appendChild(el("a", { class: "primary",
+        href: "#entry-section", text: "Add your first one" }));
       return;
     }
 
@@ -514,13 +525,21 @@
       .filter(Boolean)
       .sort(function (a, b) { return a.t - b.t; });
 
+     
+     
+     
+     
+     
+     
+     
+     
+     
     if (points.length < 2) {
       container.appendChild(el("p", { class: "muted",
         text: current.length
           ? "One entry isn't a trend yet — add another and a line " +
             "appears here."
-          : "Nothing recorded yet — fill in the form above and it " +
-            "starts here." }));
+          : "No entries yet — a line appears here once you have two." }));
       return;
     }
 

@@ -757,7 +757,11 @@
           button.disabled = false;
           detail(why(error));
           saySettings("", null);
-          showToast("That could not be sent.");
+           
+           
+           
+           
+          showToast("Nothing was sent — try again.");
           return;
         }
         button.disabled = false;
@@ -948,7 +952,10 @@
         $("member-add").disabled = false;
         detail(why(error));
         sayRoles("", null);
-        showToast("That could not be sent.");
+         
+         
+         
+        showToast("Nothing was sent — try again.");
         return;
       }
 
@@ -988,7 +995,10 @@
         button.disabled = false;
         detail(why(error));
         sayRoles("", null);
-        showToast("That could not be removed.");
+         
+         
+         
+        showToast("Nothing was removed — try again.");
         return;
       }
 
@@ -1138,7 +1148,12 @@
         response = await request();
       } catch (error) {
         detail(why(error));
-        sayFields("That could not be sent.", "bad");
+         
+         
+         
+         
+         
+        sayFields("Nothing was sent — try again.", "bad");
         return false;
       }
       if (sessionRefused(response, sayFields)) return false;
@@ -1660,17 +1675,24 @@
       UI.setStatus($("log-status"), message, tone);
     }
 
-    function drawLog(entries) {
+    
+
+    const LOG_PAGE_SIZE = 20;
+    let logEntries = [];
+    let logRevealed = LOG_PAGE_SIZE;
+
+    function drawLog() {
       const list = $("log-list");
       list.textContent = "";
-      if (!entries.length) {
+      if (!logEntries.length) {
         const empty = document.createElement("p");
         empty.className = "hint";
         empty.textContent = "No changes yet.";
         list.appendChild(empty);
         return;
       }
-      for (const entry of entries) {
+      const shown = logEntries.slice(0, logRevealed);
+      for (const entry of shown) {
         const line = logLine(entry);
         const row = document.createElement("div");
          
@@ -1695,6 +1717,17 @@
 
         list.appendChild(row);
       }
+      if (logEntries.length > logRevealed) {
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "secondary";
+        more.textContent = "More";
+        more.addEventListener("click", function () {
+          logRevealed += LOG_PAGE_SIZE;
+          drawLog();
+        });
+        list.appendChild(more);
+      }
     }
 
     async function loadLog() {
@@ -1710,7 +1743,13 @@
         const entries = Array.isArray(payload && payload.log)
           ? payload.log
           : [];
-        drawLog(entries);
+        logEntries = entries;
+         
+         
+         
+         
+        logRevealed = LOG_PAGE_SIZE;
+        drawLog();
         sayLog("", null);
       } catch (error) {
         detail(why(error));
@@ -1846,13 +1885,19 @@
           { method: "DELETE", headers: root.BinderSession.authorization() });
       } catch (error) {
         detail(why(error));
-        showToast("That could not be sent.");
+         
+         
+         
+        showToast("Nothing was sent — try again.");
         return;
       }
       if (sessionRefused(response, showToast)) return;
       const payload = await refusalBody(response);
+       
+       
+       
       showToast(response.ok ? "Removed." :
-        (payload && payload.error) || "That could not be removed.");
+        (payload && payload.error) || "Nothing was removed — try again.");
       await loadDeparted();
     }
 

@@ -239,6 +239,43 @@ function pressedOnly(buttons, name) {
 }
 
 /* ------------------------------------------------------------------ */
+/* #456 F4, CARRIED TO 0.9-M3-S33 PART B: a stored "hgb-palette" value  */
+/* naming NO real palette - not "custom", not one of the four known      */
+/* names, a typo or a hand-edited value or a future name this build      */
+/* predates - must not paint verbatim either. Before this fix, theme-    */
+/* init.js's own guard excluded only the literal string "custom" and     */
+/* let everything else through unchecked, so an unknown value painted    */
+/* straight onto the page and then flashed to the real resting palette   */
+/* a moment later when theme.js's own already-validated read (the BG     */
+/* map check, this file's line ~110) corrected it - a dark-to-light or   */
+/* light-to-dark flash a member would see on every load until they       */
+/* picked a real palette. "banana" is the canary: a distinctive value    */
+/* nothing else in this repository uses as a real setting.                */
+
+{
+  const { documentElement, metas, buttons } =
+    await driven("banana", undefined, undefined);
+  check("a stored choice naming no real palette never reaches " +
+    "data-theme=\"banana\" - theme-init.js's pre-paint script paints " +
+    "the resting scheme palette instead of guessing at an unknown value",
+    documentElement.getAttribute("data-theme") === "daylight");
+  check("the browser-chrome meta color is painted too - an unknown " +
+    "stored value does not leave stale chrome behind",
+    metas[0].attrs.content !== undefined);
+  check("the resting palette's own chip - the one actually applied - " +
+    "is the one marked pressed, and only that one",
+    pressedOnly(buttons, "daylight"));
+}
+
+{
+  const { documentElement } = await driven("banana", undefined, true);
+  check("the same unknown value, under a phone that prefers dark, falls " +
+    "to the dark half of the same resting rule - proving the fallback " +
+    "reads the scheme rather than returning a fixed palette",
+    documentElement.getAttribute("data-theme") === "midnight");
+}
+
+/* ------------------------------------------------------------------ */
 /* THE REWRITTEN S12 ARM (0.9-M3-S12, #418, superseded by the owner's    */
 /* ruling in UX record #454 item 15; 0.9-M3-S32, #456). S12 pinned that  */
 /* a cached admin default PAINTS before first paint once learned - the   */
@@ -424,6 +461,32 @@ async function drivenNoPicker(storedPalette, defaultTheme, darkMatches) {
 }
 
 /*
+ * #456 F4, CARRIED TO 0.9-M3-S33 PART B, isolated the same way - the
+ * combined driven() case above cannot by itself prove theme-init.js's
+ * OWN guard rejects an unknown value, since theme.js runs second and
+ * always overwrites data-theme with its own validated read regardless
+ * of what theme-init.js painted first. This block never imports
+ * theme.js, so nothing can correct a wrong first frame before this
+ * check reads it - the exact flash a member would otherwise see.
+ */
+{
+  const documentElement = documentElementStub();
+  const g = globalThis;
+  g.localStorage = storage({ "hgb-palette": "banana" });
+  g.window = {};
+  delete g.matchMedia;
+  g.document = { documentElement, querySelectorAll: () => [] };
+  await import("data:text/javascript," +
+    encodeURIComponent(themeInitSrc) + "#theme-init-alone-banana-" +
+    Math.random());
+  check("theme-init.js's OWN pre-paint guard, with nothing running " +
+    "after it to correct a mistake: a stored value naming no real " +
+    "palette paints the resting scheme palette, never the literal " +
+    "unknown string - this is the fix for #456 F4",
+    documentElement.getAttribute("data-theme") === "daylight");
+}
+
+/*
  * THE REWRITTEN S12 ARM, isolated the same way (0.9-M3-S12, #418,
  * superseded by 0.9-M3-S32, #456). S12's isolated arm proved theme-
  * init.js's OWN synchronous read of "hgb-default-theme" painted the
@@ -489,6 +552,92 @@ async function drivenNoPicker(storedPalette, defaultTheme, darkMatches) {
     "choice over the phone's own dark scheme, with nothing else having " +
     "run yet to correct a wrong first frame",
     documentElement.getAttribute("data-theme") === "pink");
+}
+
+/*
+ * THE ALLOWLIST AGAINST DRIFT (#457 review, finding F3; 0.9-M3-S33
+ * part B fix wave 1) - WIDENED TO FIVE SOURCES (0.9-M3-S33b trailing
+ * wave, #457 re-fire #1, F2).
+ *
+ * theme-init.js's PALETTES is a hand-typed copy of four names, and it
+ * HAS to be one: the file runs first, in <head>, with nothing loaded
+ * yet to import a list from. Everything above proves the guard REFUSES
+ * a name that is not in that list. Nothing above proves the list is
+ * the right list - drop "contrast" from it and every check in this
+ * file still passed, while a member whose stored palette is
+ * "contrast" (the accessibility high-contrast one, a real thing they
+ * can pick) got exactly the dark-to-light flash the guard exists to
+ * close, with the whole gate green.
+ *
+ * This is the review bar's own corollary: "a check computed entirely
+ * from the file it guards cannot detect that the file was rearranged;
+ * something outside the file has to say what it may contain." The
+ * something is the other files that must agree with it - theme.js's BG
+ * map, which is what actually gets painted into the browser chrome,
+ * theme.css's own :root[data-theme="..."] rules, which are what
+ * actually paint the page, apps/web/site-content.js's VALID_PALETTES,
+ * the admin's configured default written to localStorage for theme.js
+ * to pre-select a swatch from, and apps/web/admin.js's THEMES, the
+ * settings form's own mirror of what the Worker accepts. All five are
+ * read from disk as text: a sixth hand-typed list here would be one
+ * more copy to drift.
+ *
+ * Re-fire #1 found the last two: site-content.js's own comment already
+ * CLAIMED to match theme-init.js and theme.js ("Matches theme-init.js's
+ * own copy and theme.js's BG keys") - a claim checked by nothing until
+ * this arm read the file. Dropping a name from either list left every
+ * check in this file green, exactly the gap this widening closes.
+ *
+ * Set equality across all five, not "PALETTES is a subset": a palette
+ * added to one list and missing from another either flashes on load, or
+ * paints a data-theme nothing styles, or offers a palette on the
+ * settings form the page can never paint. No direction is the safe one.
+ */
+{
+  const themeCssSrc = await read("../apps/web/theme.css");
+  const siteContentSrc = await read("../apps/web/site-content.js");
+  const adminSrc = await read("../apps/web/admin.js");
+  const group = (pattern, text) => {
+    const found = pattern.exec(text);
+    return found ? found[1] : "";
+  };
+  const namesIn = (text) =>
+    new Set(Array.from(text.matchAll(/"([^"]+)"/g), (m) => m[1]));
+
+  const listed = group(/const PALETTES = \[([^\]]*)\]/, themeInitSrc);
+  const guard = namesIn(listed);
+  const bgBlock = group(/const BG = \{([^}]*)\}/, themeSrc);
+  const painted = new Set(
+    Array.from(bgBlock.matchAll(/(\w+)\s*:/g), (m) => m[1]));
+  // Anchored to the start of a line, so the same selector QUOTED in a
+  // comment (theme.css carries two) is not read as a rule that exists.
+  const styled = new Set(Array.from(
+    themeCssSrc.matchAll(/^:root\[data-theme="([^"]+)"\]/gm),
+    (m) => m[1]));
+  const configured = namesIn(
+    group(/const VALID_PALETTES = \[([^\]]*)\]/, siteContentSrc));
+  const settingsForm = namesIn(
+    group(/const THEMES = Object\.freeze\(\[([^\]]*)\]\)/, adminSrc));
+
+  const others = [
+    ["theme.js's BG map, which theme.js paints chrome for", painted],
+    ["theme.css's :root[data-theme] rules", styled],
+    ["site-content.js's VALID_PALETTES, the admin's configured default",
+      configured],
+    ["admin.js's THEMES, the settings form's own mirror", settingsForm],
+  ];
+
+  const same = (a, b) => a.size === b.size && [...a].every((n) => b.has(n));
+  check("CONTROL: all five lists were actually parsed - an empty set " +
+    "would make every comparison below true for the wrong reason",
+    guard.size > 1 && others.every(([, set]) => set.size > 1));
+  for (const [label, set] of others) {
+    check("theme-init.js's PALETTES names exactly what " + label +
+      " names - a name in one and not the other either flashes on " +
+      "load, paints a data-theme nothing colors, or offers a palette " +
+      "the page cannot paint",
+      same(guard, set));
+  }
 }
 
 console.log(failures

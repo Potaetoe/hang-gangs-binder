@@ -103,6 +103,38 @@ check("the idle timer's own markup survives - it is not part of the " +
   "page",
   adminHtml.includes('id="idle-warning"'));
 
+/*
+ * The voice audit (#454 item 7, owner ruling 2026-08-22), DESIGN.md's
+ * own words: "The voice is plain and warm ... never jargon." Six
+ * generic network-failure fallbacks on this page all read "That could
+ * not be sent."/"That could not be removed." - passive, and out of
+ * step with the warmer "Nothing was sent - reload and try again."/
+ * "Nothing was stored - try again." shape apps/web/form.js already
+ * uses for the identical situation (a write whose request never
+ * reached the Worker at all). A source-text check rather than a
+ * simulated network failure per call site: nothing here was tested for
+ * its EXACT wording before this slice (five of six had no check at
+ * all), so this proves the words landed everywhere the audit found
+ * them, in both apps/web and dist, without inventing six new
+ * fetch-throws harnesses for a wording-only change.
+ */
+check("no \"That could not be sent.\" survives in apps/web/admin.js - " +
+  "reworded to match form.js's own \"Nothing was ... - try again.\" " +
+  "voice",
+  !adminJs.includes("That could not be sent."));
+check("...nor \"That could not be removed.\"",
+  !adminJs.includes("That could not be removed."));
+check("the reworded text is there instead, at all six call sites (four " +
+  "\"Nothing was sent\", two \"Nothing was removed\")",
+  (adminJs.match(/Nothing was sent — try again\./g) || []).length === 4 &&
+  (adminJs.match(/Nothing was removed — try again\./g) || []).length === 2);
+check("dist/admin.js carries the same reworded strings - a build, not a " +
+  "hand edit only one copy ever sees",
+  !distJs.includes("That could not be sent.") &&
+  !distJs.includes("That could not be removed.") &&
+  (distJs.match(/Nothing was sent — try again\./g) || []).length === 4 &&
+  (distJs.match(/Nothing was removed — try again\./g) || []).length === 2);
+
 check("the keyfile tool's own words are gone from the page",
   !/Fetch and decrypt/.test(adminHtml) &&
   !/Private key/.test(adminHtml) &&
@@ -2341,6 +2373,82 @@ check("Fields never fetches per-member counts - no /charts-data call " +
     /No changes yet/.test(byId.get("log-list").textContent));
 }
 
+/*
+ * #454 item 13 (owner ruling, 2026-08-22), DESIGN.md's own words: "A
+ * long list ... shows the newest 20 with a 'more' button." Departed
+ * already had this (departedSections()/DEPARTED_PAGE_SIZE, tested
+ * below); the change log did not - drawLog() rendered every row GET
+ * /admin-log sent with no window and no button at all. GET /admin-log
+ * already answers newest-first (server/worker.js's own "ORDER BY at
+ * DESC, id DESC"), so the client's only job is to window what already
+ * arrived in the right order, the same job departedSections() does.
+ */
+{
+  const LOG_25 = Array.from({ length: 25 }, (_, i) => ({
+    at: "2026-08-21T" + String(23 - i).padStart(2, "0") + ":00:00.000Z",
+    accountId: "a1", action: "content.set", name: "site.groupName",
+    summary: "entry " + i }));
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-log": () => ok({ ok: true, log: LOG_25 }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const list = byId.get("log-list");
+  const rows = list.children.filter((c) => c.className === "row wrap-row");
+  // logLine() composes "changed a setting: " ahead of the raw summary
+  // for a content.set action (checked elsewhere, above) - .endsWith()
+  // reads past that prefix to the one fact this block is about.
+  check("25 entries: only the newest 20 render",
+    rows.length === 20 &&
+    rows[0].children[2].textContent.endsWith("entry 0") &&
+    rows[19].children[2].textContent.endsWith("entry 19"));
+  const more = list.children.find((c) => c.tag === "button");
+  const offered = Boolean(more) && more.textContent === "More";
+  check("...and a More button is offered, since there are more than 20",
+    offered);
+
+  /*
+   * The two checks below need the button to exist before they can ask
+   * anything. Dispatching to a missing one throws (#457 review, F5),
+   * and a thrown arm prints no performed/failures line, never reaches
+   * this file's own EXPECTED-count guard, and skips every check below
+   * it - so one regression here would hide any second regression in
+   * the rest of the file behind a stack trace. Failing them explicitly
+   * keeps the count whole and the failure readable, which is the
+   * difference between a red that names two defects and one that names
+   * a line number.
+   */
+  if (offered) {
+    await more.dispatch("click");
+    const rowsAfter =
+      list.children.filter((c) => c.className === "row wrap-row");
+    check("pressing More reveals the rest - all 25, still newest first",
+      rowsAfter.length === 25 &&
+      rowsAfter[24].children[2].textContent.endsWith("entry 24"));
+    check("...and the button is gone now there is nothing left to reveal",
+      !list.children.some((c) => c.tag === "button"));
+  } else {
+    check("pressing More reveals the rest - all 25, still newest first " +
+      "(NOT REACHED: no More button to press)", false);
+    check("...and the button is gone now there is nothing left to " +
+      "reveal (NOT REACHED: no More button to press)", false);
+  }
+}
+
+{
+  const LOG_20 = Array.from({ length: 20 }, (_, i) => ({
+    at: "2026-08-21T12:00:00.000Z", accountId: "a1",
+    action: "content.set", name: "site.groupName", summary: "entry " + i }));
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-log": () => ok({ ok: true, log: LOG_20 }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const list = byId.get("log-list");
+  check("exactly 20 entries: all render and no More button appears - " +
+    "there is nothing more to reveal",
+    list.children.filter((c) => c.className === "row wrap-row").length === 20 &&
+    !list.children.some((c) => c.tag === "button"));
+}
+
 /* -- Departed: three sections in order, the empty state, confirm IN     */
 /* PLACE, refusals rendered as the Worker states them, the re-read after */
 /* a result, 20-then-more, and no handle/no numeric id anywhere (#420;   */
@@ -3038,7 +3146,7 @@ check("no download/export id survives in the real shipped markup - the " +
 // gateAdminItem/paintBarSignOut arms, the rail-admin gate, the
 // Settings/Roles toast routing): 215 + 6 + 12 = 233. Merging both
 // disjoint additions over the same 215 base gives the real total below.
-const EXPECTED = 251;
+const EXPECTED = 260;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
