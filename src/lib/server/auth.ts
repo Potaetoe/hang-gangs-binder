@@ -11,6 +11,7 @@ import {
 	DECOY_HASH,
 	hashPassword,
 	hmacHex,
+	needsRehash,
 	open,
 	randomToken,
 	seal,
@@ -264,6 +265,16 @@ export async function signInPassword(
 	}
 	if (!(await verifyPassword(password, login.passwordHash))) {
 		return { ok: false, reason: 'wrong' };
+	}
+	// The one moment the plain password is in hand and known good: if it
+	// is stored under an older, cheaper scheme, write it back at the
+	// current one. Nobody is asked to do anything, and the store
+	// converges on a single cost.
+	if (needsRehash(login.passwordHash)) {
+		await db
+			.update(table.logins)
+			.set({ passwordHash: await hashPassword(password) })
+			.where(eq(table.logins.lookupHash, login.lookupHash));
 	}
 	const member = (
 		await db.select().from(table.members).where(eq(table.members.id, login.memberId))
