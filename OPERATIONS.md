@@ -559,7 +559,15 @@ which for an admin session is two hours from sign-in.
 **There is a second way in, for a member who should run the technical
 parts without holding admin in Telegram**: flag them into the role from
 the admin surface, which writes a row the Worker reads on every
-request. That direction is not symmetric with the first — removing the
+request. **Pick them from the Roles card's member list** — everyone who
+has signed in at least once is in it, by handle. There is no id to find
+and none to type: the owner ruled that control in on 2026-08-24, after
+the obvious problem with the box it replaced — nobody knows their own
+numeric Telegram id, and Telegram's bot API will not turn an @username
+into one. Somebody who has never signed in is not in the list yet, and
+the honest first step there is to have them open the binder once.
+
+That direction is not symmetric with the first — removing the
 flag takes effect on that session's very next request, while adding it
 still needs them to sign in again. `server/schema.sql`'s `membership`
 block states all of this per direction, and `GET /me` reports which of
