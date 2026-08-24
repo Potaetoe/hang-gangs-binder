@@ -79,7 +79,7 @@ test('a stranger asks for an account, an admin approves, they sign in, they sign
 	await expect(page.getByRole('heading', { name: /hello, walk-in/i })).toBeVisible();
 
 	await page.getByRole('button', { name: 'Sign out' }).click();
-	await expect(page.getByRole('heading', { name: 'Binder' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Hang Gang' })).toBeVisible();
 });
 
 test('a wrong password gets one unrevealing message', async ({ page }) => {
@@ -126,5 +126,5 @@ test('the password door waits behind its flap, closed by default', async ({ page
 test('the home page is a door for the signed-out', async ({ page }) => {
 	const response = await page.goto('/home');
 	expect(response?.url()).not.toContain('/home');
-	await expect(page.getByRole('heading', { name: 'Binder' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Hang Gang' })).toBeVisible();
 });

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import EntryForm from '$lib/EntryForm.svelte';
+	import Nav from '$lib/Nav.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -10,7 +11,8 @@
 	<title>Your page — Hang Gang Binder</title>
 </svelte:head>
 
-<main>
+<Nav active="home" />
+<main class="with-rail">
 	<p class="wordmark">Hang Gang</p>
 	<h1>Hello, {data.name}</h1>
 	{#if data.isAdmin}

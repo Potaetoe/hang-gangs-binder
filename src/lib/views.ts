@@ -21,3 +21,39 @@ export type FormFieldView = {
 export type TrendView = { name: string; poly: string; latest: string };
 
 export type HistoryRow = { id: string; dateLabel: string; summary: string };
+
+/** A tile on the charts board: numbers carry a sparkline, choices
+ * carry count bars. */
+export type TileView = {
+	id: string;
+	name: string;
+	poly: string | null;
+	bars: number[];
+	headline: string;
+	delta: string | null;
+};
+
+/** The focused field's page, fully rendered server-side. */
+export type FocusView = {
+	name: string;
+	isChoice: boolean;
+	stats: { label: string; value: string; accent: boolean }[];
+	trend: {
+		poly: string;
+		ghost: string | null;
+		yMax: string;
+		yMid: string;
+		yMin: string;
+		xFirst: string;
+		xLast: string;
+	} | null;
+	dist: {
+		bars: { pct: number; on: boolean }[];
+		from: string;
+		to: string;
+		you: string | null;
+	} | null;
+	counts: { label: string; count: number; pct: number }[];
+	filterFields: { id: string; name: string; options: string[]; selected: string }[];
+	empty: string | null;
+};

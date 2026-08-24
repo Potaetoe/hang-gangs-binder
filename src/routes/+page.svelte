@@ -10,8 +10,8 @@
 </svelte:head>
 
 <main>
-	<p class="wordmark">Hang Gang</p>
-	<h1>Binder</h1>
+	<h1 class="brand-title">Hang Gang</h1>
+	<p class="brand-sub">Binder</p>
 	<p class="muted">
 		Sign in once — then it is your page to fill in, and everyone's numbers to read.
 	</p>
