@@ -65,9 +65,9 @@ decisions.
 1. **Core loop** — sign in, enter stats, your page (history, corrections),
    group charts with trend and distribution views, filtered by the
    categorical fields, with unit choice.
-2. **Admin surface** — site settings (name, welcome text, theme, floor),
-   member management (approvals, roles, the member picker), a change log,
-   departed-member cleanup.
+2. **Admin surface** — site settings (name, welcome text, timezone,
+   default theme), member management (approvals, roles, resets), a
+   change log, departed-member cleanup.
 3. **Form builder** — admins add, rename, and retire categorical fields.
    The contract that failed last time, now the acceptance test: **a field
    an admin adds appears on the member form and in the chart filters
@@ -90,7 +90,9 @@ socials-links page.
 ## The look
 
 The identity carries over: the wordmark, the four palettes, the fonts,
-phone-first layout with the bottom bar. Layout and detail are free to
+phone-first layout with the bottom bar. Member-facing pages serve the
+phone and the desktop equally; admin-facing pages are designed for
+desktop only (owner ruling 2026-08-24). Layout and detail are free to
 improve as pages are rebuilt as components. The rebuild changes the
 machinery, not the face.
 

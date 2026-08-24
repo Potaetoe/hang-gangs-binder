@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Brand from '$lib/Brand.svelte';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import Nav from '$lib/Nav.svelte';
@@ -21,7 +22,7 @@
 
 <Nav active="settings" />
 <main class="with-rail">
-	<p class="wordmark">{page.data.siteName}</p>
+	<Brand />
 	<h1>Settings</h1>
 	<p class="muted">Yours, on this device. A tap saves it.</p>
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Brand from '$lib/Brand.svelte';
 	import { resolve } from '$app/paths';
 	import EntryForm from '$lib/EntryForm.svelte';
 	import Nav from '$lib/Nav.svelte';
@@ -13,7 +14,7 @@
 
 <Nav active="home" />
 <main class="with-rail">
-	<p class="wordmark">{data.siteName}</p>
+	<Brand />
 	<h1>Entry from {data.dateLabel}</h1>
 
 	<section class="card">

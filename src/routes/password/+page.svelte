@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Brand from '$lib/Brand.svelte';
 	import { page } from '$app/state';
 	import type { ActionData, PageData } from './$types';
 
@@ -10,7 +11,7 @@
 </svelte:head>
 
 <main>
-	<p class="wordmark">{page.data.siteName}</p>
+	<Brand />
 	<h1>New password</h1>
 	{#if data.forced}
 		<p class="muted">

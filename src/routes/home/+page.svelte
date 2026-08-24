@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Brand from '$lib/Brand.svelte';
 	import { resolve } from '$app/paths';
 	import EntryForm from '$lib/EntryForm.svelte';
 	import Nav from '$lib/Nav.svelte';
@@ -13,7 +14,7 @@
 
 <Nav active="home" />
 <main class="wide with-rail">
-	<p class="wordmark">{data.siteName}</p>
+	<Brand />
 	<h1>Hello, {data.name}</h1>
 	{#if data.isAdmin}
 		<p class="muted">You are signed in as an admin.</p>

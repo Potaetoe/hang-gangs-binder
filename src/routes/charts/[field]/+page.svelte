@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Brand from '$lib/Brand.svelte';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import Nav from '$lib/Nav.svelte';
@@ -15,7 +16,7 @@
 <main class="wide with-rail">
 	<div class="page-head">
 		<div>
-			<p class="wordmark">{data.siteName}</p>
+			<Brand />
 			<h1>{data.focus.name}</h1>
 		</div>
 		{#if data.hasUnits}
