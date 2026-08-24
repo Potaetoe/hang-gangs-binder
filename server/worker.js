@@ -834,6 +834,22 @@ const DEPARTED_STALE_DAYS = 30;
 const DEPARTED_LIST_CAP = 50;
 
 /*
+ * How many members the picker's list carries (security consult,
+ * 2026-08-24, mandate 1). Every other list route on this Worker caps -
+ * ADMIN_LOG_LIMIT above, DEPARTED_LIST_CAP beside it - and this one
+ * does AES work per row, so an uncapped read is one admin request that
+ * opens every sealed record in the directory.
+ *
+ * Newest-first, so the cap keeps the members most likely to be picked:
+ * somebody an admin is about to promote has almost certainly signed in
+ * recently, and the ones falling off the end are accounts that have not
+ * been seen in a long time. The page says how many of how many it is
+ * showing rather than silently truncating, which is the same courtesy
+ * the change log's own More button pays.
+ */
+const DIRECTORY_LIST_CAP = 200;
+
+/*
  * What an admin is told about an account an operator's list is holding
  * open (Prime's ruling on review finding F3, 2026-08-21: never
  * attribute to the bot what the bot did not say).
@@ -1502,11 +1518,35 @@ function corsHeaders(origin) {
   };
 }
 
+/*
+ * NOTHING THIS FUNCTION RETURNS MAY BE STORED (security consult,
+ * 2026-08-24, mandate 5). Every route answering through here is either
+ * behind a session or answering about this deployment, and the snapshot
+ * response further down already spelled these exact two headers out by
+ * hand for that reason - so the rule belonged on the shared helper
+ * rather than on whichever route somebody remembers.
+ *
+ * The mandate was raised against GET /admin-directory, the first route
+ * here to return real members' handles, but a header that only that
+ * route sets is a rule the NEXT such route will not have. `private`
+ * refuses a shared cache; `no-store` refuses the browser's own disk as
+ * well, which is what matters on a device somebody else may pick up.
+ *
+ * VARY (Origin, Sec-Fetch-Site) deliberately does not name
+ * Authorization. With no-store there is nothing stored for a varied
+ * key to select between, and listing a header that is checked but never
+ * cached on would suggest a caching behavior this Worker does not want
+ * anywhere.
+ */
 function json(body, status, origin) {
   return new Response(JSON.stringify(body), {
     status: status,
     headers: Object.assign(
-      { "Content-Type": "application/json", Vary: VARY },
+      {
+        "Content-Type": "application/json",
+        "Cache-Control": "private, no-store",
+        Vary: VARY,
+      },
       origin ? corsHeaders(origin) : {}
     ),
   });
@@ -4559,25 +4599,39 @@ async function handleReadMembership(env, origin) {
  * membership oracle DESIGN.md's "The identifier is the whole problem"
  * exists to prevent, handed out through a convenience feature.
  *
- * THE ACCOUNT ID GOES OUT, and that is not a widening: it is the same
- * un-invertible HMAC handleReadMembership above already returns for
- * every row, to the same admin-only caller, with the same reasoning
- * written beside it. It is what the membership table keys on, so it is
- * what the picker has to hand back to write a row.
+ * THE ACCOUNT ID GOES OUT. It is the same un-invertible HMAC
+ * handleReadMembership above already returns, to the same admin-only
+ * caller, and it is what the membership table keys on - so it is what
+ * the picker has to hand back to write a row.
  *
- * A ROW THIS WORKER CANNOT OPEN IS SKIPPED, not reported as an error
- * and not rendered as a blank. Failing the whole list because one
- * record predates a format or was written under a rotated secret would
- * take the feature away from every member to report one broken row,
- * and a nameless entry in a picker is not something an admin can act
- * on anyway. The count of what opened is what the page shows.
+ * THAT PRECEDENT IS PARTIAL, AND SAYING SO IS THE POINT (security
+ * consult, 2026-08-24, mandate 6). The membership rows are operator-
+ * written and carry no handle: they are account ids and an admin's own
+ * label. This route binds an account id to a HANDLE, for every member
+ * who has ever signed in rather than for the few in a role. Same value,
+ * strictly larger set, and a link the other route does not publish.
+ * Accepted - an admin who can read this list administers the Telegram
+ * group these handles come from - but not because the older route
+ * already did it, because it did not.
+ *
+ * A ROW THIS WORKER CANNOT OPEN IS SKIPPED AND COUNTED, never silently
+ * dropped (security consult, 2026-08-24, mandate 2). Failing the whole
+ * list because one record predates a format would take the feature away
+ * from everybody to report one broken row - but skipping in silence is
+ * worse in the one case that matters: a wrong or rotated STORE_SECRET
+ * opens nothing at all, and an empty list reads to the page as "nobody
+ * has signed in yet". That is a deployment fault wearing the costume of
+ * an ordinary empty group. `unreadable` is what tells the two apart,
+ * and it is a count rather than any part of a record - nothing about
+ * the rows that failed leaves here.
  */
 async function handleReadDirectory(env, origin) {
   let rows;
   try {
     rows = await env.DB.prepare(
-      "SELECT account_id, ciphertext FROM directory ORDER BY last_seen_at DESC"
-    ).all();
+      "SELECT account_id, ciphertext FROM directory " +
+      "ORDER BY last_seen_at DESC LIMIT ?"
+    ).bind(DIRECTORY_LIST_CAP).all();
   } catch (e) {
     return json({ error: "The member list could not be read." }, 500, origin);
   }
@@ -4587,19 +4641,33 @@ async function handleReadDirectory(env, origin) {
 
   const store = await openStore(env);
   const members = [];
+  let unreadable = 0;
   for (const row of rows.results) {
     if (!row || typeof row.ciphertext !== "string") continue;
+    // The same guard the WRITE path seals through (mandate 4). A row
+    // whose key is not an account-id HMAC is not a row this Worker
+    // wrote, and handing it to openDirectory as an accountId context
+    // would be trusting the table to say what the format is.
+    if (!ACCOUNT_ID.test(row.account_id)) {
+      unreadable += 1;
+      continue;
+    }
     let record;
     try {
       record = JSON.parse(await store.openDirectory(
         base64ToBytes(row.ciphertext),
-        { accountId: row.account_id, recordId: DIRECTORY_SLOT }));
+        { accountId: rowIdentity(row.account_id),
+          recordId: DIRECTORY_SLOT }));
     } catch (e) {
+      unreadable += 1;
       continue;
     }
     const handle = record && typeof record.handle === "string"
       ? record.handle.trim() : "";
-    if (!handle) continue;
+    if (!handle) {
+      unreadable += 1;
+      continue;
+    }
     const displayName = record && typeof record.displayName === "string"
       ? record.displayName.trim() : "";
     // Named field by named field, never a spread of `record`: a spread
@@ -4612,7 +4680,17 @@ async function handleReadDirectory(env, origin) {
     });
   }
 
-  return json({ ok: true, members: members }, 200, origin);
+  // Counts only, and only when there is something to say. An operator
+  // watching a rotated secret needs this in the log as well as on the
+  // page, because the admin who sees it cannot fix it.
+  if (unreadable) log("directory.unreadable." + unreadable);
+
+  return json({
+    ok: true,
+    members: members,
+    unreadable: unreadable,
+    capped: rows.results.length >= DIRECTORY_LIST_CAP,
+  }, 200, origin);
 }
 
 /*
@@ -4740,14 +4818,38 @@ async function handleAddMembership(request, env, origin, caller) {
     let known;
     try {
       known = await env.DB.prepare(
-        "SELECT 1 AS found FROM directory WHERE account_id = ?"
+        "SELECT ciphertext FROM directory WHERE account_id = ?"
       ).bind(givenAccount).first();
     } catch (e) {
       return json({
         error: "The member list could not be read.",
       }, 500, origin);
     }
-    if (!known) {
+    /*
+     * THE SAME PREDICATE THE PICKER USED, not merely "a row exists"
+     * (security consult, 2026-08-24, mandate 3). A row whose record
+     * does not open is one GET /admin-directory skips, so a bare
+     * existence test answers over a larger set than the list an admin
+     * chose from - and the refusal below would then say "has not signed
+     * in" about somebody who has. The impact is small either way, since
+     * reaching here at all needs an account id only admin routes hand
+     * out; what is not small is a refusal that states something untrue.
+     */
+    let opens = false;
+    if (known && typeof known.ciphertext === "string") {
+      try {
+        const store = await openStore(env);
+        const record = JSON.parse(await store.openDirectory(
+          base64ToBytes(known.ciphertext),
+          { accountId: rowIdentity(givenAccount),
+            recordId: DIRECTORY_SLOT }));
+        opens = Boolean(record && typeof record.handle === "string" &&
+          record.handle.trim());
+      } catch (e) {
+        opens = false;
+      }
+    }
+    if (!opens) {
       return json({
         error: "That member has not signed in, so there is nothing to " +
           "make an admin yet.",

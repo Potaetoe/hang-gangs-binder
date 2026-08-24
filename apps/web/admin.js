@@ -1139,14 +1139,23 @@
      * empty dropdown is indistinguishable from a group with no members
      * yet, and the two want opposite things from the admin.
      */
-    function drawDirectory(members) {
+    function drawDirectory(members, unreadable) {
       const select = $("member-account");
       select.textContent = "";
       const first = document.createElement("option");
       first.value = "";
+      // AN EMPTY LIST AND A LIST THAT WOULD NOT OPEN ARE DIFFERENT
+      // FACTS (security consult, 2026-08-24, mandate 2). A wrong or
+      // rotated STORE_SECRET opens nothing, and "nobody has signed in
+      // yet" would be this page telling an admin their group is empty
+      // when what is actually wrong is the deployment. The admin cannot
+      // fix either one, but they can stop trying to promote somebody
+      // and say something useful to whoever can.
       first.textContent = members.length
         ? "Choose a member…"
-        : "Nobody has signed in yet";
+        : (unreadable
+          ? "The member list could not be read"
+          : "Nobody has signed in yet");
       select.appendChild(first);
       for (const member of members) {
         const option = document.createElement("option");
@@ -1155,6 +1164,13 @@
           ? "@" + member.handle + " — " + member.displayName
           : "@" + member.handle;
         select.appendChild(option);
+      }
+      // Said once, under the control, when some records opened and
+      // others did not - the list is usable and incomplete at the same
+      // time, which is the one state a dropdown alone cannot express.
+      if (unreadable && members.length) {
+        sayRoles(unreadable + " member" + (unreadable === 1 ? "" : "s") +
+          " could not be read and are missing from this list.", "bad");
       }
     }
 
@@ -1166,17 +1182,13 @@
         });
         if (!response.ok) {
           if (sessionRefused(response, sayRoles)) return;
-          drawDirectory([]);
-          $("member-account").firstChild.textContent =
-            "The member list could not be read";
+          drawDirectory([], 1);
           return;
         }
         payload = await response.json();
       } catch (error) {
         detail(why(error));
-        drawDirectory([]);
-        $("member-account").firstChild.textContent =
-          "The member list could not be read";
+        drawDirectory([], 1);
         return;
       }
       const members = payload && Array.isArray(payload.members)
@@ -1185,7 +1197,9 @@
             typeof m.handle === "string" && m.handle;
         })
         : [];
-      drawDirectory(members);
+      const unreadable = payload && Number.isFinite(payload.unreadable)
+        ? payload.unreadable : 0;
+      drawDirectory(members, unreadable);
     }
 
     $("member-add").addEventListener("click", async function () {
