@@ -405,8 +405,44 @@ select {
 	color: var(--color-accent);
 	font-weight: 600;
 }
+/* Sign out lives in the rail (owner, 2026-08-24), dressed exactly
+   like its neighbours despite being a form button. */
+.rail-out {
+	flex: 1;
+	display: flex;
+}
+.rail-out button {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 2px;
+	padding: 8px 0 12px;
+	min-height: 0;
+	font-size: 0.75rem;
+	font-weight: 400;
+	color: var(--color-text-muted);
+	background: transparent;
+	border: 0;
+	border-radius: 0;
+}
+.rail-out button svg {
+	width: 22px;
+	height: 22px;
+}
 main.with-rail {
 	padding-bottom: 6rem;
+}
+
+/* Your page: one column on the phone, the form beside its results on
+   desktop (the media query below). */
+.home-layout {
+	display: flex;
+	flex-direction: column;
+}
+.home-rest {
+	display: flex;
+	flex-direction: column;
 }
 
 /* ------------------------------------------------------------------ */
@@ -745,8 +781,37 @@ main.with-rail {
 	.rail a.on {
 		border-bottom-color: var(--color-accent);
 	}
+	.rail-out {
+		flex: none;
+	}
+	.rail-out button {
+		flex: none;
+		flex-direction: row;
+		gap: 6px;
+		font-size: 0.95rem;
+		padding: 6px 0;
+		cursor: pointer;
+	}
+	.rail-out button svg {
+		width: 18px;
+		height: 18px;
+	}
 	main.with-rail {
 		padding-bottom: 3rem;
+	}
+	/* Your page on desktop: the entry form keeps its phone width on
+	   the left; trends and history breathe on the right. */
+	.home-layout {
+		display: grid;
+		grid-template-columns: 27rem minmax(0, 1fr);
+		gap: 1.5rem;
+		align-items: start;
+	}
+	.home-entry {
+		margin-block: var(--space) 0;
+	}
+	.home-rest section:first-child h2 {
+		margin-top: var(--space);
 	}
 	/* The top bar already wears the brand - the in-page eyebrow would
 	   say it twice (owner, 2026-08-24). The phone rail carries no
