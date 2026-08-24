@@ -320,8 +320,15 @@ function makeElement(id, registry) {
     // preventDefault is a no-op rather than absent: form.js's own submit
     // listener calls it unconditionally, and every other listener this
     // file drives simply never reaches for it.
-    dispatch(type) {
-      const event = { type: type, preventDefault: function () {} };
+    // `extra` merges onto the event object - the DOM fields a listener
+    // reads off a real event and this stub has no way to synthesize on
+    // its own. focusout's `relatedTarget` (where the focus WENT) is the
+    // first of them: form.js has to tell "left this field" from "moved
+    // to the next box inside this field", and that is the only fact
+    // that answers it. Callers passing one argument are untouched.
+    dispatch(type, extra) {
+      const event = Object.assign(
+        { type: type, preventDefault: function () {} }, extra || {});
       const results = [];
       for (const fn of listeners.get(type) || []) results.push(fn.call(this, event));
       return Promise.all(results);
@@ -1417,6 +1424,62 @@ globalThis.BINDER_SITE = SITE;
 }
 
 /*
+ * A FIELD IS NOT A CONTROL (#457 review, finding F6; 0.9-M3-S33 part B
+ * fix wave 1). Item 11 rules the note "as the member leaves each
+ * FIELD". wireFieldValidation() listens on every control, and a
+ * multi-checkbox field is several controls in one field - so tabbing
+ * from the first box to the second used to run the whole field's
+ * validation while the member was still answering it, telling them
+ * they had not answered a question they were mid-way through.
+ *
+ * focusout's own relatedTarget is what tells the two apart: where the
+ * focus WENT. Both directions are driven here, because a fix that
+ * simply stopped validating on focusout would pass the first check
+ * alone - the second is what proves the note still arrives when the
+ * member really does leave.
+ */
+const SCRATCH_REQUIRED_MULTI = Object.freeze({
+  ...SITE,
+  fields: Object.freeze(SITE.fields.map((field) =>
+    field.name === "roles"
+      ? Object.freeze({ ...field, required: true })
+      : field)),
+});
+{
+  globalThis.BINDER_SITE = SCRATCH_REQUIRED_MULTI;
+  const wired = await loadFormWired();
+  const rolesError = () => findById(wired.page.body, "error-roles");
+  const boxes = wired.page.document
+    .querySelectorAll('[data-field="roles"]');
+  check("CONTROL: the multi-checkbox field really rendered several " +
+    "controls, so the two cases below are distinguishable at all",
+    boxes.length > 1);
+  check("CONTROL: nothing shown before the member has touched a box",
+    rolesError().hidden === true);
+
+  boxes[0].dispatch("focusout", { relatedTarget: boxes[1] });
+  check("leaving one checkbox for another INSIDE the same field says " +
+    "nothing - the member has not left the field yet",
+    rolesError().hidden === true && rolesError().textContent === "");
+
+  boxes[0].dispatch("focusout",
+    { relatedTarget: wired.page.byId("entry-gender") });
+  check("...and leaving the field for a control in a DIFFERENT field " +
+    "shows the note, exactly as the ruling asks",
+    rolesError().hidden === false &&
+    rolesError().textContent === "Feedism affiliations is required.");
+
+  rolesError().hidden = true;
+  rolesError().textContent = "";
+  boxes[0].dispatch("focusout");
+  check("...and so does leaving for nothing at all - a focusout with " +
+    "no relatedTarget (the member clicked the page background, or " +
+    "tabbed out of the document) is still a field exit",
+    rolesError().hidden === false);
+  globalThis.BINDER_SITE = SITE;
+}
+
+/*
  * Row 23 is chronologically newest but SUPERSEDED - a prefill that read
  * entries[0] rather than the newest entry with superseded === false
  * would pick up its gender/country/height, and the CONTROL check below
@@ -1627,6 +1690,62 @@ check("no history: the form renders exactly as today - nothing prefills",
     Boolean(cta) && cta.className === "primary" &&
     cta.getAttribute("href") === "#entry-section" &&
     cta.textContent === "Add your first one");
+}
+
+/*
+ * THE SAME EMPTY STATE, ONE CARD HIGHER (#457 review, finding F1;
+ * 0.9-M3-S33 part B fix wave 1). Item 10's rewrite reached
+ * renderEntries() and not renderTrend(), so a member with nothing
+ * recorded met the retired sentence FIRST - "Nothing recorded yet -
+ * fill in the form above and it starts here.", prose telling them to
+ * scroll up, printed directly above the button that does the jump for
+ * them. Both cards paint on the same page load and neither is
+ * conditional on the other, so one arm reading one slot could never
+ * have caught it: this reads the trend slot itself.
+ *
+ * The trend card carries no second button. The next step item 10 asks
+ * for is one card below and is the same act - a member with no entries
+ * is not offered "Add your first one" twice on one screen.
+ */
+{
+  const slot = emptyPage.byId("trend-slot");
+  const sentence = slot.children.find((c) => c.tag === "p");
+  check("the empty trend card speaks the same voice as the list below " +
+    "it - no scroll-up instruction, and not the retired sentence",
+    Boolean(sentence) &&
+    sentence.textContent ===
+      "No entries yet — a line appears here once you have two.");
+  check("...and it offers no second copy of the button one card down",
+    !slot.children.some((c) => c.tag === "a"));
+}
+
+/*
+ * The sweep, done MECHANICALLY rather than by eye (#457 review, F1;
+ * AGENTS.md, "A sweep is claimed complete only when it was
+ * mechanical"). Every sentence part B's voice table listed as replaced,
+ * refused across BOTH trees at once - the shipped source and the built
+ * copy - so a second slot keeping a retired sentence fails here even
+ * when no rendering arm happens to read that slot. dist/ is read for
+ * the reason tests/admin-page.test.mjs reads it for the same audit: a
+ * build, not a hand edit only one copy ever sees.
+ */
+{
+  const submitJs = await read("../apps/web/submit.js");
+  const distSubmitJs = await read("../dist/submit.js");
+  // Matched on the opening words rather than on the whole sentence:
+  // the retired one wrapped across two source lines, so a whole-
+  // sentence search would have found nothing in either file and passed
+  // while the sentence was still there.
+  const RETIRED = ["Nothing recorded yet", "That entry could not be removed"];
+  const RULED = "No entries yet — a line appears here once you have two.";
+  check("no retired empty-state or delete-failure sentence survives " +
+    "anywhere in apps/web/submit.js - the whole file, not one render " +
+    "path",
+    RETIRED.every((sentence) => !submitJs.includes(sentence)));
+  check("...nor anywhere in dist/submit.js",
+    RETIRED.every((sentence) => !distSubmitJs.includes(sentence)));
+  check("and the ruled trend sentence is what both trees carry instead",
+    submitJs.includes(RULED) && distSubmitJs.includes(RULED));
 }
 
 const failedPage = await loadCombinedForPrefill(
@@ -1937,7 +2056,12 @@ async function drivenNavOnYourPage(meAnswer, options) {
 }
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 129;
+// 129 through 0.9-M3-S33 part B's own build; fix wave 1 (#457 review)
+// adds 10 - five for finding F1 (two on the trend card's own empty
+// state, three sweeping both trees for every sentence the voice table
+// listed as replaced) and five for finding F6 (leaving one checkbox
+// for another inside the same field is not leaving the field).
+const EXPECTED = 139;
 console.log(failures
   ? `\nyour-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

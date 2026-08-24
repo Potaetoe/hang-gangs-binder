@@ -33,7 +33,10 @@ import { fileURLToPath } from "node:url";
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 const read = (path) => readFile(HERE(path), "utf8");
 
-const EXPECTED = 37;
+// 37 through 0.9-M3-S33 part B's own build; fix wave 1 (#457 review)
+// adds 6 - one for F4's every-width trim, five for F2's move of the
+// sign-out acknowledgement into the shared toast.
+const EXPECTED = 43;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -404,7 +407,7 @@ function localStorageStub() {
 /* sentence itself does not (it is one of the three named things).      */
 
 check("the masthead's runner carries sr-only - real for a screen " +
-  "reader, painting nothing at 375 px",
+  "reader, painting nothing at any width",
   /<p class="runner sr-only"><span>Members<\/span><\/p>/.test(indexSource));
 check("...and the masthead's own <h1> too",
   /<h1 class="sr-only">Sign in<\/h1>/.test(indexSource));
@@ -425,6 +428,48 @@ check(".sr-only is defined as the real visually-hidden-but-accessible " +
   "shape, not `display:none` (which a screen reader also skips) and " +
   "not merely a class name with no rule behind it",
   /\.sr-only\s*\{[^}]*clip:\s*rect\(0,\s*0,\s*0,\s*0\)/.test(themeCssSource));
+
+/*
+ * The trim is minimal AT EVERY WIDTH, not phone-only (owner ruling
+ * 2026-08-23, UX record #454 comment 5389445914, raised as F4 by the
+ * #457 review). The shipped behavior was already this - `.sr-only`
+ * carries no media query - and the ruling settled that it is the
+ * intent rather than an overreach. This pins the CODE that makes it
+ * true, so a later "fix" wrapping the rule in a width query has to
+ * argue with a check rather than sail past one.
+ */
+check(".sr-only is not scoped to a width - the door is this minimal at " +
+  "every size, and a media query around this rule would quietly " +
+  "restore the desktop copy the ruling removed",
+  /(^|\n)\.sr-only\s*\{/.test(themeCssSource));
+
+/* ------------------------------------------------------------------ */
+/* 6. The sign-out acknowledgement is a TOAST (owner ruling 2026-08-23, */
+/* #454 comment 5389445914; #457 review, F2). Item 8 already sends the  */
+/* result of an act to the shared toast, and a sign-out is an act -     */
+/* so the ruled words move into that vehicle and the inline status      */
+/* line goes, which is what makes item 14's fold hold in the return-    */
+/* from-sign-out state as well as on a first arrival. The WORDS are     */
+/* unchanged (#265/#275) and tools/check_web.py's RULED_TOAST_LINES     */
+/* pins them; this suite pins the wiring around them.                   */
+
+check("index.html no longer ships an inline #signed-out line - the " +
+  "fourth thing that used to paint above the sign-in button on a " +
+  "return from Sign out",
+  !/id="signed-out"/.test(indexSource));
+check("...and carries the shared #toast instead, the element " +
+  "BinderUI.showToast() finds by id",
+  /<p class="toast" id="toast" role="status" aria-live="polite" hidden>/
+    .test(indexSource));
+check("auth.js holds the owner's ruled words as one constant rather " +
+  "than composing them at the call site",
+  /const SIGNED_OUT_LINE = "Signed out\.";/.test(authSource));
+check("...and hands that constant, and nothing read from storage or " +
+  "the URL, to the toast",
+  /showToast\(SIGNED_OUT_LINE\)/.test(authSource));
+check("the mark is still the only trigger, and is still spent on " +
+  "sight - a reload after a sign-out says nothing",
+  /removeItem\(SIGNED_OUT_KEY\)/.test(authSource));
 
 console.log(failures
   ? `\ndoor FAILED ${failures} of ${performed} check(s)`
