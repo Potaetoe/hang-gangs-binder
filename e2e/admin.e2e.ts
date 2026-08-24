@@ -170,6 +170,28 @@ test('roles guard themselves', async ({ page }) => {
 	await expect(page.locator('.badge').filter({ hasText: 'admin' })).toBeVisible();
 });
 
+test('a member paints their own device', async ({ page }) => {
+	const stamp = Date.now();
+	const painter = `painter${stamp}`;
+	await register(page, painter);
+	const approved = await page.request.post(`/test/approve?username=${painter}`);
+	expect(approved.ok()).toBeTruthy();
+	await signIn(page, painter);
+
+	// The rail carries every member to their settings.
+	await page.locator('.rail').getByRole('link', { name: 'Settings' }).click();
+	await page.getByLabel('Theme').selectOption('meadow');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(async () => {
+		const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+		expect(bg).toBe('rgb(242, 239, 233)');
+	}).toPass({ timeout: 5000 });
+
+	// Back to the site default.
+	await page.getByLabel('Theme').selectOption('');
+	await page.getByRole('button', { name: 'Save' }).click();
+});
+
 test('settings shape the site', async ({ page }) => {
 	const stamp = Date.now();
 	const boss = `styler${stamp}`;

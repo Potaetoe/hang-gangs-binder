@@ -30,7 +30,7 @@
 		<label for="timezone">Timezone (dates entries by it)</label>
 		<input id="timezone" name="timezone" value={data.settings.timezone} />
 
-		<label for="theme">Theme</label>
+		<label for="theme">Default theme (each member can pick their own in Settings)</label>
 		<select id="theme" name="theme">
 			{#each data.themeChoices as choice (choice)}
 				<option value={choice} selected={data.settings.theme === choice}

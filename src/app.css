@@ -1,8 +1,9 @@
 /* The Binder's face, carried over from the old world (DESIGN.md, "The
    look"): Playfair Display for the wordmark and headings, DM Sans for
-   text, JetBrains Mono for data, the midnight and daylight palettes
-   following the phone. The remaining palettes arrive with the theme
-   picker feature. */
+   text, JetBrains Mono for data. These tokens are the daylight and
+   midnight palettes following the device; the pinned palettes (plum
+   and meadow included) override them from src/lib/server/settings.ts
+   via the layout's injected style. */
 
 @font-face {
 	font-family: 'Playfair Display';
@@ -913,4 +914,37 @@ button.quiet {
 }
 .settings-form label:first-child {
 	margin-top: 0;
+}
+
+/* Log and corrections read as tables (owner, 2026-08-24); wide ones
+   scroll inside their card, never the page. */
+.table-scroll {
+	overflow-x: auto;
+	padding: 0.5rem 1rem;
+}
+.admin-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-family: var(--font-mono);
+	font-size: 0.8rem;
+}
+.admin-table th {
+	text-align: left;
+	font-family: var(--font-text);
+	font-size: 0.7rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--color-text-muted);
+	padding: 0.6rem 1rem 0.6rem 0;
+	border-bottom: 1px solid var(--color-border-strong);
+	white-space: nowrap;
+}
+.admin-table td {
+	padding: 0.55rem 1rem 0.55rem 0;
+	border-bottom: 1px solid var(--color-border);
+	vertical-align: top;
+}
+.admin-table tr:last-child td {
+	border-bottom: 0;
 }

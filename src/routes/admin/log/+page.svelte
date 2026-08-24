@@ -9,20 +9,29 @@
 	{#if !data.lines.length}
 		<p class="muted">Nothing yet — admin actions land here.</p>
 	{:else}
-		<ul class="history">
-			{#each data.lines as line, i (i)}
-				<li class="card">
-					<div>
-						<p class="muted entry-date">{line.date}</p>
-						<p class="entry-summary">
-							{line.actor}
-							{line.action}{line.subject ? ` — ${line.subject}` : ''}{line.detail
-								? ` (${line.detail})`
-								: ''}
-						</p>
-					</div>
-				</li>
-			{/each}
-		</ul>
+		<div class="table-scroll card">
+			<table class="admin-table">
+				<thead>
+					<tr>
+						<th>Date</th>
+						<th>Admin</th>
+						<th>Action</th>
+						<th>Member</th>
+						<th>Detail</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each data.lines as line, i (i)}
+						<tr>
+							<td>{line.date}</td>
+							<td>{line.actor}</td>
+							<td>{line.action}</td>
+							<td>{line.subject ?? ''}</td>
+							<td>{line.detail ?? ''}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 	{/if}
 </section>

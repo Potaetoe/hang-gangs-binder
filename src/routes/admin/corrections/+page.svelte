@@ -12,21 +12,29 @@
 	{#if !data.lines.length}
 		<p class="muted">No corrections yet.</p>
 	{:else}
-		<ul class="history">
-			{#each data.lines as line, i (i)}
-				<li class="card">
-					<div>
-						<p class="muted entry-date">{line.date}</p>
-						<p class="entry-summary">
-							{line.member}
-							{line.action === 'edit' ? 'edited' : 'deleted'} the entry from {line.entryDate}
-						</p>
-						{#if line.before}
-							<p class="muted entry-date">was: {line.before}</p>
-						{/if}
-					</div>
-				</li>
-			{/each}
-		</ul>
+		<div class="table-scroll card">
+			<table class="admin-table">
+				<thead>
+					<tr>
+						<th>Date</th>
+						<th>Member</th>
+						<th>Action</th>
+						<th>Entry from</th>
+						<th>Was</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each data.lines as line, i (i)}
+						<tr>
+							<td>{line.date}</td>
+							<td>{line.member}</td>
+							<td>{line.action === 'edit' ? 'edited' : 'deleted'}</td>
+							<td>{line.entryDate}</td>
+							<td>{line.before}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 	{/if}
 </section>
