@@ -147,11 +147,12 @@ time.
    selftest green, and branch protection on before any feature starts.
 1. Auth: both doors, registration + approval, linking, admin resets.
 2. Core loop: entry form, your page.
-3. Charts: trend, distribution, units, the privacy floor.
+3. Charts: the board, focused fields with combined filters, units,
+   the desktop face. (Floorless — owner ruling 2026-08-24, recorded
+   in DESIGN.md; the old step 6 landed here.)
 4. Admin surface: settings, members, change log, departed cleanup.
 5. Form builder, end to end — the acceptance test from DESIGN.md.
-6. Combined filters with subtraction-proof flooring.
-7. Fork README, the security pass, launch.
+6. Fork README, the security pass, launch.
 
 ## The reset (record, not governance)
 

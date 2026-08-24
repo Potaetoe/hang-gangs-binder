@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
-import { destroySession, identityOf, setDisplayName, type Secrets } from '$lib/server/auth';
+import { identityOf, setDisplayName, type Secrets } from '$lib/server/auth';
 import {
 	carryForward,
 	computeBmi,
@@ -130,12 +130,5 @@ export const actions: Actions = {
 			maxAge: 400 * 86_400
 		});
 		redirect(303, '/home');
-	},
-
-	signout: async ({ cookies, platform }) => {
-		const env = platform!.env;
-		await destroySession(getDb(env.DB), cookies.get('session'));
-		cookies.delete('session', { path: '/' });
-		redirect(303, '/');
 	}
 };

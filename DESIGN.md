@@ -35,9 +35,11 @@ they belong to.**
   login path stores no plain identity.
 - Cloudflare's built-in encryption covers the disk. TLS covers transit.
 - No member data ever goes to logs.
-- The privacy floor: charts hide any view covering fewer than N members
-  (admin sets N), and no combination of filters may reveal an individual
-  by subtraction. This holds on the server, not in the page.
+- No floor (owner ruling 2026-08-24, replacing the old N-member floor):
+  charts show whatever matches the filters, however few members that
+  is. In a small group a narrow filter can point at one person's
+  numbers — never their name. The owner accepts that openly rather
+  than promising a guard the group does not want.
 
 Accepted residual risk, stated plainly: someone with the operator's own
 Cloudflare access sees what the server sees. The operator is trusted —
@@ -61,7 +63,8 @@ that feature is handed over to be built. Nothing below inherits old UX
 decisions.
 
 1. **Core loop** — sign in, enter stats, your page (history, corrections),
-   group charts with trend and distribution views and unit choice.
+   group charts with trend and distribution views, filtered by the
+   categorical fields, with unit choice.
 2. **Admin surface** — site settings (name, welcome text, theme, floor),
    member management (approvals, roles, the member picker), a change log,
    departed-member cleanup.
@@ -69,8 +72,8 @@ decisions.
    The contract that failed last time, now the acceptance test: **a field
    an admin adds appears on the member form and in the chart filters
    without any code change.**
-4. **Privacy floor + combined filters** — the floor rule above, plus
-   multi-filter charts with subtraction-proof flooring.
+4. **Combined filters** — multi-filter charts (landed with the core
+   loop's charts; floorless by the ruling above).
 
 **Later** (named so they are not forgotten): a calendar/events page, a
 socials-links page.

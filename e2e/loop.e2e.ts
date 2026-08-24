@@ -152,6 +152,25 @@ test('a cleared field keeps its last value on a new entry', async ({ page }) => 
 	).toBeVisible();
 });
 
+test('six foot nothing is a height, and America leads the country list', async ({ page }) => {
+	const username = `sixfoot${Date.now()}`;
+	await signInFreshMember(page, username);
+
+	// The owner's drive found the zero: 6 ft 0 in must save.
+	await fillStable(page, /height, feet/i, '6');
+	await fillStable(page, /height, inches/i, '0');
+	await fillStable(page, 'Weight', '240');
+	await page.getByRole('button', { name: 'Save entry' }).click();
+	await expect(
+		page.locator('.entry-summary').filter({ hasText: '6 ft 0 in · 240 lb' })
+	).toBeVisible();
+
+	// The country list leads with the group's actual countries.
+	await expect(page.getByLabel('Country').locator('option').nth(1)).toHaveText('United States');
+	await expect(page.getByLabel('Country').locator('option').nth(2)).toHaveText('United Kingdom');
+	await expect(page.getByLabel('Country').locator('option').nth(5)).toHaveText('Mexico');
+});
+
 test('an empty submit saves nothing and says so', async ({ page }) => {
 	const username = `blank${Date.now()}`;
 	await signInFreshMember(page, username);
