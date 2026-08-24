@@ -35,14 +35,12 @@
   // value read under a live key is a silent wrong answer, and a key
   // nobody has written is a clean one.
   const KEY = "hgb-palette";
-  // The admin's configured resting palette, cached by apps/web/site-content.js
-  // from GET /config. Owner ruling, UX record #454 item 15 (2026-08-22;
-  // 0.9-M3-S32, #456, superseding 0.9-M3-S12's #418 "admin default from
-  // the second load" rule): this key no longer paints a page on its
-  // own. It is read only below, to decide which swatch the picker shows
-  // as pre-selected for a member who has made no choice of their own;
-  // the pre-paint script this page's <head> loads first never touches
-  // it any more.
+  // The admin's configured resting palette, cached by apps/web/site-
+  // content.js from GET /config. Owner ruling 2026-08-24: it paints for
+  // a member who has made no choice of their own, ranking under that
+  // member's own choice and over the phone's scheme. theme-init.js
+  // reads the same key before first frame in the same order, which is
+  // what keeps this file's own repaint from being a flash.
   const DEFAULT_THEME_KEY = "hgb-default-theme";
   const BG = {
     pink: "#1e141a", daylight: "#f3eadb", midnight: "#120d10",
@@ -64,14 +62,12 @@
   }
 
   // paintName is what gets painted - the documentElement attribute and
-  // the browser chrome. pressedName, when it differs, is which swatch
-  // shows as pressed without repainting anything: the picker pre-
-  // selecting the admin's configured default (see adminDefault below)
-  // while the page itself keeps the resting palette theme-init.js
-  // already painted is exactly this split, and it is the only reason
-  // apply() takes two names instead of one. The click handler below
-  // passes a single name, so a member's own pick paints and marks the
-  // same swatch, as it always has.
+  // the browser chrome. pressedName is which swatch shows as pressed.
+  // Every caller passes one name, or the same value twice: the mark and
+  // the palette agree by construction, because what the picker shows as
+  // chosen is what the page is wearing. The parameter stays separate so
+  // that any caller ever needing to mark something it did not paint has
+  // to say so out loud rather than by omission.
   function apply(paintName, pressedName) {
     document.documentElement.setAttribute("data-theme", paintName);
     paintChrome(paintName);
@@ -82,15 +78,13 @@
     });
   }
 
-  // What a member with no saved choice of their own gets, on this load
-  // and every one before they ever pick: the phone's own light/dark
-  // scheme, nothing more (owner ruling, UX record #454 item 15). A
-  // mirror of theme-init.js's own synchronous pre-paint read, on
-  // purpose - apply() below writes the same attribute theme-init.js
-  // already wrote, and a disagreement here would repaint the page the
-  // instant this script ran, which is the flash both files exist to
-  // prevent. "No preference" - no matchMedia support, or the query not
-  // matching - resolves to light, the ruling's own words.
+  // The LAST rank: what a member gets when they have chosen nothing and
+  // the admin has configured nothing either. A mirror of theme-init.js's
+  // own synchronous pre-paint read, on purpose - apply() below writes
+  // the same attribute theme-init.js already wrote, and a disagreement
+  // here would repaint the page the instant this script ran, which is
+  // the flash both files exist to prevent. "No preference" - no
+  // matchMedia support, or the query not matching - resolves to light.
   function schemeDefault() {
     return (window.matchMedia &&
       matchMedia("(prefers-color-scheme: dark)").matches)
@@ -102,11 +96,12 @@
 
   // A stored value naming a palette this file does not paint - "custom"
   // from before the ruling retired it, or anything else hand-edited or
-  // from a future version - is not a choice this file can honor. Falls
-  // through to the resting scheme-based palette instead (schemeDefault()
-  // below), the same resting state a first-time visitor gets: no crash,
-  // no half-applied state, and BG[name] above already guards
-  // paintChrome() the same way for the browser chrome.
+  // from a future version - is not a choice this file can honor.
+  // Dropping it puts the member exactly where somebody who has never
+  // picked stands, so they fall through the same ranks in the same
+  // order - the admin's default, then the phone's scheme: no crash, no
+  // half-applied state, and BG[name] above already guards paintChrome()
+  // the same way for the browser chrome.
   if (stored && !Object.prototype.hasOwnProperty.call(BG, stored)) {
     stored = null;
   }
@@ -118,9 +113,9 @@
   // has made no choice of their own, ranking above the phone's scheme
   // and below the member (owner ruling 2026-08-24, replacing the
   // 2026-08-22 "first visit follows the phone" rule; theme-init.js's
-  // header carries the whole order and why it moved). It used to
-  // pre-select a swatch and nothing else, which is how the owner came
-  // to set a site default and watch it paint nothing.
+  // header carries the whole order and the reasoning). Reading it only
+  // to pre-select a swatch is the failure that shape invites: the
+  // setting saves, the picker agrees with it, and the page ignores it.
   let adminDefault = null;
   try { adminDefault = localStorage.getItem(DEFAULT_THEME_KEY); } catch (e) {}
   if (adminDefault && !Object.prototype.hasOwnProperty.call(BG, adminDefault)) {

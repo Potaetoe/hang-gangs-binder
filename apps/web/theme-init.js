@@ -47,17 +47,18 @@
  *      member picks for themselves;
  *   3. the phone's prefers-color-scheme, when neither of those is set.
  *
- * WHY THE RULE MOVED. The admin's default used to paint nothing at all:
- * it was read only by theme.js, to pre-select a swatch in the picker.
- * The owner set the site default to Daylight, watched a dark phone keep
- * painting midnight, and reported the setting as dead - and the admin
- * page's own help text ("What a new visitor sees before they pick their
- * own theme") had been promising this behaviour the whole time. The
- * owner's first instinct was to honour the phone unless it "says
- * nothing"; that was measured and dropped, because no current browser
- * ever reports no-preference - every device answers light or dark, so
- * that branch would never have fired and the setting would have stayed
- * just as dead.
+ * WHY THE ADMIN'S DEFAULT OUTRANKS THE PHONE. The admin page offers
+ * this setting as "what a new visitor sees before they pick their own
+ * theme", so a default that only pre-selected a swatch in the picker
+ * would be a control that does not do what it says: an admin sets
+ * Daylight, a dark phone goes on painting midnight, and nothing
+ * anywhere reports a fault.
+ *
+ * "FOLLOW THE PHONE UNLESS IT SAYS NOTHING" IS NOT AVAILABLE, and is
+ * worth naming because it is the obvious middle rank. No current
+ * browser ever reports prefers-color-scheme: no-preference - every
+ * device answers light or dark - so that rank would never fire, and
+ * the setting would be dead in a subtler way than before.
  *
  * WHERE THE VALUE COMES FROM, AND THE ONE HONEST GAP. The default
  * arrives over GET /config, which is a network round trip this script

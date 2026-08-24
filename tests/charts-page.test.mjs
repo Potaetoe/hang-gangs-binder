@@ -231,6 +231,38 @@ check("binLabel never invents an open-edge shape for a real answer's " +
   Charts.binLabel(0, 5, "kg") === "0 kg–5 kg");
 
 /*
+ * FLOATING-POINT NOISE IS CLEARED, AND NOTHING ELSE IS TOUCHED.
+ *
+ * The grid is built from multiples of the band width, and that
+ * multiplying is what produces the noise: 29.4 + 20.2 is
+ * 49.599999999999994 in IEEE-754, and it printed on a live axis
+ * between a clean 29.4 and a clean 69.8. The first check computes the
+ * bad value rather than writing "49.599999999999994" down, so it fails
+ * for the right reason on any machine whose arithmetic differs.
+ *
+ * The rest of these are the other half of the claim, and the half that
+ * would make this a bug rather than a fix: a fraction the field spec
+ * genuinely names must survive exactly as sent. Rounding to one or two
+ * decimals would pass the first check and quietly move real edges.
+ */
+const NOISY = 29.4 + 20.2;
+check("an axis tick clears binary floating-point noise: an edge that " +
+  "computes to " + NOISY + " prints as 49.6",
+  Charts.tickLabel(NOISY) === "49.6");
+check("...and the bin label built from the same edge agrees with the " +
+  "axis under it, rather than printing a longer number beside it",
+  Charts.binLabel(29.4, NOISY, null) === "29.4–49.6");
+for (const real of [0.15, 1.05, 12.25, 0.5, 123456.78, 0, 7]) {
+  check("a real edge of " + real + " survives exactly as sent - this " +
+    "clears artifacts, it does not round",
+    Charts.tickLabel(real) === String(real));
+}
+check("a value that is not a finite number is handed back as itself " +
+  "rather than coerced into a number-shaped lie",
+  Charts.tickLabel(null) === "null" &&
+  Charts.tickLabel(Infinity) === "Infinity");
+
+/*
  * LEGIBILITY IS A GEOMETRY PROPERTY, NOT A COUNT TARGET (owner's F1/F2
  * ruling on 0.9-M2-S11's review, #372). The count-near-ten
  * edgeLabelStride() this replaces still overlapped on both the 120-band
@@ -4292,7 +4324,7 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
  * source text contains.
  */
 
-const EXPECTED = 318;
+const EXPECTED = 328;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

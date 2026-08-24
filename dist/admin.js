@@ -968,7 +968,7 @@
 
       if (!accountId || !rawLabel.trim()) {
         sayRoles("Choose a member and give them a name you will " +
-          "recognise.", "bad");
+          "recognize.", "bad");
         return;
       }
        

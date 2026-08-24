@@ -1341,6 +1341,67 @@ const BASE_ROUTES = {
     /flag/.test(byId.get("roles-via").textContent));
 }
 
+/*
+ * WHAT THE PICKER ACTUALLY RENDERS. Every arm below sets
+ * `member-account.value` by hand, which drives the POST but never reads
+ * a single option this page drew - so the whole of drawDirectory() was
+ * unarmed, including the one property the owner's ruling turns on: a
+ * numeric Telegram id must never reach this page. Setting an option's
+ * text to a numeric id used to leave this suite green at 260 checks.
+ *
+ * Each option's TEXT is what an admin reads and its VALUE is the
+ * account id the POST carries; the two are checked separately because
+ * getting them the wrong way round would put an account id on screen
+ * and a handle on the wire, and both look fine from one side.
+ */
+{
+  const { byId } = await driven(BASE_ROUTES, { isAdmin: true });
+  const select = byId.get("member-account");
+  const options = select.children;
+  const texts = options.map((o) => o.textContent);
+  const values = options.map((o) => o.value);
+  check("the picker draws one option per member the Worker sent, under " +
+    "a placeholder - the admin chooses a person rather than typing",
+    options.length === 3 && texts[0] === "Choose a member\u2026");
+  check("...each option READS as the member's handle, with the display " +
+    "name after it when there is one",
+    texts[1] === "@birch_lane \u2014 Birch" && texts[2] === "@quiet_orbit");
+  check("...and each option's VALUE is the account id, which is what the " +
+    "POST carries - never the text the admin read",
+    values[1] === "a".repeat(64) && values[2] === "b".repeat(64));
+  check("NO NUMERIC TELEGRAM ID IS ANYWHERE IN THE PICKER, in an " +
+    "option's text or its value - the owner's ruling is that nobody " +
+    "types or sees one, and this page is the last place it could " +
+    "surface",
+    texts.concat(values).every((s) => !/[0-9]{5,}/.test(String(s))));
+}
+
+{
+  // The empty and unreadable cases say different things, because an
+  // admin's next move differs: nobody has signed in yet is a fact about
+  // the group, and a failed read is a fact about the deployment. An
+  // empty dropdown would be the same silence for both.
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-directory": () => ok({ ok: true, members: [] }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  check("with nobody signed in the picker says so, rather than offering " +
+    "an empty dropdown",
+    /Nobody has signed in/.test(byId.get("member-account").children[0]
+      .textContent));
+}
+
+{
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-directory": () => refused(500, { error: "nope" }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  check("a member list that could not be read says THAT, and does not " +
+    "read as a group with no members",
+    /could not be read/.test(byId.get("member-account").children[0]
+      .textContent));
+}
+
 {
   const posts = [];
   const routes = Object.assign({}, BASE_ROUTES, {
@@ -3184,7 +3245,7 @@ check("no download/export id survives in the real shipped markup - the " +
 // gateAdminItem/paintBarSignOut arms, the rail-admin gate, the
 // Settings/Roles toast routing): 215 + 6 + 12 = 233. Merging both
 // disjoint additions over the same 215 base gives the real total below.
-const EXPECTED = 260;
+const EXPECTED = 266;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

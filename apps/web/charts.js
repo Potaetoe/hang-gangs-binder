@@ -147,11 +147,11 @@
    * A NUMBER PRINTED THE WAY A PERSON READS IT - binary floating-point
    * noise cleared, and nothing else touched.
    *
-   * tickLabel() below used to argue that no edge could ever need this,
-   * because the grid is built from multiples of the band width. The
-   * multiplying IS the problem: in IEEE-754, 29.4 + 20.2 is
-   * 49.599999999999994, and that is what the owner read off the live
-   * axis on 2026-08-24, between a clean 29.4 and a clean 69.8.
+   * A GRID OF ROUND NUMBERS DOES NOT MAKE ROUND EDGES, which is worth
+   * knowing before deciding this is unnecessary: the edges are
+   * multiples of the band width, and the multiplying is what produces
+   * the noise. In IEEE-754, 29.4 + 20.2 is 49.599999999999994, and
+   * that prints on a live axis between a clean 29.4 and a clean 69.8.
    *
    * Twelve significant digits, then back to a number. That is far past
    * any measurement this binder holds, so an edge the field spec
@@ -235,12 +235,9 @@
    * fraction gets its own edge, not a whole number picked for it.
    *
    * What this DOES do is clear floating-point noise, through
-   * readable() above. The paragraph that used to stand here claimed
-   * the edge "is already a round number because the grid is built out
-   * of multiples of the band width", and that was false: the
-   * multiplying is what produces 49.599999999999994 from a 20.2-wide
-   * band starting at 29.4. The owner read exactly that off the live
-   * axis on 2026-08-24. Clearing the artifact is not rounding - the
+   * readable() above - whose own header carries why a grid built from
+   * multiples of the band width still yields edges like
+   * 49.599999999999994. Clearing that artifact is not rounding: the
    * printed number is the one the arithmetic meant.
    *
    * NO UNIT, EVER (owner ruling 2): the unit is stated once in the

@@ -578,13 +578,22 @@ await check("every endpoint call in apps/web is spelled the way the reader reads
  * (static) and DELETE /admin-departed/<id> (dynamic id, so the literal
  * path this reader extracts is the prefix "/admin-departed/", matching
  * the two /admin-fields/ entries above).
+ *
+ * GET /admin-directory joins them for the same reason and one of its
+ * own: it is admin API, and its answer is a list of real members
+ * unsealed from the directory. A demo stub for it would be a list of
+ * invented handles - the demo's whole contract is that nothing in it is
+ * real, and a picker full of plausible strangers is the one place that
+ * would read as a leak rather than as scenery.
  */
 const DEMO_STUB_GAPS = Object.freeze(["/admin-log", "/admin-fields",
-  "/admin-fields/", "/admin-departed", "/admin-departed/", "/spec"]);
+  "/admin-fields/", "/admin-departed", "/admin-departed/",
+  "/admin-directory", "/spec"]);
 await check("the stub answers every call apps/web makes, by verb and " +
   "path - except the admin API's standing gap (GET /admin-log, GET " +
   "/admin-fields, PUT/DELETE /admin-fields/<id>, GET /admin-departed, " +
-  "DELETE /admin-departed/<id>) and GET /spec (the demo has not grown " +
+  "DELETE /admin-departed/<id>, GET /admin-directory) and GET /spec " +
+  "(the demo has not grown " +
   "with 0.9-M3's admin surface, nor with the effective-spec route " +
   "0.9-M3-S14's charts page now reads)", () =>
   calls.every((one) => DEMO_STUB_GAPS.indexOf(one.path) !== -1 ||

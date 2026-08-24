@@ -1198,7 +1198,7 @@
 
       if (!accountId || !rawLabel.trim()) {
         sayRoles("Choose a member and give them a name you will " +
-          "recognise.", "bad");
+          "recognize.", "bad");
         return;
       }
       // The Worker's own MAX_LABEL bound (#416, F6) - mirrors

@@ -16,8 +16,6 @@
    
    
    
-   
-   
   const DEFAULT_THEME_KEY = "hgb-default-theme";
   const BG = {
     pink: "#1e141a", daylight: "#f3eadb", midnight: "#120d10",
@@ -45,8 +43,6 @@
    
    
    
-   
-   
   function apply(paintName, pressedName) {
     document.documentElement.setAttribute("data-theme", paintName);
     paintChrome(paintName);
@@ -64,8 +60,6 @@
    
    
    
-   
-   
   function schemeDefault() {
     return (window.matchMedia &&
       matchMedia("(prefers-color-scheme: dark)").matches)
@@ -75,6 +69,7 @@
   let stored = null;
   try { stored = localStorage.getItem(KEY); } catch (e) {}
 
+   
    
    
    

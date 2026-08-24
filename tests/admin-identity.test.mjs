@@ -1347,12 +1347,20 @@ const PUBLIC_NAMES = ["site.groupName", "site.welcomeText",
 {
   const db = makeDb();
   const token = await adminSession(db);
-  const { status } = await call(worker, envFor(db), "POST", "/membership", {
-    headers: bearer(token),
-    body: { accountId: "not-an-account-id", role: "admin", label: "no" },
-  });
-  check("a malformed account id is refused on shape, before the " +
-    "directory is even asked", status === 400);
+  const { status, body } = await call(worker, envFor(db), "POST",
+    "/membership", {
+      headers: bearer(token),
+      body: { accountId: "not-an-account-id", role: "admin", label: "no" },
+    });
+  // THE STATUS IS NOT THE ASSERTION HERE. A malformed id also misses the
+  // directory, so both refusals are 400 and a status check would pass
+  // with the shape guard deleted. The REASON is what tells the two
+  // apart, which is this batch's own standing lesson about shared
+  // status codes.
+  check("a malformed account id is refused on SHAPE - not by falling " +
+    "through to the directory miss, which answers 400 as well",
+    status === 400 && body && /could not be read/.test(body.error) &&
+    !/has not signed in/.test(body.error));
 }
 
 /* ------------------------------------------------------------------ */

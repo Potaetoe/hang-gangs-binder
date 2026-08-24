@@ -679,6 +679,23 @@ LEDGER = [
         "covers": ["server/worker.js"],
         "status": "never",
     },
+    {
+        "id": "GET /admin-directory",
+        "surface": "route",
+        "claim": "every member who has signed in on a real deployment "
+                 "appears once, by the handle Telegram gave them, and "
+                 "the numeric Telegram id appears nowhere in the "
+                 "answer. The half a stub cannot reach is the seal: the "
+                 "arms open records this same process wrote in this same "
+                 "run, so they prove the shape of the read and not that "
+                 "a row written months ago under the deployed "
+                 "STORE_SECRET still opens - a record that does not open "
+                 "is skipped by design, and the difference between "
+                 "'nobody has signed in' and 'nothing opened' is only "
+                 "visible against a real directory with rows in it",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
     # The form builder added at 0.9-M3-S11 (#419) and the admin read of
     # its retired set added at 0.9-M3-S25 (#440). The four rows below
     # are owed rather than performed because the pages that drive them

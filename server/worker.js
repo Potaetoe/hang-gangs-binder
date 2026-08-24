@@ -4542,12 +4542,12 @@ async function handleReadMembership(env, origin) {
  * ruling 2026-08-24, after walking the sit: "normal users don't know
  * how to find telegram ids").
  *
- * The Roles card used to ask for a numeric Telegram id typed by hand.
- * Nobody knows their own, let alone anybody else's, and Telegram's own
- * bot API has no lookup that turns an @username into one - so the
- * control asked for a value the person filling it in had no way to
- * get. This route answers the question the admin actually has: who has
- * signed in, and what are they called.
+ * ASKING FOR A NUMERIC TELEGRAM ID IS ASKING FOR SOMETHING NOBODY CAN
+ * GET. Nobody knows their own, let alone anybody else's, and Telegram's
+ * bot API has no lookup that turns an @username into one for an
+ * ordinary user - so a field wanting one is a dead end for whoever has
+ * to fill it in. This route answers the question the admin actually
+ * has: who has signed in, and what are they called.
  *
  * WHAT IT UNSEALS, AND WHAT IT WILL NOT. The directory record carries
  * handle, displayName, role and telegramId. This reads the first two
@@ -4725,12 +4725,11 @@ async function handleAddMembership(request, env, origin, caller) {
    * signed in grants nothing to nobody while sitting in the list
    * looking like authority.
    *
-   * `telegramId` is the original path and stays. It is what
-   * OPERATIONS.md's own "Making someone an admin" documents for an
-   * operator working outside the page, and the only way to write a row
-   * for somebody who has not signed in yet. Neither is removed for the
-   * other; the page simply stopped asking a person for a number they
-   * have no way to find.
+   * `telegramId` is the other path and stays, because it is the only
+   * way to write a row for somebody who has not signed in yet - the
+   * directory has nothing to offer a picker until they do. It is not
+   * what the page uses, and OPERATIONS.md points an admin at the
+   * picker rather than here.
    */
   const givenAccount = payload && payload.accountId;
   let accountFromPicker = null;

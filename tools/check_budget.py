@@ -344,7 +344,7 @@ CEILINGS = {
     # further down records the first and the terms.
     #
     # The alarm did its job and this is what it turned up. The page
-    # reached 118,133 B against 118,432 - 99.7%, 299 B clear - while
+    # reached 99.7% of the old pin, a few hundred bytes clear, while
     # applying what the owner asked for after walking the sit: the
     # Fields card's create form moved below the list it adds to and
     # gained a bordered block of its own, its two names rewritten for
@@ -358,14 +358,14 @@ CEILINGS = {
     # browser actually downloads for this page: 87 KB (74%) is the five
     # font files every page on this site loads, 11 KB (10%) is the CSS
     # and scripts every page loads, and 20 KB (16%) is the only part
-    # that is admin's own - admin.js and admin.html together. Halving
-    # the admin-only half would save about 10 KB, for admins alone, on
-    # a page they open rarely and their browser caches after the first
-    # visit. That is not a saving worth making a page less clear for.
+    # belonging to this page alone. Halving that part would save about
+    # 10 KB, for admins only, on a page they open rarely and their
+    # browser caches after the first visit. That is not a saving worth
+    # making a page less clear for.
     #
     # WHERE THE WEIGHT ACTUALLY IS, recorded for whoever wants it back:
     # the fonts, at 74% of this page and of every other page a member
-    # loads far more often. Subsetting them is the real optimisation
+    # loads far more often. Subsetting them is the real optimization
     # and it helps members rather than admins - a slice of its own,
     # exactly as the mono-face note under your-page.html already says.
     #
