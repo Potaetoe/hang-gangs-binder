@@ -245,6 +245,30 @@ export function parseEntryForm(fields: Field[], form: FormData, units: Units): P
 }
 
 /**
+ * A blank field on a NEW entry keeps its last value (owner ruling
+ * 2026-08-24): nobody re-enters what they already told the binder.
+ * Editing an entry is the opposite - there, clearing a field really
+ * removes it, because edit is the precision tool.
+ */
+export function carryForward(
+	fields: Field[],
+	values: ParsedValues,
+	latest: Record<string, EntryValue>
+): void {
+	for (const field of fields) {
+		if (field.computed || values[field.id]) continue;
+		const prior = latest[field.id];
+		if (!prior) continue;
+		values[field.id] = {
+			metric: prior.metric,
+			imperial: prior.imperial,
+			entered: prior.entered,
+			choice: prior.choice
+		};
+	}
+}
+
+/**
  * BMI = kg / m^2, computed from this entry's height and weight (by
  * their seeded ids). If either is missing or its field is gone, BMI
  * quietly sits out - retiring a field must never break saving.

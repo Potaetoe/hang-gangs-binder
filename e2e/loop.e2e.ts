@@ -131,6 +131,27 @@ test('a broken number is refused without losing the rest of the form', async ({ 
 	await expect(page.getByText('No entries yet')).toBeVisible();
 });
 
+test('a cleared field keeps its last value on a new entry', async ({ page }) => {
+	const username = `keeper${Date.now()}`;
+	await signInFreshMember(page, username);
+
+	await fillStable(page, /height, feet/i, '5');
+	await fillStable(page, /height, inches/i, '10');
+	await fillStable(page, 'Weight', '185');
+	await page.getByLabel('Gender').selectOption('Male');
+	await page.getByRole('button', { name: 'Save entry' }).click();
+
+	// The next day's habit: clear the pre-filled height, type only the
+	// new weight. The binder keeps what it already knew.
+	await fillStable(page, /height, feet/i, '');
+	await fillStable(page, /height, inches/i, '');
+	await fillStable(page, 'Weight', '190');
+	await page.getByRole('button', { name: 'Save entry' }).click();
+	await expect(
+		page.locator('.entry-summary').filter({ hasText: '5 ft 10 in · 190 lb · 27.3 · Male' })
+	).toBeVisible();
+});
+
 test('an empty submit saves nothing and says so', async ({ page }) => {
 	const username = `blank${Date.now()}`;
 	await signInFreshMember(page, username);

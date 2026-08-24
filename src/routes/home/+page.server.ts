@@ -3,6 +3,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import { destroySession, identityOf, setDisplayName, type Secrets } from '$lib/server/auth';
 import {
+	carryForward,
 	computeBmi,
 	createEntry,
 	formatDate,
@@ -87,10 +88,17 @@ export const actions: Actions = {
 
 		const fields = await loadFields(db);
 		const { values, problems } = parseEntryForm(fields, form, units);
-		if (!problems.length && !Object.keys(values).length) {
-			problems.push('Nothing to save yet - fill in at least one field.');
-		}
 		if (problems.length) return fail(400, { problems, raw: rawEcho(form) });
+
+		// A blank field keeps its last value - nobody re-enters what the
+		// binder already knows (owner ruling 2026-08-24).
+		carryForward(fields, values, await latestValues(db, locals.member.memberId));
+		if (!Object.keys(values).length) {
+			return fail(400, {
+				problems: ['Nothing to save yet - fill in at least one field.'],
+				raw: rawEcho(form)
+			});
+		}
 
 		computeBmi(fields, values);
 		await createEntry(db, locals.member.memberId, today(env.TIMEZONE), values);
