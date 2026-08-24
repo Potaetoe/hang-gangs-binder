@@ -584,11 +584,14 @@ async function drivenNoPicker(storedPalette, defaultTheme, darkMatches) {
  */
 {
   const themeCssSrc = await read("../apps/web/theme.css");
-  const listed = (/const PALETTES = \[([^\]]*)\]/.exec(themeInitSrc) ||
-    [, ""])[1];
+  const group = (pattern, text) => {
+    const found = pattern.exec(text);
+    return found ? found[1] : "";
+  };
+  const listed = group(/const PALETTES = \[([^\]]*)\]/, themeInitSrc);
   const guard = new Set(
     Array.from(listed.matchAll(/"([^"]+)"/g), (m) => m[1]));
-  const bgBlock = (/const BG = \{([^}]*)\}/.exec(themeSrc) || [, ""])[1];
+  const bgBlock = group(/const BG = \{([^}]*)\}/, themeSrc);
   const painted = new Set(
     Array.from(bgBlock.matchAll(/(\w+)\s*:/g), (m) => m[1]));
   // Anchored to the start of a line, so the same selector QUOTED in a

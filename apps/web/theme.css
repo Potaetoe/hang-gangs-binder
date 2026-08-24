@@ -674,7 +674,8 @@ p {
  * minimal-at-EVERY-width on 2026-08-23 (#454 comment 5389445914): the
  * door shows the three named things at any screen size, so wrapping
  * this rule in a width would put the desktop copy back. A ruling, not
- * an oversight - tests/door.test.mjs holds it.
+ * an oversight, and tests/door.test.mjs checks that
+ * ".sr-only is not scoped to a width".
  */
 .sr-only {
   position: absolute;
