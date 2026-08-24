@@ -875,7 +875,8 @@ main.with-rail {
 	.stat-value {
 		font-size: 1.35rem;
 	}
-	/* Desktop: the bubble floats over its own bar. */
+	/* Desktop: the bubble floats over its own bar, sized to its own
+	   words - never to the bar. */
 	.dist-bar {
 		position: relative;
 	}
@@ -883,6 +884,7 @@ main.with-rail {
 	.dist-bar:focus::after {
 		left: 50%;
 		right: auto;
+		width: max-content;
 		transform: translateX(-50%);
 		white-space: nowrap;
 		text-align: left;

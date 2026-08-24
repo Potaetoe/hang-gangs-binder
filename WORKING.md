@@ -25,6 +25,10 @@ branch only moves by the loop above.
 
 - Claude personally drove the feature in a real browser on the deployed
   site, as a member and as an admin, and it worked.
+- Driving means looking closely - zooming in on the details, reading
+  every rendered pixel as a member would. The user experience IS the
+  product (owner ruling 2026-08-24); a control that renders wrong is
+  broken even when the code path passes.
 - The feature's loop has a Playwright test that walks it the way a
   person does (example: admin adds a field, the member form shows it).
 - TypeScript strict passes. CI is green.
