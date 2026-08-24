@@ -8,6 +8,19 @@
  * and this site answers on a workers.dev address, which is not a
  * domain we own - so the limit lives in the Worker, which works
  * either way and costs nothing.
+ *
+ * Know what this is and is not, measured against production on
+ * 2026-08-24: the count is kept PER EDGE LOCATION, not globally. Six
+ * tries a minute is six per edge, so someone spread across several
+ * edges gets a multiple of that in total. Verified by hammering the
+ * form - separate connections landed on different edges and sailed
+ * past, while fifteen posts down ONE reused connection were cut off
+ * at exactly six.
+ *
+ * It is still worth having. It turns password guessing from something
+ * a script does thousands of times a minute into something that
+ * crawls, and it costs a member nothing. It is not a global cap, and
+ * nobody should plan as though it were.
  */
 
 /** Cloudflare's own header, set at the edge; a client cannot forge it
