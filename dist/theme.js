@@ -16,8 +16,6 @@
    
    
    
-   
-   
   const DEFAULT_THEME_KEY = "hgb-default-theme";
   const BG = {
     pink: "#1e141a", daylight: "#f3eadb", midnight: "#120d10",
@@ -45,8 +43,6 @@
    
    
    
-   
-   
   function apply(paintName, pressedName) {
     document.documentElement.setAttribute("data-theme", paintName);
     paintChrome(paintName);
@@ -57,8 +53,6 @@
     });
   }
 
-   
-   
    
    
    
@@ -82,10 +76,14 @@
    
    
    
+   
   if (stored && !Object.prototype.hasOwnProperty.call(BG, stored)) {
     stored = null;
   }
 
+   
+   
+   
    
    
    
@@ -102,7 +100,7 @@
   
 
   if (!buttons.length) {
-    paintChrome(stored || schemeDefault());
+    paintChrome(stored || adminDefault || schemeDefault());
     return;
   }
 
@@ -115,8 +113,9 @@
    
    
    
-  const resting = stored || schemeDefault();
-  const pressed = stored || adminDefault || resting;
+   
+  const resting = stored || adminDefault || schemeDefault();
+  const pressed = resting;
   apply(resting, pressed);
 
    

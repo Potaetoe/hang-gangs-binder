@@ -907,12 +907,68 @@
       drawMembership(membershipView(payload));
     }
 
+    
+
+    function drawDirectory(members) {
+      const select = $("member-account");
+      select.textContent = "";
+      const first = document.createElement("option");
+      first.value = "";
+      first.textContent = members.length
+        ? "Choose a member…"
+        : "Nobody has signed in yet";
+      select.appendChild(first);
+      for (const member of members) {
+        const option = document.createElement("option");
+        option.value = member.accountId;
+        option.textContent = member.displayName
+          ? "@" + member.handle + " — " + member.displayName
+          : "@" + member.handle;
+        select.appendChild(option);
+      }
+    }
+
+    async function loadDirectory() {
+      let payload;
+      try {
+        const response = await fetch(config.endpoint + "/admin-directory", {
+          headers: root.BinderSession.authorization(),
+        });
+        if (!response.ok) {
+          if (sessionRefused(response, sayRoles)) return;
+          drawDirectory([]);
+          $("member-account").firstChild.textContent =
+            "The member list could not be read";
+          return;
+        }
+        payload = await response.json();
+      } catch (error) {
+        detail(why(error));
+        drawDirectory([]);
+        $("member-account").firstChild.textContent =
+          "The member list could not be read";
+        return;
+      }
+      const members = payload && Array.isArray(payload.members)
+        ? payload.members.filter(function (m) {
+          return m && typeof m.accountId === "string" &&
+            typeof m.handle === "string" && m.handle;
+        })
+        : [];
+      drawDirectory(members);
+    }
+
     $("member-add").addEventListener("click", async function () {
-      const telegramId = $("member-telegram-id").value.trim();
+       
+       
+       
+       
+      const accountId = $("member-account").value;
       const rawLabel = $("member-label").value;
 
-      if (!telegramId || !rawLabel.trim()) {
-        sayRoles("A numeric Telegram id and a label are both needed.", "bad");
+      if (!accountId || !rawLabel.trim()) {
+        sayRoles("Choose a member and give them a name you will " +
+          "recognize.", "bad");
         return;
       }
        
@@ -935,7 +991,7 @@
             root.BinderSession.authorization()),
           body: JSON.stringify({
             role: MEMBERSHIP_ROLES[0],
-            telegramId: telegramId,
+            accountId: accountId,
             label: label,
           }),
         });
@@ -959,7 +1015,7 @@
         return;
       }
 
-      $("member-telegram-id").value = "";
+      $("member-account").value = "";
       $("member-add").disabled = false;
       await readMembership();
        
@@ -1529,6 +1585,7 @@
          
          
          
+         
         add.addEventListener("click", async function () {
           const verdict = validateValueLabel(input.value);
           if (!verdict.ok) {
@@ -1691,32 +1748,49 @@
         list.appendChild(empty);
         return;
       }
+      
+
+      const scroller = document.createElement("div");
+      scroller.className = "table-scroll";
+      const table = document.createElement("table");
+      table.className = "log-table";
+
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      for (const heading of ["When", "Who", "What changed"]) {
+        const th = document.createElement("th");
+        th.scope = "col";
+        th.textContent = heading;
+        headRow.appendChild(th);
+      }
+      head.appendChild(headRow);
+      table.appendChild(head);
+
+      const body = document.createElement("tbody");
       const shown = logEntries.slice(0, logRevealed);
       for (const entry of shown) {
         const line = logLine(entry);
-        const row = document.createElement("div");
-         
-         
-         
-         
-        row.className = "row wrap-row";
+        const row = document.createElement("tr");
 
-        const when = document.createElement("span");
-        when.className = "hint";
+        const when = document.createElement("td");
+        when.className = "log-when";
         when.textContent = line.when;
         row.appendChild(when);
 
-        const who = document.createElement("span");
+        const who = document.createElement("td");
         who.textContent = line.who;
         row.appendChild(who);
 
-        const what = document.createElement("span");
+        const what = document.createElement("td");
         what.className = "wrap-row-value";
         what.textContent = line.what;
         row.appendChild(what);
 
-        list.appendChild(row);
+        body.appendChild(row);
       }
+      table.appendChild(body);
+      scroller.appendChild(table);
+      list.appendChild(scroller);
       if (logEntries.length > logRevealed) {
         const more = document.createElement("button");
         more.type = "button";
@@ -2035,6 +2109,7 @@
     wireIdle();
     loadSettings();
     readMembership();
+    loadDirectory();
     loadAdminVia();
     loadFields();
     loadLog();

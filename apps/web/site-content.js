@@ -23,20 +23,16 @@
  * element.
  *
  * THE RESTING THEME'S PART OF THIS FETCH IS A CACHE WRITE, NEVER A
- * REPAINT, and - since the owner's ruling in UX record #454 item 15
- * (2026-08-22; 0.9-M3-S32, #456, superseding 0.9-M3-S12's #418 "admin
- * default from the second load" rule) - never a paint at all. A
- * member's resting palette is decided before first frame by
- * theme-init.js's own synchronous read of the phone's light/dark
- * scheme (blocking, in <head>) and confirmed the same way by theme.js
- * (classic, at the end of the body) - both of which run and finish
- * before this script's fetch can possibly resolve, since fetch is
- * never synchronous, and neither one reads this file's cache to decide
- * what paints any more. So this file only writes the value to
- * localStorage, for theme.js to read on the NEXT load - not to repaint
- * the page, but to decide which swatch the picker shows as pre-
- * selected for a member who has made no choice of their own. See
- * theme-init.js and theme.js for the read side.
+ * REPAINT OF THIS LOAD. The admin's configured default does decide
+ * what paints for a member who has not chosen (owner ruling
+ * 2026-08-24; theme-init.js's header carries the order and the
+ * reasoning) - but it decides it on the NEXT load, not this one. Both
+ * readers run and finish before this fetch can resolve: theme-init.js
+ * synchronously in <head> before first frame, theme.js at the end of
+ * the body, and fetch is never synchronous. Repainting from here the
+ * moment an answer arrived would be the flash those two exist to
+ * prevent, so this file writes the value to localStorage and touches
+ * nothing else. See theme-init.js and theme.js for the read side.
  */
 (function (root) {
   "use strict";
@@ -47,13 +43,12 @@
   // having already run.
   const VALID_PALETTES = ["midnight", "pink", "daylight", "contrast"];
 
-  // The key theme.js reads for its picker (0.9-M3-S32, #456: theme-
-  // init.js no longer reads this key at all). Named separately from
-  // apps/web/theme.js's "hgb-palette" because the two answer different
-  // questions: that key is a member's OWN choice and always wins; this
-  // one is the admin's configured resting palette, consulted only to
-  // pre-select a swatch when the member has made no choice of their
-  // own - never to decide what paints.
+  // The key theme-init.js and theme.js both read. Named separately
+  // from apps/web/theme.js's "hgb-palette" because the two answer
+  // different questions: that key is a member's OWN choice and always
+  // wins; this one is the admin's configured resting palette, which
+  // paints for a member who has made no choice of their own and yields
+  // to one the moment they make it.
   const DEFAULT_THEME_KEY = "hgb-default-theme";
 
   function endpoint() {
@@ -127,10 +122,10 @@
   }
 
   /*
-   * Learned, never painted - see this file's header comment for why a
-   * value from THIS load never reaches THIS load's page, and 0.9-M3-S32
-   * (#456) for why it now never reaches any page's paint at all, only
-   * theme.js's picker. A name that is not one of the four palettes
+   * Learned now, painted next load - see this file's header comment
+   * for why a value fetched on THIS load cannot reach THIS load's
+   * paint, and theme-init.js's header for where it ranks once it is
+   * cached. A name that is not one of the four palettes
    * clears whatever was cached rather than merely refusing to overwrite
    * it (0.9-M3-S12 fix wave, #418 comment 5371848229, finding F1): S8's
    * GET /config contract answers "" for "the admin turned the default
@@ -171,9 +166,33 @@
     }
     if (!body || typeof body !== "object") return;
 
-    renderGroupName(body["site.groupName"]);
-    renderWelcomeText(body["site.welcomeText"]);
-    cacheDefaultTheme(body["site.defaultTheme"]);
+    /*
+     * THE KEYS LIVE UNDER `config`, NOT AT THE TOP LEVEL. GET /config
+     * answers `{ ok: true, config: { "site.groupName": ... } }` - the
+     * envelope every route on this Worker uses (server/worker.js's
+     * handler, `return json({ ok: true, config: config }, ...)`).
+     *
+     * READING THEM OFF `body` ITSELF IS THE FAILURE THIS SHAPE GUARDS
+     * AGAINST, and it is a silent one: all three arrive undefined, the
+     * group name and the welcome sentence keep their shipped
+     * fallbacks, and the resting palette is CLEARED rather than
+     * learned, because an undefined name is not one of the four. An
+     * admin sets all three, sees them saved, and watches the site
+     * ignore every one - with nothing failing anywhere to say so.
+     *
+     * A body without the envelope is treated like an unreachable
+     * Worker above: leave the shipped fallbacks alone and cache
+     * nothing, rather than clearing a palette on a malformed answer.
+     * An absent KEY inside a good envelope still reaches the helpers
+     * as undefined, which is the "the admin turned it off" case each
+     * one already documents.
+     */
+    const config = body.config;
+    if (!config || typeof config !== "object") return;
+
+    renderGroupName(config["site.groupName"]);
+    renderWelcomeText(config["site.welcomeText"]);
+    cacheDefaultTheme(config["site.defaultTheme"]);
   }
 
   const UI = root.BinderUI;

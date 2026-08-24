@@ -278,13 +278,24 @@ function localStorageStub() {
     owners, names, welcome, "Sign in — Hang Gang Binder");
   globalThis.document = doc;
 
+  /* THE REAL ENVELOPE, not a convenient one. server/worker.js answers
+     GET /config with `{ ok: true, config: { ... } }`, and this stub
+     answered a FLAT object for its whole life - so it agreed with a
+     client that read the keys off the top level, and both were wrong
+     together. Every arm below passed while all three settings were
+     dead on the deployed site (found by the owner on the sit,
+     2026-08-24). A stub that invents its own shape proves the client
+     agrees with the stub, which is nothing worth knowing. */
   globalThis.fetch = async () => ({
     ok: true,
     async json() {
       return {
-        "site.groupName": "The Rebrand Gang",
-        "site.welcomeText": "Line one.\nLine two.",
-        "site.defaultTheme": "daylight",
+        ok: true,
+        config: {
+          "site.groupName": "The Rebrand Gang",
+          "site.welcomeText": "Line one.\nLine two.",
+          "site.defaultTheme": "daylight",
+        },
       };
     },
   });

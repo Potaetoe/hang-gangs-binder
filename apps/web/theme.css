@@ -1483,6 +1483,37 @@ a.secondary {
   padding: var(--space-3) var(--space-4);
 }
 
+/*
+ * A FINGER'S FLOOR IS NOT A MOUSE'S (owner, walking the sit
+ * 2026-08-24: "buttons are bigger than the text"). Item 3 of the UX
+ * record reads "every tap target at least 44px ... the primary action
+ * within one-hand reach ON A PHONE" - it is a rule about reach, and it
+ * was being applied to a desktop admin holding a mouse, where a 16px
+ * label sat inside 24px of vertical padding and read as a slab.
+ *
+ * Narrowed to where a finger actually points. A coarse pointer keeps
+ * the full floor at any width, and so does any narrow viewport
+ * whatever the pointer reports - a phone-width window on a desktop is
+ * still a phone-width window, and a touch laptop reports fine. Only a
+ * fine pointer on a wide screen gets the lighter control: 8px of
+ * padding on 16px text, over a 36px floor, which is still half again
+ * the text it wraps and well inside what a mouse hits.
+ *
+ * THE PADDING IS WHAT WAS DOING IT, and the floor was not even
+ * binding: the measured button was 50.8px tall against a 44px floor.
+ * So this changes the two numbers on the BUTTONS and leaves
+ * --tap-target itself alone at every width - the token still governs
+ * the text inputs and chips it was minted for (#452 F3's 43px
+ * finding), and a narrower rule here cannot drift them by accident.
+ */
+@media (pointer: fine) and (min-width: 52rem) {
+  .primary,
+  .secondary {
+    min-height: 2.25rem;
+    padding: var(--space-2) var(--space-3);
+  }
+}
+
 /* The filled one. Border in the fill's own color rather than none, so
    it sits on exactly the same footprint as the outlined one beside it -
    two buttons in a row whose text baselines differ by a pixel is what a
@@ -2529,4 +2560,72 @@ body.instrument main.stack { gap: var(--space-8); }
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ==================================================================
+   THE ADMIN CARDS' OWN FURNITURE (owner, walking the sit 2026-08-24)
+   ================================================================== */
+
+/*
+ * ONE FIELD ENDS WHERE THE NEXT BEGINS. The fields list is a stack of
+ * blocks that each carry a name, some buttons and a list of values,
+ * and nothing separated them - so two fields read as one long block
+ * with a stray button row in the middle. A rule between them, and the
+ * air either side of it, is the whole fix; the first block takes no
+ * rule, so the list does not open with a line under the heading above
+ * it.
+ */
+#fields-list > * + * {
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-4);
+  border-block-start: 1px solid var(--color-border);
+}
+
+/*
+ * A TOOL INSIDE A CARD. The "add a field" form sits below the list it
+ * adds to and needs to read as a separate thing rather than as one
+ * more field in the stack - bordered, inset, and visibly not part of
+ * the list above it.
+ */
+.subcard {
+  margin-block-start: var(--space-6);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+/* The sub-card's own name. Not a .runner: a runner is the name of a
+   whole section and tools/check_web.py holds it to standing on a .tool,
+   which this is deliberately not - it is a tool inside one. */
+.subcard-title {
+  margin-block-start: 0;
+  margin-block-end: var(--space-3);
+  font-size: var(--text-base);
+}
+
+/*
+ * THE CHANGE LOG'S TABLE. `table` above sets white-space: nowrap so a
+ * date or an account id never wraps mid-token; the summary column is
+ * the one cell that holds a sentence, and up to 200 characters of it,
+ * so it opts back into wrapping and takes the width the other two do
+ * not need. The date column is the opposite: it is the column an admin
+ * scans down, so it keeps its own line and its own muted weight.
+ */
+.log-table {
+  width: 100%;
+}
+
+.log-table td.wrap-row-value {
+  white-space: normal;
+  min-inline-size: 18ch;
+}
+
+.log-table .log-when {
+  color: var(--color-text-muted);
+}
+
+.log-table th {
+  text-align: start;
+  color: var(--color-text-muted);
+  font-weight: 600;
 }

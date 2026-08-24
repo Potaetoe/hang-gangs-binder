@@ -1123,12 +1123,82 @@
       drawMembership(membershipView(payload));
     }
 
+    /*
+     * The member picker's own options (owner ruling 2026-08-24: pick a
+     * person, never type a Telegram id). Everyone who has signed in,
+     * newest first, as GET /admin-directory sends them - this reorders
+     * nothing and shows what it was given.
+     *
+     * The option's VALUE is the account id and its TEXT is the handle,
+     * so the numeric id is nowhere on the page: the Worker unseals a
+     * handle and a display name for this list and leaves the number
+     * sealed, which is the whole point of the ruling that asked for
+     * the picker.
+     *
+     * A failure leaves the select saying so rather than empty. An
+     * empty dropdown is indistinguishable from a group with no members
+     * yet, and the two want opposite things from the admin.
+     */
+    function drawDirectory(members) {
+      const select = $("member-account");
+      select.textContent = "";
+      const first = document.createElement("option");
+      first.value = "";
+      first.textContent = members.length
+        ? "Choose a member…"
+        : "Nobody has signed in yet";
+      select.appendChild(first);
+      for (const member of members) {
+        const option = document.createElement("option");
+        option.value = member.accountId;
+        option.textContent = member.displayName
+          ? "@" + member.handle + " — " + member.displayName
+          : "@" + member.handle;
+        select.appendChild(option);
+      }
+    }
+
+    async function loadDirectory() {
+      let payload;
+      try {
+        const response = await fetch(config.endpoint + "/admin-directory", {
+          headers: root.BinderSession.authorization(),
+        });
+        if (!response.ok) {
+          if (sessionRefused(response, sayRoles)) return;
+          drawDirectory([]);
+          $("member-account").firstChild.textContent =
+            "The member list could not be read";
+          return;
+        }
+        payload = await response.json();
+      } catch (error) {
+        detail(why(error));
+        drawDirectory([]);
+        $("member-account").firstChild.textContent =
+          "The member list could not be read";
+        return;
+      }
+      const members = payload && Array.isArray(payload.members)
+        ? payload.members.filter(function (m) {
+          return m && typeof m.accountId === "string" &&
+            typeof m.handle === "string" && m.handle;
+        })
+        : [];
+      drawDirectory(members);
+    }
+
     $("member-add").addEventListener("click", async function () {
-      const telegramId = $("member-telegram-id").value.trim();
+      // The picked member's account id, not a hand-typed number (owner
+      // ruling 2026-08-24) - loadDirectory() below puts the options
+      // there, and each option's value is the account id the
+      // membership table keys on.
+      const accountId = $("member-account").value;
       const rawLabel = $("member-label").value;
 
-      if (!telegramId || !rawLabel.trim()) {
-        sayRoles("A numeric Telegram id and a label are both needed.", "bad");
+      if (!accountId || !rawLabel.trim()) {
+        sayRoles("Choose a member and give them a name you will " +
+          "recognize.", "bad");
         return;
       }
       // The Worker's own MAX_LABEL bound (#416, F6) - mirrors
@@ -1151,7 +1221,7 @@
             root.BinderSession.authorization()),
           body: JSON.stringify({
             role: MEMBERSHIP_ROLES[0],
-            telegramId: telegramId,
+            accountId: accountId,
             label: label,
           }),
         });
@@ -1175,7 +1245,7 @@
         return;
       }
 
-      $("member-telegram-id").value = "";
+      $("member-account").value = "";
       $("member-add").disabled = false;
       await readMembership();
       // A brief toast for the result, not an inline line (0.9-M3-S33,
@@ -1744,7 +1814,8 @@
         add.textContent = "Add value";
         // F2/F3 (#433 fix wave): clear ONLY on a write the Worker
         // actually accepted - the Roles card's own "Add" precedent
-        // (member-telegram-id). The input surviving a refusal reopens a
+        // (member-account, the picker that replaced the typed
+        // Telegram id). The input surviving a refusal reopens a
         // double-click race a synchronous clear would otherwise have
         // closed by accident, so the button stays disabled for the
         // write's whole duration: a second click before the first
@@ -1920,32 +1991,64 @@
         list.appendChild(empty);
         return;
       }
+      /*
+       * A REAL TABLE (owner, walking the sit 2026-08-24). This was three
+       * spans in a flex row per entry, which read as a wall: nothing
+       * lined up down the page, so an admin scanning for "when did that
+       * change" had to re-find the date column on every line. Three
+       * columns of the same three things are a table, and saying so in
+       * markup is what gives a screen reader the header for each cell
+       * as it reads across.
+       *
+       * The scroller around it is not decoration: this table's own
+       * contract data is exactly where the overflow lives (#416, F1) -
+       * a 64-hex account id, a URL a member pasted into the welcome
+       * text, up to 200 characters of summary - and the admin page is
+       * checked at 375px. A table that cannot shrink past its widest
+       * cell scrolls inside this box rather than pushing the page
+       * sideways.
+       */
+      const scroller = document.createElement("div");
+      scroller.className = "table-scroll";
+      const table = document.createElement("table");
+      table.className = "log-table";
+
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      for (const heading of ["When", "Who", "What changed"]) {
+        const th = document.createElement("th");
+        th.scope = "col";
+        th.textContent = heading;
+        headRow.appendChild(th);
+      }
+      head.appendChild(headRow);
+      table.appendChild(head);
+
+      const body = document.createElement("tbody");
       const shown = logEntries.slice(0, logRevealed);
       for (const entry of shown) {
         const line = logLine(entry);
-        const row = document.createElement("div");
-        // "row wrap-row" - this row's own contract data is exactly
-        // where the overflow lives (#416, F1): a 64-hex account id, a
-        // URL a member pasted into the welcome text, up to 200
-        // characters of summary. See apps/web/theme.css, ".row.wrap-row".
-        row.className = "row wrap-row";
+        const row = document.createElement("tr");
 
-        const when = document.createElement("span");
-        when.className = "hint";
+        const when = document.createElement("td");
+        when.className = "log-when";
         when.textContent = line.when;
         row.appendChild(when);
 
-        const who = document.createElement("span");
+        const who = document.createElement("td");
         who.textContent = line.who;
         row.appendChild(who);
 
-        const what = document.createElement("span");
+        const what = document.createElement("td");
         what.className = "wrap-row-value";
         what.textContent = line.what;
         row.appendChild(what);
 
-        list.appendChild(row);
+        body.appendChild(row);
       }
+      table.appendChild(body);
+      scroller.appendChild(table);
+      list.appendChild(scroller);
       if (logEntries.length > logRevealed) {
         const more = document.createElement("button");
         more.type = "button";
@@ -2272,6 +2375,7 @@
     wireIdle();
     loadSettings();
     readMembership();
+    loadDirectory();
     loadAdminVia();
     loadFields();
     loadLog();

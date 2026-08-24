@@ -11,12 +11,21 @@
       ? "midnight" : "daylight";
   }
 
+  function valid(name) {
+    return !!name && PALETTES.indexOf(name) !== -1;
+  }
+
   try {
     const chosen = localStorage.getItem("hgb-palette");
-    if (chosen && PALETTES.indexOf(chosen) !== -1) {
-      document.documentElement.setAttribute("data-theme", chosen);
+    const adminDefault = localStorage.getItem("hgb-default-theme");
+    let painted;
+    if (valid(chosen)) {
+      painted = chosen;
+    } else if (valid(adminDefault)) {
+      painted = adminDefault;
     } else {
-      document.documentElement.setAttribute("data-theme", schemeDefault());
+      painted = schemeDefault();
     }
+    document.documentElement.setAttribute("data-theme", painted);
   } catch (e) {}
 })();

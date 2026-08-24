@@ -260,24 +260,40 @@
       <p class="muted">Who else can reach this page.</p>
       <p class="muted small" id="roles-via"></p>
 
+      <!--
+        PICK THE PERSON, DO NOT TYPE A NUMBER (owner ruling 2026-08-24,
+        walking the sit: "normal users don't know how to find telegram
+        ids"). This asked for a numeric Telegram id by hand, which
+        nobody knows and Telegram itself will not look up from an
+        @username. The list is everyone who has signed in, newest
+        first, from GET /admin-directory - and the value behind each
+        option is the same un-invertible account id the rows below
+        already carry, never the numeric id, which stays sealed.
+
+        A native select because the owner ruled one for any list past
+        three options (#454, the charts filters).
+      -->
       <div class="field">
-        <label for="member-telegram-id">Telegram id</label>
-        <input type="text" id="member-telegram-id" inputmode="numeric"
-               autocomplete="off" spellcheck="false"
-               aria-describedby="member-telegram-id-help">
-        <p class="hint" id="member-telegram-id-help">
-          The numeric id, not the @handle — scrambled one-way by the
-          service and never shown again.
+        <label for="member-account">Member</label>
+        <select id="member-account" aria-describedby="member-account-help">
+          <option value="">Loading members…</option>
+        </select>
+        <p class="hint" id="member-account-help">
+          Anyone who has signed in at least once. Someone who never has
+          will not be here yet — ask them to open the binder and sign
+          in, then come back.
         </p>
       </div>
 
       <div class="field">
-        <label for="member-label">Label</label>
+        <label for="member-label">Name for your own reference</label>
         <input type="text" id="member-label" autocomplete="off"
                maxlength="64" aria-describedby="member-label-help">
         <p class="hint" id="member-label-help">
-          What you will recognize this row by — adding an id that is
-          already listed just changes its label.
+          A note to yourself, so you can tell the rows below apart —
+          "Sam, moderator", say. Only admins ever read it, and it is not
+          their Telegram name. Adding an id that is already listed just
+          changes its note.
         </p>
       </div>
 
@@ -362,38 +378,58 @@
       <p class="status" id="fields-status" role="status" aria-live="polite"
          hidden></p>
 
-      <div class="field">
-        <label for="fields-new-id">New field id</label>
-        <input type="text" id="fields-new-id" autocomplete="off"
-               spellcheck="false" maxlength="48"
-               aria-describedby="fields-new-id-help">
-        <p class="hint" id="fields-new-id-help">
-          Lowercase letters, digits, hyphens and underscores, up to 48
-          characters. This is what a stored answer carries, not what a
-          member reads, and it cannot change once members have
-          answered.
-        </p>
-      </div>
-      <div class="field">
-        <label for="fields-new-label">Label</label>
-        <input type="text" id="fields-new-label" autocomplete="off"
-               maxlength="64">
-      </div>
-      <div class="field">
-        <label for="fields-new-values">Starting values, one per line</label>
-        <textarea id="fields-new-values" rows="3"></textarea>
-        <p class="hint">
-          Optional — values can be added one at a time below once the
-          field exists.
-        </p>
-      </div>
-      <div class="row">
-        <button type="button" id="fields-new-add" class="primary">
-          Add field
-        </button>
-      </div>
-
       <div id="fields-list"></div>
+
+      <!--
+        ADDING A FIELD SITS BELOW THE FIELDS IT ADDS TO (owner, walking
+        the sit 2026-08-24), in its own bordered block. The list is what
+        an admin came to read and the form is a tool for changing it, so
+        the form yields the top of the card: three inputs and a button
+        standing above the list push the fields themselves below the
+        fold on a phone.
+
+        The two names are written for someone who has never met the
+        word "field": what a member reads is called that, and the id is
+        called a short code with the one thing that matters about it -
+        it can never change - said in the hint rather than implied.
+      -->
+      <div class="subcard" id="fields-new">
+        <h3 class="subcard-title">Add a field</h3>
+        <div class="field">
+          <label for="fields-new-label">What members see</label>
+          <input type="text" id="fields-new-label" autocomplete="off"
+                 maxlength="64" aria-describedby="fields-new-label-help">
+          <p class="hint" id="fields-new-label-help">
+            The question as it appears on the form — "Affiliation", for
+            example. You can reword this whenever you like.
+          </p>
+        </div>
+        <div class="field">
+          <label for="fields-new-id">Short code</label>
+          <input type="text" id="fields-new-id" autocomplete="off"
+                 spellcheck="false" maxlength="48"
+                 aria-describedby="fields-new-id-help">
+          <p class="hint" id="fields-new-id-help">
+            A short name members never see. It is filed with every
+            answer, so it can never change once anyone has answered.
+            Lowercase letters, digits, hyphens and underscores, up to 48
+            characters.
+          </p>
+        </div>
+        <div class="field">
+          <label for="fields-new-values">Starting values, one per line</label>
+          <textarea id="fields-new-values" rows="3"></textarea>
+          <p class="hint">
+            Optional — values can be added one at a time above once the
+            field exists.
+          </p>
+        </div>
+        <div class="row">
+          <button type="button" id="fields-new-add" class="primary">
+            Add field
+          </button>
+        </div>
+      </div>
     </div>
 
     <!--
