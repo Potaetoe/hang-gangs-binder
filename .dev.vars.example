@@ -1,0 +1,9 @@
+# Local development values - copy to .dev.vars (gitignored) and adjust.
+# Nothing here is a real secret; the e2e suite signs its Telegram
+# fixtures with this bot token and expects this allow-list id. CI
+# copies this file as-is.
+ID_SECRET=local-id-secret
+DIRECTORY_SECRET=local-dir-seal
+TELEGRAM_BOT_TOKEN=local-test-bot-token
+TELEGRAM_ALLOW_IDS=7000001
+TEST_HOOKS=1

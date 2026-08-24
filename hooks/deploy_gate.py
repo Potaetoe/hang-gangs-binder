@@ -7,13 +7,17 @@ record it:
 
     npx wrangler d1 migrations apply binder-db --remote
     py -3 hooks/record.py migrations-applied <newest-file-name>
+
+A record command standing EARLIER in an unbroken && chain also counts:
+if the record fails, && never reaches the deploy. Denying that twice
+taught the gate to read it (owner, 2026-08-24).
 """
 
 import glob
 import os
 import re
 
-from _common import read_input, read_state, command_of, segments, deny
+from _common import read_input, read_state, command_of, chained, strip_quoted, deny
 
 
 def newest_migration():
@@ -23,13 +27,27 @@ def newest_migration():
     return files[-1] if files else None
 
 
+def recorded_earlier(parts, index, newest):
+    pattern = re.compile(
+        r"record\.py\s+migrations-applied\s+" + re.escape(newest))
+    for j in range(index - 1, -1, -1):
+        if parts[j + 1][1] != "&&":
+            return False
+        if pattern.search(parts[j][0]):
+            return True
+    return False
+
+
 payload = read_input()
-for seg in segments(command_of(payload)):
+parts = chained(strip_quoted(command_of(payload)))
+for index, (seg, _joiner) in enumerate(parts):
     if not re.search(r"\bwrangler\s+(deploy|versions\s+upload)\b", seg):
         continue
     newest = newest_migration()
     if newest is None:
         continue  # no migrations exist yet - nothing to be behind on
+    if recorded_earlier(parts, index, newest):
+        continue
     applied = read_state().get("migrations_applied")
     if applied != newest:
         deny("The schema goes first (WORKING.md, deploy-gate): newest "

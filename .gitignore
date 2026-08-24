@@ -24,3 +24,5 @@ vite.config.ts.timestamp-*
 # Playwright
 test-results
 worker-configuration.d.ts
+.dev.vars
+.claude/session.lock

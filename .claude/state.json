@@ -2,7 +2,9 @@
   "signoff": null,
   "last_signoff_used": {
     "target": "v1",
-    "words": "I approve. Lets get going. (the owner, 2026-08-24, approving the docs and step 0)",
-    "when": "2026-08-24 07:08"
-  }
+    "words": "step 0 continuation under the owner's standing approval",
+    "when": "2026-08-24 07:15"
+  },
+  "feature": "the door - both sign-in doors, sessions, the ported look",
+  "migrations_applied": "0000_sparkling_talkback.sql"
 }

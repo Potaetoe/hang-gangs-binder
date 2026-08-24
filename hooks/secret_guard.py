@@ -24,6 +24,7 @@ text = tool_input.get("content") or tool_input.get("new_string") or ""
 
 skip = (not path
         or "/.env" in path or path.endswith(".env")
+        or path.endswith(".dev.vars")
         or "/Temp/" in path or "/tmp/" in path
         or "/scratchpad/" in path)
 

@@ -7,13 +7,15 @@ The sign-off is recorded when the owner gives it:
     py -3 hooks/record.py signoff <branch> "<the owner's words>"
 
 It names one branch and is consumed by the merge that uses it, so an
-old OK can never cover a new change.
+old OK can never cover a new change. A signoff recording standing
+EARLIER in an unbroken && chain also counts - if the record fails, &&
+never reaches the merge (owner, 2026-08-24).
 """
 
 import re
 
 from _common import (read_input, read_state, write_state, command_of,
-                     segments, current_branch, deny)
+                     chained, current_branch, strip_quoted, deny)
 
 DEFAULT = "v1"
 
@@ -23,10 +25,21 @@ def signoff_for(state, target):
     return signoff if signoff.get("target") == target else None
 
 
+def recorded_earlier(parts, index, target):
+    pattern = re.compile(r"record\.py\s+signoff\s+" + re.escape(target))
+    for j in range(index - 1, -1, -1):
+        if parts[j + 1][1] != "&&":
+            return False
+        if pattern.search(parts[j][0]):
+            return True
+    return False
+
+
 payload = read_input()
 state = read_state()
+parts = chained(strip_quoted(command_of(payload)))
 
-for seg in segments(command_of(payload)):
+for index, (seg, _joiner) in enumerate(parts):
     merging = re.search(r"\bgh\s+pr\s+merge\b", seg)
     pushing_default = (
         re.search(r"\bgit\s+push\b", seg) and (
@@ -44,6 +57,9 @@ for seg in segments(command_of(payload)):
             else current_branch()
     else:
         target = DEFAULT
+
+    if recorded_earlier(parts, index, target):
+        continue
 
     used = signoff_for(state, target)
     if not used:
