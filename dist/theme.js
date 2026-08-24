@@ -93,6 +93,9 @@
    
    
    
+   
+   
+   
   let adminDefault = null;
   try { adminDefault = localStorage.getItem(DEFAULT_THEME_KEY); } catch (e) {}
   if (adminDefault && !Object.prototype.hasOwnProperty.call(BG, adminDefault)) {
@@ -102,7 +105,7 @@
   
 
   if (!buttons.length) {
-    paintChrome(stored || schemeDefault());
+    paintChrome(stored || adminDefault || schemeDefault());
     return;
   }
 
@@ -115,8 +118,9 @@
    
    
    
-  const resting = stored || schemeDefault();
-  const pressed = stored || adminDefault || resting;
+   
+  const resting = stored || adminDefault || schemeDefault();
+  const pressed = resting;
   apply(resting, pressed);
 
    

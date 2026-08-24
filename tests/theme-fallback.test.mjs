@@ -276,32 +276,40 @@ function pressedOnly(buttons, name) {
 }
 
 /* ------------------------------------------------------------------ */
-/* THE REWRITTEN S12 ARM (0.9-M3-S12, #418, superseded by the owner's    */
-/* ruling in UX record #454 item 15; 0.9-M3-S32, #456). S12 pinned that  */
-/* a cached admin default PAINTS before first paint once learned - the   */
-/* opposite is now true: it is read only to decide which chip the        */
-/* picker pre-selects, and never reaches data-theme. Using a scheme and  */
-/* an admin default that DISAGREE (dark phone, "pink" admin default) is  */
-/* the only way to prove the split rather than a coincidence - a bug     */
-/* that still painted the admin default would pass a same-value test.    */
+/* THE ADMIN'S DEFAULT PAINTS AGAIN (owner ruling 2026-08-24). This arm  */
+/* has now been written three times, and the history is the point.       */
+/* 0.9-M3-S12 (#418) pinned that a cached admin default PAINTS once      */
+/* learned. 0.9-M3-S32 (#456), under UX record #454 item 15, reversed    */
+/* it: read for the picker's pre-selection only, never reaching          */
+/* data-theme. That is what shipped - and the owner then set the site    */
+/* default to Daylight on the sit, watched a dark phone keep painting    */
+/* midnight, and reported the setting as doing nothing, while the admin  */
+/* page's own help text promised it was "what a new visitor sees". The   */
+/* ruling of 2026-08-24 puts the paint back, one rank below the member's */
+/* own choice and one above the phone.                                   */
+/*                                                                       */
+/* A scheme and an admin default that DISAGREE (dark phone, "pink"       */
+/* admin default) is still the only honest shape here: it proves which   */
+/* of the two actually decided, where a same-value fixture would pass    */
+/* whichever way the code went.                                          */
 
 {
   const { documentElement, metas, buttons } =
     await driven(undefined, "pink", true);
-  check("a cached admin default no longer paints before first paint - " +
-    "the phone's dark preference does, even though a different " +
-    "palette is cached",
-    documentElement.getAttribute("data-theme") === "midnight");
+  check("a cached admin default PAINTS before first paint, outranking " +
+    "the phone's dark preference - the setting an admin saves is what " +
+    "a visitor who has not chosen actually sees",
+    documentElement.getAttribute("data-theme") === "pink");
   check("theme.js's own load-time confirm agrees with theme-init.js on " +
     "what PAINTED - a mismatch here is the flash both files exist to " +
-    "prevent",
-    documentElement.getAttribute("data-theme") === "midnight");
-  check("the browser-chrome meta color follows the painted scheme " +
-    "palette, not the cached admin default",
+    "prevent, and repainting to the phone's scheme here is exactly the " +
+    "flash the old split would have caused once the paint moved",
+    documentElement.getAttribute("data-theme") === "pink");
+  check("the browser-chrome meta color follows the painted admin " +
+    "default, not the phone's own scheme palette",
     metas[0].attrs.content !== undefined);
-  check("the picker pre-selects the admin default's own chip - \"pink\" " +
-    "- even though the page itself is painted \"midnight\"; this is " +
-    "the picker offering the admin's suggestion, not a repaint",
+  check("the picker's pressed chip is the palette actually on the page " +
+    "- \"pink\" - so the swatch and the page can no longer disagree",
     pressedOnly(buttons, "pink"));
 }
 
@@ -414,15 +422,15 @@ async function drivenNoPicker(storedPalette, defaultTheme, darkMatches) {
 }
 
 {
-  // The same regression the picker branch's own arm above (the one
-  // proving "a cached admin default no longer paints") guards against,
-  // fired here instead: S12's retired rule sneaking back into this
-  // branch specifically, since it is a second, separate read site.
+  // The no-picker branch is a SECOND, separate read site (404.html has
+  // no swatches to wire, so theme.js returns early through it), and the
+  // owner's 2026-08-24 ruling has to reach both or the error page's
+  // browser chrome disagrees with every other page's.
   const { metas } = await drivenNoPicker(undefined, "pink", true);
-  check("the no-picker branch: a cached admin default does not leak " +
-    "into the chrome color here either - dark phone still paints the " +
-    "scheme's own color, not the admin default's",
-    metas[0].attrs.content === "#120d10");
+  check("the no-picker branch: a cached admin default reaches the " +
+    "chrome color here too - a dark phone does not override it, the " +
+    "same order every other page paints by",
+    metas[0].attrs.content === "#1e141a");
 }
 
 {
@@ -487,17 +495,14 @@ async function drivenNoPicker(storedPalette, defaultTheme, darkMatches) {
 }
 
 /*
- * THE REWRITTEN S12 ARM, isolated the same way (0.9-M3-S12, #418,
- * superseded by 0.9-M3-S32, #456). S12's isolated arm proved theme-
- * init.js's OWN synchronous read of "hgb-default-theme" painted the
- * cached admin default before first frame, with nothing else having run
- * yet to do it instead. That claim is now false on purpose: theme-
- * init.js does not read this key at all any more. A dark scheme and a
- * cached admin default of "daylight" - the two disagreeing - is what
- * proves it: if theme-init.js still read the key, this block (which
- * never imports theme.js) would show "daylight" painted; it shows the
- * scheme's own "midnight" instead, with the admin default in storage
- * doing nothing.
+ * THE SAME ARM, ISOLATED (0.9-M3-S12 #418, reversed by 0.9-M3-S32 #456,
+ * restored by the owner's ruling of 2026-08-24 - see the paint arm
+ * above for why it moved twice). This block never imports theme.js, so
+ * what it observes is theme-init.js's OWN synchronous read, before
+ * first frame, with nothing else having run that could have painted it
+ * instead. A dark scheme and a cached admin default of "daylight" - the
+ * two disagreeing - is what makes the answer mean something: only the
+ * key being read can produce "daylight" here.
  */
 {
   const documentElement = documentElementStub();
@@ -510,10 +515,11 @@ async function drivenNoPicker(storedPalette, defaultTheme, darkMatches) {
   await import("data:text/javascript," +
     encodeURIComponent(themeInitSrc) + "#theme-init-admin-default-" +
     Math.random());
-  check("theme-init.js's OWN pre-paint guard paints the phone's scheme, " +
-    "never a cached admin default it no longer reads - proven by a " +
-    "scheme and a cached value that disagree",
-    documentElement.getAttribute("data-theme") === "midnight");
+  check("theme-init.js's OWN pre-paint guard paints the cached admin " +
+    "default over the phone's disagreeing scheme, in the same tick and " +
+    "with no network - proven by a scheme and a cached value that " +
+    "disagree",
+    documentElement.getAttribute("data-theme") === "daylight");
 }
 
 /*

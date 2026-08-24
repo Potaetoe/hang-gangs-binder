@@ -114,10 +114,13 @@
   // The admin's configured resting palette (site.defaultTheme from
   // GET /config), read from the cache apps/web/site-content.js writes -
   // see this file's DEFAULT_THEME_KEY comment above for why this script
-  // does not fetch it directly. Used ONLY below, to decide which swatch
-  // the picker pre-selects when a member has made no choice of their
-  // own - never to decide what paints, which is schemeDefault()'s job
-  // alone now.
+  // does not fetch it directly. It DECIDES WHAT PAINTS for a member who
+  // has made no choice of their own, ranking above the phone's scheme
+  // and below the member (owner ruling 2026-08-24, replacing the
+  // 2026-08-22 "first visit follows the phone" rule; theme-init.js's
+  // header carries the whole order and why it moved). It used to
+  // pre-select a swatch and nothing else, which is how the owner came
+  // to set a site default and watch it paint nothing.
   let adminDefault = null;
   try { adminDefault = localStorage.getItem(DEFAULT_THEME_KEY); } catch (e) {}
   if (adminDefault && !Object.prototype.hasOwnProperty.call(BG, adminDefault)) {
@@ -142,21 +145,22 @@
    * following it.
    */
   if (!buttons.length) {
-    paintChrome(stored || schemeDefault());
+    paintChrome(stored || adminDefault || schemeDefault());
     return;
   }
 
   // resting: the same value theme-init.js already painted - a member's
-  // own stored choice, or the phone's light/dark scheme when there is
-  // none. pressed: which swatch the picker shows as pressed - a
-  // member's own choice still wins outright, otherwise the admin's
-  // configured default when one is known (the picker pre-selecting it,
-  // per the owner's ruling), and only when neither exists does it fall
-  // back to matching whatever is actually painted. A visitor who has
-  // never touched a control has not made a choice, so nothing here is
-  // written to storage.
-  const resting = stored || schemeDefault();
-  const pressed = stored || adminDefault || resting;
+  // own stored choice, then the admin's configured default, then the
+  // phone's light/dark scheme - the one order theme-init.js already
+  // painted by, repeated here because this file repaints on load and a
+  // different order would flash the palette the other one rejected.
+  // pressed is now the SAME value: the swatch the picker shows is
+  // whatever is actually on the page, which it was not while the
+  // admin's default could be pre-selected without painting. A visitor
+  // who has never touched a control has not made a choice, so nothing
+  // here is written to storage.
+  const resting = stored || adminDefault || schemeDefault();
+  const pressed = resting;
   apply(resting, pressed);
 
   // No document-level listener here, and that is the whole difference

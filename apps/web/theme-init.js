@@ -38,23 +38,39 @@
  * this script runs first, in <head>, before theme.js has loaded at
  * all; there is nothing yet to import it from.
  *
- * FIRST VISIT FOLLOWS THE PHONE (owner ruling, UX record #454 item 15,
- * 2026-08-22; 0.9-M3-S32, #456, superseding 0.9-M3-S12's #418 "admin
- * default from the second load" rule - not deleted silently, replaced):
- * a member with no saved choice of their own gets the plain dark
- * palette when the phone reports prefers-color-scheme: dark, and the
- * plain light palette otherwise - including "no preference", the
- * ruling's own words. matchMedia is synchronous, so this reads it
- * directly rather than caching anything or waiting on a network round
- * trip; there is no flash because the decision is made and painted in
- * the same tick as everything else in this file.
+ * THE ORDER OF PRECEDENCE (owner ruling 2026-08-24, replacing the
+ * 2026-08-22 "first visit follows the phone" rule of UX record #454
+ * item 15 / 0.9-M3-S32 #456 - replaced out loud, not deleted quietly):
  *
- * THE ADMIN'S CONFIGURED DEFAULT (site.defaultTheme from the Worker's
- * GET /config, 0.9-M3-S8/#414) is no longer read here at all. It never
- * paints a page on its own any more - it is read by theme.js instead,
- * only to decide which swatch the picker shows as pre-selected. See
- * theme.js's own header and apps/web/site-content.js's for the read
- * side and why the cache write there stays a cache write.
+ *   1. the member's OWN saved choice, always;
+ *   2. the ADMIN'S CONFIGURED DEFAULT (site.defaultTheme), until the
+ *      member picks for themselves;
+ *   3. the phone's prefers-color-scheme, when neither of those is set.
+ *
+ * WHY THE RULE MOVED. The admin's default used to paint nothing at all:
+ * it was read only by theme.js, to pre-select a swatch in the picker.
+ * The owner set the site default to Daylight, watched a dark phone keep
+ * painting midnight, and reported the setting as dead - and the admin
+ * page's own help text ("What a new visitor sees before they pick their
+ * own theme") had been promising this behaviour the whole time. The
+ * owner's first instinct was to honour the phone unless it "says
+ * nothing"; that was measured and dropped, because no current browser
+ * ever reports no-preference - every device answers light or dark, so
+ * that branch would never have fired and the setting would have stayed
+ * just as dead.
+ *
+ * WHERE THE VALUE COMES FROM, AND THE ONE HONEST GAP. The default
+ * arrives over GET /config, which is a network round trip this script
+ * cannot make: it runs in <head>, before first paint, with nothing
+ * loaded. apps/web/site-content.js caches the fetched value into
+ * `hgb-default-theme` on every load, and this script reads that cache
+ * on the NEXT one. So the very first visit from a browser that has
+ * never loaded this site paints by the phone's scheme, and every visit
+ * after it obeys the admin. That is a real limit of painting before the
+ * network, not an oversight - the alternative is a flash of the wrong
+ * palette on every load, which is the exact thing this file exists to
+ * prevent. It is validated against the same four names as the member's
+ * own choice, for the reason the block above gives.
  */
 (function () {
   "use strict";
@@ -67,12 +83,21 @@
       ? "midnight" : "daylight";
   }
 
+  function valid(name) {
+    return !!name && PALETTES.indexOf(name) !== -1;
+  }
+
   try {
     const chosen = localStorage.getItem("hgb-palette");
-    if (chosen && PALETTES.indexOf(chosen) !== -1) {
-      document.documentElement.setAttribute("data-theme", chosen);
+    const adminDefault = localStorage.getItem("hgb-default-theme");
+    let painted;
+    if (valid(chosen)) {
+      painted = chosen;
+    } else if (valid(adminDefault)) {
+      painted = adminDefault;
     } else {
-      document.documentElement.setAttribute("data-theme", schemeDefault());
+      painted = schemeDefault();
     }
+    document.documentElement.setAttribute("data-theme", painted);
   } catch (e) {}
 })();
