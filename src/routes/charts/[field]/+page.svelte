@@ -136,7 +136,17 @@
 					<h2>Where everyone sits</h2>
 					<div class="dist">
 						{#each data.focus.dist.bars as bar, i (i)}
-							<div class="dist-bar" class:on={bar.on} style={`height: ${bar.pct}%`}></div>
+							<!-- svelte-ignore a11y_no_noninteractive_tabindex -- the bar IS the
+							     information: focus/tap opens its range bubble without JavaScript -->
+							<div
+								class="dist-bar"
+								class:on={bar.on}
+								style={`height: ${bar.pct}%`}
+								tabindex="0"
+								role="img"
+								aria-label={bar.label}
+								data-label={bar.label}
+							></div>
 						{/each}
 					</div>
 					<div class="axis-row">

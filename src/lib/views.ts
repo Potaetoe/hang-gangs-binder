@@ -48,7 +48,7 @@ export type FocusView = {
 		xLast: string;
 	} | null;
 	dist: {
-		bars: { pct: number; on: boolean }[];
+		bars: { pct: number; on: boolean; label: string }[];
 		from: string;
 		to: string;
 		you: string | null;

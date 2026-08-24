@@ -105,6 +105,12 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 	await expect(page.getByText(/^2 of \d+/).first()).toBeVisible();
 	await expect(page.getByText(/you are here: 150 lb/)).toBeVisible();
 
+	// Every bar explains itself: fixed 20 lb buckets, range and share.
+	await expect(page.locator('.dist-bar').first()).toHaveAttribute(
+		'data-label',
+		'140–160 lb · 1 member'
+	);
+
 	// A choice field focuses into counts.
 	await page.locator('.fieldlist').getByRole('link', { name: 'Gender' }).click();
 	await expect(page.getByRole('heading', { name: 'Gender' })).toBeVisible();
