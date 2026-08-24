@@ -4,6 +4,45 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<!-- Every navigation is a full page load (the pages ship no
+		     JavaScript), so the fonts must win the race to first paint
+		     on every page. Preloading pins them; without it the swap
+		     from the fallback font is the flicker the owner saw. -->
+		<link
+			rel="preload"
+			href="/fonts/playfair-display-600-latin.woff2"
+			as="font"
+			type="font/woff2"
+			crossorigin
+		/>
+		<link
+			rel="preload"
+			href="/fonts/playfair-display-600-italic-latin.woff2"
+			as="font"
+			type="font/woff2"
+			crossorigin
+		/>
+		<link
+			rel="preload"
+			href="/fonts/dm-sans-400-latin.woff2"
+			as="font"
+			type="font/woff2"
+			crossorigin
+		/>
+		<link
+			rel="preload"
+			href="/fonts/dm-sans-600-latin.woff2"
+			as="font"
+			type="font/woff2"
+			crossorigin
+		/>
+		<link
+			rel="preload"
+			href="/fonts/jetbrains-mono-400-latin.woff2"
+			as="font"
+			type="font/woff2"
+			crossorigin
+		/>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
