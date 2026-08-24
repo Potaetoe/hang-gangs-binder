@@ -556,7 +556,8 @@ async function drivenNoPicker(storedPalette, defaultTheme, darkMatches) {
 
 /*
  * THE ALLOWLIST AGAINST DRIFT (#457 review, finding F3; 0.9-M3-S33
- * part B fix wave 1).
+ * part B fix wave 1) - WIDENED TO FIVE SOURCES (0.9-M3-S33b trailing
+ * wave, #457 re-fire #1, F2).
  *
  * theme-init.js's PALETTES is a hand-typed copy of four names, and it
  * HAS to be one: the file runs first, in <head>, with nothing loaded
@@ -571,26 +572,40 @@ async function drivenNoPicker(storedPalette, defaultTheme, darkMatches) {
  * This is the review bar's own corollary: "a check computed entirely
  * from the file it guards cannot detect that the file was rearranged;
  * something outside the file has to say what it may contain." The
- * something is the two files that must agree with it - theme.js's BG
+ * something is the other files that must agree with it - theme.js's BG
  * map, which is what actually gets painted into the browser chrome,
- * and theme.css's own :root[data-theme="..."] rules, which are what
- * actually paint the page. All three are read from disk as text: a
- * fourth hand-typed list here would be one more copy to drift.
+ * theme.css's own :root[data-theme="..."] rules, which are what
+ * actually paint the page, apps/web/site-content.js's VALID_PALETTES,
+ * the admin's configured default written to localStorage for theme.js
+ * to pre-select a swatch from, and apps/web/admin.js's THEMES, the
+ * settings form's own mirror of what the Worker accepts. All five are
+ * read from disk as text: a sixth hand-typed list here would be one
+ * more copy to drift.
  *
- * Set equality both ways, not "PALETTES is a subset": a palette added
- * to the stylesheet and not to the guard flashes on load, and a name
- * in the guard with no stylesheet behind it paints a data-theme
- * nothing styles. Neither direction is the safe one.
+ * Re-fire #1 found the last two: site-content.js's own comment already
+ * CLAIMED to match theme-init.js and theme.js ("Matches theme-init.js's
+ * own copy and theme.js's BG keys") - a claim checked by nothing until
+ * this arm read the file. Dropping a name from either list left every
+ * check in this file green, exactly the gap this widening closes.
+ *
+ * Set equality across all five, not "PALETTES is a subset": a palette
+ * added to one list and missing from another either flashes on load, or
+ * paints a data-theme nothing styles, or offers a palette on the
+ * settings form the page can never paint. No direction is the safe one.
  */
 {
   const themeCssSrc = await read("../apps/web/theme.css");
+  const siteContentSrc = await read("../apps/web/site-content.js");
+  const adminSrc = await read("../apps/web/admin.js");
   const group = (pattern, text) => {
     const found = pattern.exec(text);
     return found ? found[1] : "";
   };
+  const namesIn = (text) =>
+    new Set(Array.from(text.matchAll(/"([^"]+)"/g), (m) => m[1]));
+
   const listed = group(/const PALETTES = \[([^\]]*)\]/, themeInitSrc);
-  const guard = new Set(
-    Array.from(listed.matchAll(/"([^"]+)"/g), (m) => m[1]));
+  const guard = namesIn(listed);
   const bgBlock = group(/const BG = \{([^}]*)\}/, themeSrc);
   const painted = new Set(
     Array.from(bgBlock.matchAll(/(\w+)\s*:/g), (m) => m[1]));
@@ -599,18 +614,30 @@ async function drivenNoPicker(storedPalette, defaultTheme, darkMatches) {
   const styled = new Set(Array.from(
     themeCssSrc.matchAll(/^:root\[data-theme="([^"]+)"\]/gm),
     (m) => m[1]));
+  const configured = namesIn(
+    group(/const VALID_PALETTES = \[([^\]]*)\]/, siteContentSrc));
+  const settingsForm = namesIn(
+    group(/const THEMES = Object\.freeze\(\[([^\]]*)\]\)/, adminSrc));
+
+  const others = [
+    ["theme.js's BG map, which theme.js paints chrome for", painted],
+    ["theme.css's :root[data-theme] rules", styled],
+    ["site-content.js's VALID_PALETTES, the admin's configured default",
+      configured],
+    ["admin.js's THEMES, the settings form's own mirror", settingsForm],
+  ];
 
   const same = (a, b) => a.size === b.size && [...a].every((n) => b.has(n));
-  check("CONTROL: all three lists were actually parsed - an empty set " +
+  check("CONTROL: all five lists were actually parsed - an empty set " +
     "would make every comparison below true for the wrong reason",
-    guard.size > 1 && painted.size > 1 && styled.size > 1);
-  check("theme-init.js's PALETTES names exactly the palettes theme.js " +
-    "paints chrome for - a name in one and not the other is either a " +
-    "flash on load or a data-theme nothing colors",
-    same(guard, painted));
-  check("...and exactly the palettes theme.css writes a " +
-    ":root[data-theme] rule for",
-    same(guard, styled));
+    guard.size > 1 && others.every(([, set]) => set.size > 1));
+  for (const [label, set] of others) {
+    check("theme-init.js's PALETTES names exactly what " + label +
+      " names - a name in one and not the other either flashes on " +
+      "load, paints a data-theme nothing colors, or offers a palette " +
+      "the page cannot paint",
+      same(guard, set));
+  }
 }
 
 console.log(failures
