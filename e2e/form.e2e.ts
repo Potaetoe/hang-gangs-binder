@@ -56,7 +56,7 @@ test('THE acceptance test: an added field reaches the form and the filters', asy
 	await fillStable(page, /what the form should ask/i, fieldName);
 	await page.getByLabel(/what kind of answer/i).selectOption('choice');
 	await page.getByRole('button', { name: 'Add the field' }).click();
-	await expect(page.getByText('off the form').first()).toBeVisible();
+	await expect(page.locator('.badge.pending')).toBeVisible();
 
 	// Options arrive; the field goes on the form.
 	await fillStable(page, 'New option', 'Red');
@@ -64,7 +64,7 @@ test('THE acceptance test: an added field reaches the form and the filters', asy
 	await fillStable(page, 'New option', 'Blue');
 	await page.getByRole('button', { name: 'Add option' }).click();
 	await page.getByRole('button', { name: 'Put it on the form' }).click();
-	await expect(page.getByText('off the form')).not.toBeVisible();
+	await expect(page.locator('.badge.pending')).not.toBeVisible();
 	await signOut(page);
 
 	// No code changed. The member's form asks the new question.
