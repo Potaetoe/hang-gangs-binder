@@ -19,7 +19,7 @@
 		<p class="muted">You are signed in as an admin.</p>
 	{/if}
 	{#if data.pendingCount}
-		<a class="card banner" href={resolve('/admin/approvals')}
+		<a class="card banner" href={resolve('/admin/members')}
 			>{data.pendingCount === 1 ? 'Someone is' : `${data.pendingCount} people are`} waiting to be approved</a
 		>
 	{/if}

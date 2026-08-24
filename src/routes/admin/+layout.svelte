@@ -7,7 +7,6 @@
 		$props();
 
 	const sections = [
-		{ path: '/admin/approvals', name: 'Approvals' },
 		{ path: '/admin/members', name: 'Members' },
 		{ path: '/admin/settings', name: 'Settings' },
 		{ path: '/admin/log', name: 'Change log' },
@@ -27,8 +26,8 @@
 				{#each sections as section (section.path)}
 					<li>
 						<a href={resolve(section.path)} class:on={active.startsWith(section.path)}
-							>{section.name}{section.name === 'Approvals' && data.pendingCount
-								? ` (${data.pendingCount})`
+							>{section.name}{section.name === 'Members' && data.pendingCount
+								? ` (${data.pendingCount} waiting)`
 								: ''}</a
 						>
 					</li>

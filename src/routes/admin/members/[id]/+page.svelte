@@ -38,49 +38,59 @@
 				<button class="quiet">{data.member.isAdmin ? 'Remove admin' : 'Make admin'}</button>
 			</form>
 		{/if}
-	</div>
-
-	{#if data.hasPasswordDoor}
+		{#if data.hasPasswordDoor}
+			<details class="flap button-flap">
+				<summary>Reset password</summary>
+				<form method="POST" action="?/passphrase">
+					<label for="passphrase">Temporary passphrase (8+ characters)</label>
+					<input id="passphrase" name="passphrase" autocomplete="off" />
+					<p class="muted">
+						Hand it to them yourself — Telegram, in person, anywhere but here. Their next sign-in
+						demands a password of their own, and every open session is signed out now.
+					</p>
+					<button>Set passphrase</button>
+				</form>
+			</details>
+		{/if}
 		<details class="flap button-flap">
-			<summary>Reset password</summary>
-			<form method="POST" action="?/passphrase">
-				<label for="passphrase">Temporary passphrase (8+ characters)</label>
-				<input id="passphrase" name="passphrase" autocomplete="off" />
+			<summary>Remove this member for good</summary>
+			<form method="POST" action="?/purge">
 				<p class="muted">
-					Hand it to them yourself — Telegram, in person, anywhere but here. Their next sign-in
-					demands a password of their own, and every open session is signed out now.
+					Everything goes: the account, every sign-in, every entry, the correction trail. The change
+					log keeps one unlinkable line. There is no undo.
 				</p>
-				<button>Set passphrase</button>
+				<button>Yes, remove everything</button>
 			</form>
 		</details>
-	{/if}
-
-	<details class="flap button-flap">
-		<summary>Remove this member for good</summary>
-		<form method="POST" action="?/purge">
-			<p class="muted">
-				Everything goes: the account, every sign-in, every entry, the correction trail. The change
-				log keeps one unlinkable line. There is no undo.
-			</p>
-			<button>Yes, remove everything</button>
-		</form>
-	</details>
+	</div>
 
 	<section>
 		<h3>Entries ({data.entries.length})</h3>
 		{#if !data.entries.length}
 			<p class="muted">None.</p>
 		{:else}
-			<ul class="history">
-				{#each data.entries as entry, i (i)}
-					<li class="card">
-						<div>
-							<p class="muted entry-date">{entry.dateLabel}</p>
-							<p class="entry-summary">{entry.summary || '—'}</p>
-						</div>
-					</li>
-				{/each}
-			</ul>
+			<div class="table-scroll card">
+				<table class="admin-table">
+					<thead>
+						<tr>
+							<th>Date</th>
+							{#each data.fieldNames as name (name)}
+								<th>{name}</th>
+							{/each}
+						</tr>
+					</thead>
+					<tbody>
+						{#each data.entries as entry, i (i)}
+							<tr>
+								<td>{entry.dateLabel}</td>
+								{#each entry.cells as cell, j (j)}
+									<td>{cell}</td>
+								{/each}
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		{/if}
 	</section>
 

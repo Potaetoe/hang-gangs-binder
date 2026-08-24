@@ -58,15 +58,13 @@ export const load: PageServerLoad = async ({ platform, params, cookies }) => {
 				.join(' + ')
 		},
 		hasPasswordDoor: logins.some((l) => l.kind === 'password'),
+		fieldNames: fields.map((f) => f.name),
 		entries: entries.map(({ entry, values }) => ({
 			dateLabel: formatDate(entry.date),
-			summary: fields
-				.map((field) => {
-					const value = values.find((v) => v.fieldId === field.id);
-					return value ? formatValue(field, value, units) : '';
-				})
-				.filter(Boolean)
-				.join(' · ')
+			cells: fields.map((field) => {
+				const value = values.find((v) => v.fieldId === field.id);
+				return value ? formatValue(field, value, units) : '';
+			})
 		})),
 		corrections: corrections.map((c) => ({
 			date: c.date,

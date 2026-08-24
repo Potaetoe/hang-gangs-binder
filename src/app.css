@@ -987,3 +987,12 @@ a.banner {
 	border-color: var(--color-accent);
 	text-decoration: none;
 }
+
+/* The action card holds the flap-buttons too; an opened flap takes
+   the full row for its form. */
+.admin-actions details {
+	margin: 0;
+}
+.admin-actions details[open] {
+	flex-basis: 100%;
+}
