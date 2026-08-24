@@ -48,8 +48,6 @@
 					<button>Apply</button>
 				</form>
 			{/if}
-
-			<p class="back-to-board"><a href={resolve('/charts')}>&larr; All stats</a></p>
 		</div>
 
 		<div class="charts-col">
@@ -152,4 +150,6 @@
 			{/if}
 		</div>
 	</div>
+
+	<p class="back-to-board"><a href={resolve('/charts')}>&larr; All stats</a></p>
 </main>

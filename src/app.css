@@ -583,7 +583,7 @@ main.with-rail {
 	margin-bottom: 0.5rem;
 }
 .back-to-board {
-	margin: 0;
+	margin: 1.25rem 0 0;
 }
 
 .stats-row {
@@ -1032,4 +1032,40 @@ a.wordmark {
 
 .charts-col .units {
 	margin-bottom: 0;
+}
+
+/* Settings as one divided list, not a stack of boxes (owner,
+   2026-08-24). */
+.settings-list {
+	display: flex;
+	flex-direction: column;
+	margin-top: 0.5rem;
+}
+.setting {
+	padding: 1.25rem 0;
+	border-top: 1px solid var(--color-border);
+}
+.setting:first-child {
+	border-top: 0;
+	padding-top: 0.5rem;
+}
+.setting h2 {
+	font-size: 1.05rem;
+	margin: 0 0 0.6rem;
+}
+.setting .units {
+	margin-bottom: 0;
+}
+.name-row {
+	display: flex;
+	gap: 0.5rem;
+	align-items: stretch;
+}
+.name-row input {
+	flex: 1;
+	min-width: 0;
+	margin-bottom: 0;
+}
+.name-row button {
+	flex: none;
 }
