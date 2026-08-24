@@ -13,6 +13,7 @@ import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import type { FocusView, TileView } from '$lib/views';
 import * as table from './db/schema';
 import {
+	choicePicks,
 	feetInches,
 	fieldOptions,
 	round,
@@ -24,8 +25,11 @@ import {
 
 type Db = DrizzleD1Database<typeof import('./db/schema')>;
 
-/** fieldId -> required choice value. Built from ?f_<fieldId>= params. */
-export type Filters = Record<string, string>;
+/** fieldId -> required choice values. Built from ?f_<fieldId>= params;
+ * pick-several fields may require several at once (owner ruling
+ * 2026-08-24: a member matches only when their picks include ALL of
+ * them). */
+export type Filters = Record<string, string[]>;
 
 type GroupEntry = { date: string; seq: number; values: Map<string, EntryValue> };
 /** memberId -> entries, oldest first. */
@@ -54,19 +58,28 @@ export async function loadGroup(db: Db): Promise<Group> {
 }
 
 /** Reads ?f_<choiceFieldId>=<option> params into filters, ignoring
- * anything that is not a real option of a real choice field. */
+ * anything that is not a real option of a real choice field. A
+ * repeated param (pick-several checkboxes) collects every value. */
 export function readFilters(fields: Field[], params: URLSearchParams): Filters {
 	const filters: Filters = {};
 	for (const field of fields) {
 		if (field.type !== 'choice') continue;
-		const value = params.get(`f_${field.id}`);
-		if (value && fieldOptions(field).includes(value)) filters[field.id] = value;
+		const options = fieldOptions(field);
+		const wanted = [...new Set(params.getAll(`f_${field.id}`))].filter((v) => options.includes(v));
+		if (wanted.length) filters[field.id] = wanted;
 	}
 	return filters;
 }
 
+/** Every filter value must be among the entry's picks. A single-pick
+ * answer is a one-item pick-set, so one rule covers both shapes. */
 const matches = (entry: GroupEntry, filters: Filters): boolean =>
-	Object.entries(filters).every(([fieldId, value]) => entry.values.get(fieldId)?.choice === value);
+	Object.entries(filters).every(([fieldId, wanted]) => {
+		const value = entry.values.get(fieldId);
+		if (!value) return false;
+		const picks = choicePicks(value);
+		return wanted.every((w) => picks.includes(w));
+	});
 
 /** The member's newest entry that matches the filters and carries the
  * field, or null. "Latest" is per field on purpose - an entry that
@@ -244,10 +257,13 @@ export function boardTiles(group: Group, fields: Field[], units: Units): TileVie
 				delta: series.length >= 2 ? signed(series[series.length - 1].avg - series[0].avg) : null
 			});
 		} else {
+			// Every pick counts, so a pick-several member can sit in
+			// several bars - that is the honest shape of "pick several".
 			const counts = new Map<string, number>();
 			for (const entries of group.values()) {
 				const value = latestValue(entries, field.id, {});
-				if (value?.choice) counts.set(value.choice, (counts.get(value.choice) ?? 0) + 1);
+				if (!value) continue;
+				for (const pick of choicePicks(value)) counts.set(pick, (counts.get(pick) ?? 0) + 1);
 			}
 			const sorted = [...counts.values()].sort((a, b) => b - a);
 			const top = sorted.slice(0, 4);
@@ -305,23 +321,26 @@ export function focusView(
 	const filtered = Object.keys(filters).length > 0;
 	const total = memberCount(group);
 
-	// Latest value per member under the filters.
+	// Latest value per member under the filters. For choices, every
+	// pick counts - but a member counts once as a respondent, even one
+	// whose latest answer is "none" (an empty pick-set).
 	const latest: number[] = [];
 	const latestChoices = new Map<string, number>();
+	let respondents = 0;
 	for (const entries of group.values()) {
 		const value = latestValue(entries, field.id, filters);
 		if (!value) continue;
 		if (field.type === 'number') {
 			const n = numberOf(value, units);
 			if (n != null) latest.push(n);
-		} else if (value.choice) {
-			latestChoices.set(value.choice, (latestChoices.get(value.choice) ?? 0) + 1);
+		} else {
+			respondents += 1;
+			for (const pick of choicePicks(value)) {
+				latestChoices.set(pick, (latestChoices.get(pick) ?? 0) + 1);
+			}
 		}
 	}
-	const matchCount =
-		field.type === 'number'
-			? latest.length
-			: [...latestChoices.values()].reduce((a, b) => a + b, 0);
+	const matchCount = field.type === 'number' ? latest.length : respondents;
 
 	// Filters panel: every OTHER choice field.
 	const filterFields = fields
@@ -330,7 +349,8 @@ export function focusView(
 			id: f.id,
 			name: f.name,
 			options: fieldOptions(f),
-			selected: filters[f.id] ?? ''
+			multiple: f.multiple,
+			selected: filters[f.id] ?? []
 		}));
 
 	const view: FocusView = {
@@ -353,6 +373,9 @@ export function focusView(
 
 	if (field.type === 'choice') {
 		const sorted = [...latestChoices.entries()].sort((a, b) => b[1] - a[1]);
+		// Everyone matching can have answered "none" on a pick-several
+		// field: respondents without a single bar to draw.
+		if (!sorted.length) return view;
 		const max = sorted[0][1];
 		view.counts = sorted.map(([label, count]) => ({
 			label,

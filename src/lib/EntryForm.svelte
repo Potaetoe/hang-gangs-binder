@@ -10,14 +10,22 @@
 	}: {
 		fields: FormFieldView[];
 		/** What a failed submit actually typed, echoed back over the
-		 * pre-fill so nothing anyone wrote is thrown away. */
-		raw?: Record<string, string>;
+		 * pre-fill so nothing anyone wrote is thrown away. Checkboxes
+		 * submit one value per tick, so every key holds a list. */
+		raw?: Record<string, string[]>;
 		problems?: string[];
 		action: string;
 		submitLabel: string;
 	} = $props();
 
-	const r = (key: string, fallback: string) => raw[key] ?? fallback;
+	const r = (key: string, fallback: string) => raw[key]?.[0] ?? fallback;
+
+	// A failed submit echoes at least one key (text boxes and selects
+	// always send). When it does, unchecked boxes must STAY unchecked -
+	// falling back to the pre-fill would undo what the member just did.
+	const echoed = $derived(Object.keys(raw).length > 0);
+	const ticked = (f: FormFieldView, option: string) =>
+		echoed ? (raw['f_' + f.id] ?? []).includes(option) : f.picks.includes(option);
 </script>
 
 <form method="POST" {action}>
@@ -37,6 +45,16 @@
 					<option value={option} selected={r('f_' + f.id, f.choice) === option}>{option}</option>
 				{/each}
 			</select>
+		{:else if f.kind === 'multi'}
+			<fieldset class="picks">
+				<legend>{f.name}</legend>
+				{#each f.options as option (option)}
+					<label class="pick">
+						<input type="checkbox" name={'f_' + f.id} value={option} checked={ticked(f, option)} />
+						<span>{option}</span>
+					</label>
+				{/each}
+			</fieldset>
 		{:else if f.kind === 'length'}
 			<label for={'f-' + f.id + '-ft'}>{f.name}</label>
 			<div class="row">

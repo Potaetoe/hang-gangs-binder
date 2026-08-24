@@ -65,8 +65,26 @@ const fromCm = (cm: number) => ({ metric: round(cm, 1), imperial: round(cm / CM_
 /* ---------------------------------------------------------------- */
 /* Formatting - what a person reads                                  */
 
+/** The picks inside a stored choice value. A single-pick row holds
+ * the option as plain text; a pick-several row holds a JSON list. A
+ * field switched to pick-several keeps its old plain rows, so both
+ * shapes must always read. */
+export function choicePicks(value: EntryValue): string[] {
+	const raw = value.choice;
+	if (raw == null || raw === '') return [];
+	if (raw.startsWith('[')) {
+		try {
+			const parsed: unknown = JSON.parse(raw);
+			if (Array.isArray(parsed)) return parsed.map(String);
+		} catch {
+			// A plain answer that happens to open with a bracket.
+		}
+	}
+	return [raw];
+}
+
 export function formatValue(field: Field, value: EntryValue, units: Units): string {
-	if (field.type === 'choice') return value.choice ?? '';
+	if (field.type === 'choice') return choicePicks(value).join(', ');
 	const n = units === 'imperial' ? value.imperial : value.metric;
 	if (n == null) return '';
 	if (field.measure === 'length') {
@@ -140,11 +158,16 @@ export function formFieldViews(
 			inches: '',
 			single: '',
 			choice: '',
+			picks: [],
 			unit: ''
 		};
 		const v = values[field.id];
 		if (field.computed) {
 			view.kind = 'computed';
+		} else if (field.type === 'choice' && field.multiple) {
+			view.kind = 'multi';
+			view.options = fieldOptions(field);
+			view.picks = v ? choicePicks(v) : [];
 		} else if (field.type === 'choice') {
 			view.kind = 'choice';
 			view.options = fieldOptions(field);
@@ -194,6 +217,33 @@ export function parseEntryForm(fields: Field[], form: FormData, units: Units): P
 
 	for (const field of fields) {
 		if (field.computed) continue;
+
+		if (field.type === 'choice' && field.multiple) {
+			// Checkboxes: every ticked box arrives as its own value. No
+			// ticks parses as nothing here; carryForward decides whether
+			// that silence means "none now" (owner ruling 2026-08-24).
+			const ticked = form
+				.getAll(`f_${field.id}`)
+				.filter((v): v is string => typeof v === 'string')
+				.map((v) => v.trim())
+				.filter(Boolean);
+			if (!ticked.length) continue;
+			const options = fieldOptions(field);
+			if (ticked.some((t) => !options.includes(t))) {
+				problems.push(`${field.name}: that is not one of the choices.`);
+				continue;
+			}
+			// Stored in the options' order, deduplicated - the answer is a
+			// set, and it should read the same however the boxes were hit.
+			const picks = options.filter((o) => ticked.includes(o));
+			values[field.id] = {
+				metric: null,
+				imperial: null,
+				entered: null,
+				choice: JSON.stringify(picks)
+			};
+			continue;
+		}
 
 		if (field.type === 'choice') {
 			const raw = String(form.get(`f_${field.id}`) ?? '').trim();
@@ -263,6 +313,17 @@ export function carryForward(
 		if (field.computed || values[field.id]) continue;
 		const prior = latest[field.id];
 		if (!prior) continue;
+		if (field.type === 'choice' && field.multiple) {
+			// The checkboxes arrive pre-checked with the latest picks, so
+			// the pre-fill IS the carry - no ticks in the submit means the
+			// member deliberately cleared them. That records "none now"
+			// (owner ruling 2026-08-24) instead of quietly restoring picks
+			// they just removed.
+			if (choicePicks(prior).length) {
+				values[field.id] = { metric: null, imperial: null, entered: null, choice: '[]' };
+			}
+			continue;
+		}
 		values[field.id] = {
 			metric: prior.metric,
 			imperial: prior.imperial,

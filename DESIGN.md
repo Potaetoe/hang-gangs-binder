@@ -68,15 +68,37 @@ decisions.
 2. **Admin surface** — site settings (name, welcome text, timezone,
    default theme), member management (approvals, roles, resets), a
    change log, departed-member cleanup.
-3. **Form builder** — admins add, rename, and retire categorical fields.
-   The contract that failed last time, now the acceptance test: **a field
-   an admin adds appears on the member form and in the chart filters
-   without any code change.**
+3. **Form builder** — admins shape the form: add fields (choices, or
+   numbers that are weights, lengths, or plain), rename and reorder
+   them, edit a choice field's options, and retire fields. The rulings
+   (owner, 2026-08-24): height, weight and BMI are essential and cannot
+   be retired; a new choice field stays off the form until it has at
+   least one option; renaming an option renames it in everyone's
+   history; removing an option only stops new picks; deleting is only
+   for a field that never collected a value. The contract that failed
+   last time, now the acceptance test: **a field an admin adds appears
+   on the member form and in the chart filters without any code
+   change.**
+
+   A choice field can be **pick-several** (owner rulings, 2026-08-24;
+   the first planned field is kinks): members tick checkboxes instead
+   of picking one, and the answer is the whole set of picks. The boxes
+   arrive pre-checked with the member's current picks — that IS the
+   carry-forward — so unchecking every box on a new entry is
+   deliberate and records "none now", which drops the member from
+   that field's counts. In the charts it counts every pick (one member
+   can sit in several bars) and filters as checkboxes too: show people
+   whose picks include ALL the ticked options. A single-pick choice
+   field can be switched to pick-several once, one-way — old answers
+   read as one-item picks, and there is no way back down because
+   squeezing several picks into one would lose answers.
+
 4. **Combined filters** — multi-filter charts (landed with the core
    loop's charts; floorless by the ruling above).
 
 **Later** (named so they are not forgotten): a calendar/events page, a
-socials-links page.
+socials-links page, admin-defined calculated fields (BMI is the only
+computed field in 1.0, wired in code; the door stays open).
 
 ## Stack
 

@@ -37,13 +37,32 @@
 				<form method="GET" class="filters card">
 					<p class="filters-title">Show only</p>
 					{#each data.focus.filterFields as filter (filter.id)}
-						<label class="sr-only" for={'filter-' + filter.id}>{filter.name}</label>
-						<select id={'filter-' + filter.id} name={'f_' + filter.id}>
-							<option value="">Any {filter.name.toLowerCase()}</option>
-							{#each filter.options as option (option)}
-								<option value={option} selected={filter.selected === option}>{option}</option>
-							{/each}
-						</select>
+						{#if filter.multiple}
+							<!-- Pick-several fields filter as checkboxes: only people
+							     whose picks include EVERY ticked option show. -->
+							<fieldset class="picks filter-picks">
+								<legend>{filter.name}</legend>
+								{#each filter.options as option (option)}
+									<label class="pick">
+										<input
+											type="checkbox"
+											name={'f_' + filter.id}
+											value={option}
+											checked={filter.selected.includes(option)}
+										/>
+										<span>{option}</span>
+									</label>
+								{/each}
+							</fieldset>
+						{:else}
+							<label class="sr-only" for={'filter-' + filter.id}>{filter.name}</label>
+							<select id={'filter-' + filter.id} name={'f_' + filter.id}>
+								<option value="">Any {filter.name.toLowerCase()}</option>
+								{#each filter.options as option (option)}
+									<option value={option} selected={filter.selected[0] === option}>{option}</option>
+								{/each}
+							</select>
+						{/if}
 					{/each}
 					<button>Apply</button>
 				</form>
@@ -138,6 +157,7 @@
 						{#each data.focus.dist.bars as bar, i (i)}
 							<!-- The bar IS the information: focus or tap opens its range
 							     bubble without JavaScript. -->
+							<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 							<div
 								class="dist-bar"
 								class:on={bar.on}

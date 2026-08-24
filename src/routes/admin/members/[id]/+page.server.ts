@@ -1,5 +1,5 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import * as table from '$lib/server/db/schema';
@@ -42,7 +42,7 @@ export const load: PageServerLoad = async ({ platform, params, cookies }) => {
 		.select()
 		.from(table.memberAudit)
 		.where(eq(table.memberAudit.memberId, params.id))
-		.orderBy(desc(table.memberAudit.date));
+		.orderBy(desc(table.memberAudit.date), desc(sql`rowid`));
 
 	return {
 		member: {

@@ -8,7 +8,7 @@
  * write a name anywhere else.
  */
 
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import * as table from './db/schema';
 import { identityOf, type Identity, type Secrets } from './auth';
@@ -52,7 +52,9 @@ export async function readLog(db: Db, secrets: Secrets, limit = 100): Promise<Lo
 	const rows = await db
 		.select()
 		.from(table.adminLog)
-		.orderBy(desc(table.adminLog.date), desc(table.adminLog.id))
+		// Ids are random, so within a day they'd shuffle; rowid keeps
+		// same-day lines in the order they happened, newest first.
+		.orderBy(desc(table.adminLog.date), desc(sql`rowid`))
 		.limit(limit);
 	const names = new Map<string, string>();
 	const nameOf = async (id: string | null): Promise<string | null> => {
@@ -267,7 +269,7 @@ export async function readCorrections(
 	const rows = await db
 		.select()
 		.from(table.memberAudit)
-		.orderBy(desc(table.memberAudit.date), asc(table.memberAudit.id))
+		.orderBy(desc(table.memberAudit.date), desc(sql`rowid`))
 		.limit(limit);
 	const names = new Map<string, string>();
 	const out: CorrectionLine[] = [];
