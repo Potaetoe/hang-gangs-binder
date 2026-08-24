@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import * as table from '$lib/server/db/schema';
+import { identityOf, setDisplayName, type Secrets } from '$lib/server/auth';
 import { PALETTES } from '$lib/server/settings';
 
 /** The member's own settings (owner ruling 2026-08-24): device-level
@@ -22,7 +23,13 @@ export const load: PageServerLoad = async ({ locals, platform, cookies }) => {
 				and(eq(table.logins.memberId, locals.member.memberId), eq(table.logins.kind, 'password'))
 			)
 	)[0];
+	const identity = await identityOf(
+		db,
+		platform!.env as unknown as Secrets,
+		locals.member.memberId
+	);
 	return {
+		myName: identity.displayName || identity.handle || identity.username || '',
 		myTheme: cookies.get('theme') ?? '',
 		myUnits: cookies.get('units') === 'metric' ? 'metric' : 'imperial',
 		themeChoices: ['', ...Object.keys(PALETTES)],
@@ -39,6 +46,18 @@ const COOKIE = {
 } as const;
 
 export const actions: Actions = {
+	name: async ({ request, locals, platform }) => {
+		if (!locals.member) redirect(303, '/');
+		const form = await request.formData();
+		await setDisplayName(
+			getDb(platform!.env.DB),
+			platform!.env as unknown as Secrets,
+			locals.member.memberId,
+			String(form.get('display_name') ?? '')
+		);
+		redirect(303, '/settings');
+	},
+
 	theme: async ({ request, locals, cookies }) => {
 		if (!locals.member) redirect(303, '/');
 		const theme = String((await request.formData()).get('theme') ?? '');

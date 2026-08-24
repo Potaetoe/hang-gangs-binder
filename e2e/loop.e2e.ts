@@ -182,10 +182,11 @@ test('the shown name can be changed by its member', async ({ page }) => {
 	const username = `renamer${Date.now()}`;
 	await signInFreshMember(page, username);
 
-	await page.getByText('Called something else?').click();
-	await fillStable(page, 'Name to show', 'Slim');
+	await page.locator('.rail').getByRole('link', { name: 'Settings' }).click();
+	await fillStable(page, 'Name to show', 'Slimmy');
 	await page.getByRole('button', { name: 'Save name' }).click();
-	await expect(page.getByRole('heading', { name: /hello, slim/i })).toBeVisible();
+	await page.goto('/home');
+	await expect(page.getByRole('heading', { name: /hello, slimmy/i })).toBeVisible();
 });
 
 test('another member entry answers not-found, not forbidden', async ({ page }) => {

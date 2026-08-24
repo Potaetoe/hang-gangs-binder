@@ -3,7 +3,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { eq } from 'drizzle-orm';
 import { getDb } from '$lib/server/db';
 import * as table from '$lib/server/db/schema';
-import { identityOf, setDisplayName, type Secrets } from '$lib/server/auth';
+import { identityOf, type Secrets } from '$lib/server/auth';
 import {
 	carryForward,
 	computeBmi,
@@ -117,19 +117,6 @@ export const actions: Actions = {
 
 		computeBmi(fields, values);
 		await createEntry(db, locals.member.memberId, today((await loadSettings(db)).timezone), values);
-		redirect(303, '/home');
-	},
-
-	name: async ({ request, locals, platform }) => {
-		if (!locals.member) redirect(303, '/');
-		const env = platform!.env;
-		const form = await request.formData();
-		await setDisplayName(
-			getDb(env.DB),
-			env as unknown as Secrets,
-			locals.member.memberId,
-			String(form.get('display_name') ?? '')
-		);
 		redirect(303, '/home');
 	},
 

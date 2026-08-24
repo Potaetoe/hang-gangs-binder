@@ -24,15 +24,6 @@
 		>
 	{/if}
 
-	<details class="flap name-flap">
-		<summary>Called something else?</summary>
-		<form method="POST" action="?/name">
-			<label for="display-name">Name to show</label>
-			<input id="display-name" name="display_name" autocomplete="off" value={data.name} />
-			<button>Save name</button>
-		</form>
-	</details>
-
 	<div class="home-layout">
 		<section class="card home-entry">
 			<div class="card-head">

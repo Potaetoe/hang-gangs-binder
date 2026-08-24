@@ -26,6 +26,15 @@
 	<p class="muted">Yours, on this device. A tap saves it.</p>
 
 	<section class="card">
+		<h2>Name to show</h2>
+		<form method="POST" action="?/name">
+			<label class="sr-only" for="display-name">Name to show</label>
+			<input id="display-name" name="display_name" autocomplete="off" value={data.myName} />
+			<button>Save name</button>
+		</form>
+	</section>
+
+	<section class="card">
 		<h2>Theme</h2>
 		<form method="POST" action="?/theme" class="units wrap">
 			{#each data.themeChoices as choice (choice)}

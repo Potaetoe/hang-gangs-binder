@@ -18,21 +18,23 @@
 			<p class="wordmark">{data.siteName}</p>
 			<h1>{data.focus.name}</h1>
 		</div>
-		<form method="POST" action="?/units" class="units">
-			<input type="hidden" name="back" value={page.url.pathname + page.url.search} />
-			<button
-				name="units"
-				value="imperial"
-				class:on={data.units === 'imperial'}
-				aria-pressed={data.units === 'imperial'}>Imperial (US)</button
-			>
-			<button
-				name="units"
-				value="metric"
-				class:on={data.units === 'metric'}
-				aria-pressed={data.units === 'metric'}>Metric</button
-			>
-		</form>
+		{#if data.hasUnits}
+			<form method="POST" action="?/units" class="units">
+				<input type="hidden" name="back" value={page.url.pathname + page.url.search} />
+				<button
+					name="units"
+					value="imperial"
+					class:on={data.units === 'imperial'}
+					aria-pressed={data.units === 'imperial'}>Imperial (US)</button
+				>
+				<button
+					name="units"
+					value="metric"
+					class:on={data.units === 'metric'}
+					aria-pressed={data.units === 'metric'}>Metric</button
+				>
+			</form>
+		{/if}
 	</div>
 
 	<div class="focus-layout">
