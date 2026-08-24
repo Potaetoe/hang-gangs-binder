@@ -98,9 +98,14 @@
     }
     if (!body || typeof body !== "object") return;
 
-    renderGroupName(body["site.groupName"]);
-    renderWelcomeText(body["site.welcomeText"]);
-    cacheDefaultTheme(body["site.defaultTheme"]);
+    
+
+    const config = body.config;
+    if (!config || typeof config !== "object") return;
+
+    renderGroupName(config["site.groupName"]);
+    renderWelcomeText(config["site.welcomeText"]);
+    cacheDefaultTheme(config["site.defaultTheme"]);
   }
 
   const UI = root.BinderUI;

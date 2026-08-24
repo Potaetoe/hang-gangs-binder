@@ -143,9 +143,33 @@
    * nothing here takes null for either argument any more (0.9-M2-S10,
    * #371).
    */
+  /*
+   * A NUMBER PRINTED THE WAY A PERSON READS IT - binary floating-point
+   * noise cleared, and nothing else touched.
+   *
+   * tickLabel() below used to argue that no edge could ever need this,
+   * because the grid is built from multiples of the band width. The
+   * multiplying IS the problem: in IEEE-754, 29.4 + 20.2 is
+   * 49.599999999999994, and that is what the owner read off the live
+   * axis on 2026-08-24, between a clean 29.4 and a clean 69.8.
+   *
+   * Twelve significant digits, then back to a number. That is far past
+   * any measurement this binder holds, so an edge the field spec
+   * genuinely names as a fraction survives exactly as sent, while an
+   * artifact in the fourteenth digit is cleared. This does not pick a
+   * nicer number than the response sent - it prints the number the
+   * response meant, the one decimal arithmetic would have reached.
+   * Anything that is not a finite number is handed back unchanged
+   * rather than coerced, so a malformed answer still prints as itself.
+   */
+  function readable(value) {
+    if (typeof value !== "number" || !isFinite(value)) return String(value);
+    return String(Number(value.toPrecision(12)));
+  }
+
   function binLabel(from, to, unit) {
     const suffix = unit ? " " + unit : "";
-    return String(from) + suffix + "–" + String(to) + suffix;
+    return readable(from) + suffix + "–" + readable(to) + suffix;
   }
 
   /*
@@ -205,13 +229,19 @@
    * One x-axis tick's label: the band edge's own number, printed as it
    * stands (owner ruling 1, #396).
    *
-   * NOTHING IS ROUNDED HERE AND NOTHING NEEDS TO BE. The edge is
-   * already a round number because server/charts-agg.js builds the grid
-   * out of multiples of the band width - so rounding would either
-   * change nothing or print a number that is not an edge, and the
-   * second of those is this file inventing a value the response never
-   * sent. A fork whose nice width is a fraction gets its own edge, not
-   * a whole number picked for it.
+   * NOTHING IS ROUNDED HERE, and that still holds: rounding would
+   * print a number that is not an edge, which is this file inventing a
+   * value the response never sent. A fork whose nice width is a
+   * fraction gets its own edge, not a whole number picked for it.
+   *
+   * What this DOES do is clear floating-point noise, through
+   * readable() above. The paragraph that used to stand here claimed
+   * the edge "is already a round number because the grid is built out
+   * of multiples of the band width", and that was false: the
+   * multiplying is what produces 49.599999999999994 from a 20.2-wide
+   * band starting at 29.4. The owner read exactly that off the live
+   * axis on 2026-08-24. Clearing the artifact is not rounding - the
+   * printed number is the one the arithmetic meant.
    *
    * NO UNIT, EVER (owner ruling 2): the unit is stated once in the
    * status line. A unit repeated under every tick is what the row has
@@ -219,7 +249,7 @@
    * pushed the last label off its true position on the live chart.
    */
   function tickLabel(edge) {
-    return String(edge);
+    return readable(edge);
   }
 
   /*

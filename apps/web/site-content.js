@@ -171,9 +171,33 @@
     }
     if (!body || typeof body !== "object") return;
 
-    renderGroupName(body["site.groupName"]);
-    renderWelcomeText(body["site.welcomeText"]);
-    cacheDefaultTheme(body["site.defaultTheme"]);
+    /*
+     * THE KEYS LIVE UNDER `config`, NOT AT THE TOP LEVEL. GET /config
+     * answers `{ ok: true, config: { "site.groupName": ... } }` - the
+     * envelope every route on this Worker uses (server/worker.js's
+     * handler, `return json({ ok: true, config: config }, ...)`).
+     *
+     * This read used to take the keys off `body` itself, so all three
+     * settings arrived undefined on every load: the group name and the
+     * welcome sentence kept their shipped fallbacks, and the resting
+     * palette was CLEARED rather than learned, because an undefined
+     * name is not one of the four. An admin could set all three, see
+     * them saved, and watch the site ignore every one of them - which
+     * is what the owner found on the sit, 2026-08-24.
+     *
+     * A body without the envelope is treated like an unreachable
+     * Worker above: leave the shipped fallbacks alone and cache
+     * nothing, rather than clearing a palette on a malformed answer.
+     * An absent KEY inside a good envelope still reaches the helpers
+     * as undefined, which is the "the admin turned it off" case each
+     * one already documents.
+     */
+    const config = body.config;
+    if (!config || typeof config !== "object") return;
+
+    renderGroupName(config["site.groupName"]);
+    renderWelcomeText(config["site.welcomeText"]);
+    cacheDefaultTheme(config["site.defaultTheme"]);
   }
 
   const UI = root.BinderUI;

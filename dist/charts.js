@@ -14,9 +14,16 @@
 
   
 
+  
+
+  function readable(value) {
+    if (typeof value !== "number" || !isFinite(value)) return String(value);
+    return String(Number(value.toPrecision(12)));
+  }
+
   function binLabel(from, to, unit) {
     const suffix = unit ? " " + unit : "";
-    return String(from) + suffix + "–" + String(to) + suffix;
+    return readable(from) + suffix + "–" + readable(to) + suffix;
   }
 
   
@@ -32,7 +39,7 @@
   
 
   function tickLabel(edge) {
-    return String(edge);
+    return readable(edge);
   }
 
   
