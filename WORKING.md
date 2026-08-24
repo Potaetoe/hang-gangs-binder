@@ -126,9 +126,10 @@ everything mechanical; the selftest proves each one fires.
   preview URL, and production moves only when Claude promotes after
   the sign-off. A preview version shares production's database, so a
   schema-changing feature gets flagged before its preview goes up.
-- **Secrets:** the bot token, the group chat ID, the identity-scramble
-  secret, the directory-seal secret, the session secret. Set via
-  `wrangler secret put`, never in files.
+- **Secrets:** the bot token, the group chat ID, the bot username, the
+  identity-scramble secret, the directory-seal secret. Set via
+  `wrangler secret put`, never in files. (Sessions need no secret —
+  they are random tokens stored hashed in the database.)
 - **Database:** D1, schema changes only through migration files applied
   with `wrangler d1 migrations apply` — before deploying code that
   needs them. The app refuses loudly (not quietly) when the schema is

@@ -81,10 +81,7 @@ export async function hashPassword(password: string): Promise<string> {
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
 	const [scheme, iterations, saltHex, hashHex] = stored.split(':');
 	if (scheme !== 'pbkdf2') return false;
-	const salt = Uint8Array.from(
-		saltHex.match(/.{2}/g) ?? [],
-		(pair) => parseInt(pair, 16)
-	);
+	const salt = Uint8Array.from(saltHex.match(/.{2}/g) ?? [], (pair) => parseInt(pair, 16));
 	const derived = await derive(password, salt, Number(iterations));
 	return timingSafeEqual(hex(derived), hashHex);
 }

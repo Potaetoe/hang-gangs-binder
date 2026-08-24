@@ -115,9 +115,7 @@ test('a forged Telegram payload is refused', async ({ page }) => {
 	await expect(page.getByText(/could not be verified/i)).toBeVisible();
 });
 
-test('the password door waits behind its flap, closed by default', async ({
-	page
-}) => {
+test('the password door waits behind its flap, closed by default', async ({ page }) => {
 	await page.goto('/');
 	await expect(page.getByText('With a password')).toBeVisible();
 	await expect(page.getByLabel('Username')).not.toBeVisible();

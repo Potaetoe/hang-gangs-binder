@@ -21,9 +21,6 @@ export async function POST({ url, platform }: RequestEvent) {
 	const lookupHash = await hmacHex(env.ID_SECRET, `password:${username}`);
 	const login = (await db.select().from(logins).where(eq(logins.lookupHash, lookupHash)))[0];
 	if (!login) error(404, 'No such registration');
-	await db
-		.update(members)
-		.set({ status: 'approved' })
-		.where(eq(members.id, login.memberId));
+	await db.update(members).set({ status: 'approved' }).where(eq(members.id, login.memberId));
 	return json({ ok: true });
 }

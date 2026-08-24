@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -12,8 +13,7 @@
 	<p class="wordmark">Hang Gang</p>
 	<h1>Binder</h1>
 	<p class="muted">
-		Sign in once — then it is your page to fill in, and everyone's
-		numbers to read.
+		Sign in once — then it is your page to fill in, and everyone's numbers to read.
 	</p>
 
 	<section class="card">
@@ -29,8 +29,8 @@
 			></script>
 		{:else}
 			<p class="muted">
-				The Telegram door is not set up yet — the operator still
-				has to connect the bot. The password door below works.
+				The Telegram door is not set up yet — the operator still has to connect the bot. The
+				password door below works.
 			</p>
 		{/if}
 	</section>
@@ -68,8 +68,8 @@
 			<button>Sign in</button>
 		</form>
 		<p class="muted">
-			New here? <a href="/register">Ask for an account</a> — an admin
-			approves it before it works.
+			New here? <a href={resolve('/register')}>Ask for an account</a> — an admin approves it before it
+			works.
 		</p>
 	</details>
 </main>

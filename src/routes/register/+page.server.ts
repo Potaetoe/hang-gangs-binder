@@ -8,8 +8,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 };
 
 const MESSAGES = {
-	'bad-username':
-		'A username is 3 to 32 characters: lowercase letters, digits and underscores.',
+	'bad-username': 'A username is 3 to 32 characters: lowercase letters, digits and underscores.',
 	'bad-password': 'A password is at least 8 characters.',
 	'username-taken': 'That username is taken.'
 } as const;

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
@@ -16,11 +17,10 @@
 		<section class="card">
 			<h2>Asked.</h2>
 			<p>
-				An admin has to approve your account before it works. Once
-				they have, sign in with the username and password you just
-				chose.
+				An admin has to approve your account before it works. Once they have, sign in with the
+				username and password you just chose.
 			</p>
-			<a class="button" href="/">Back to the door</a>
+			<a class="button" href={resolve('/')}>Back to the door</a>
 		</section>
 	{:else}
 		<section class="card">
@@ -54,7 +54,7 @@
 				{/if}
 				<button>Ask for the account</button>
 			</form>
-			<p class="muted"><a href="/">Back to the door</a></p>
+			<p class="muted"><a href={resolve('/')}>Back to the door</a></p>
 		</section>
 	{/if}
 </main>

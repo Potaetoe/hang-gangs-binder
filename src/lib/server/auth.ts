@@ -7,7 +7,15 @@
 import { eq } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import * as table from './db/schema';
-import { hashPassword, hmacHex, open, randomToken, seal, sha256Hex, verifyPassword } from './crypto';
+import {
+	hashPassword,
+	hmacHex,
+	open,
+	randomToken,
+	seal,
+	sha256Hex,
+	verifyPassword
+} from './crypto';
 
 type Db = DrizzleD1Database<typeof import('./db/schema')>;
 
@@ -35,11 +43,7 @@ export type Identity = {
 	handle?: string;
 };
 
-export async function identityOf(
-	db: Db,
-	secrets: Secrets,
-	memberId: string
-): Promise<Identity> {
+export async function identityOf(db: Db, secrets: Secrets, memberId: string): Promise<Identity> {
 	const row = (
 		await db.select().from(table.directory).where(eq(table.directory.memberId, memberId))
 	)[0];
@@ -80,9 +84,7 @@ export async function createSession(db: Db, memberId: string, isAdmin: boolean) 
 export async function sessionMember(db: Db, token: string | undefined) {
 	if (!token) return null;
 	const hash = await sha256Hex(token);
-	const row = (
-		await db.select().from(table.sessions).where(eq(table.sessions.tokenHash, hash))
-	)[0];
+	const row = (await db.select().from(table.sessions).where(eq(table.sessions.tokenHash, hash)))[0];
 	if (!row || row.expiresAt < now()) return null;
 	const member = (
 		await db.select().from(table.members).where(eq(table.members.id, row.memberId))
@@ -100,8 +102,7 @@ export async function destroySession(db: Db, token: string | undefined) {
 /* The password door                                                 */
 
 export type RegisterResult =
-	| { ok: true }
-	| { ok: false; reason: 'username-taken' | 'bad-username' | 'bad-password' };
+	{ ok: true } | { ok: false; reason: 'username-taken' | 'bad-username' | 'bad-password' };
 
 const USERNAME = /^[a-z0-9_]{3,32}$/;
 
@@ -139,8 +140,7 @@ export async function register(
 }
 
 export type PasswordSignIn =
-	| { ok: true; token: string }
-	| { ok: false; reason: 'wrong' | 'pending' };
+	{ ok: true; token: string } | { ok: false; reason: 'wrong' | 'pending' };
 
 export async function signInPassword(
 	db: Db,
@@ -272,10 +272,7 @@ export async function signInTelegram(
 			createdAt: now()
 		});
 	} else if (standing === 'admin') {
-		await db
-			.update(table.members)
-			.set({ isAdmin: true })
-			.where(eq(table.members.id, memberId));
+		await db.update(table.members).set({ isAdmin: true }).where(eq(table.members.id, memberId));
 	}
 	// Merged over what is already there, so a linked password
 	// identity's username survives a Telegram sign-in.
@@ -285,8 +282,7 @@ export async function signInTelegram(
 		telegramId,
 		handle: payload.username || existing.handle,
 		displayName:
-			[payload.first_name, payload.last_name].filter(Boolean).join(' ') ||
-			existing.displayName
+			[payload.first_name, payload.last_name].filter(Boolean).join(' ') || existing.displayName
 	});
 	return { ok: true, token: await createSession(db, memberId, standing === 'admin') };
 }

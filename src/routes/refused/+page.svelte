@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 
 	const why = $derived(page.url.searchParams.get('why'));
@@ -20,6 +21,6 @@
 	<h1>Not signed in</h1>
 	<section class="card">
 		<p>{message}</p>
-		<a class="button" href="/">Back to the door</a>
+		<a class="button" href={resolve('/')}>Back to the door</a>
 	</section>
 </main>

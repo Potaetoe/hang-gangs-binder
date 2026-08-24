@@ -13,9 +13,8 @@
 	<h1>Hello, {data.name}</h1>
 	<section class="card">
 		<p>
-			You are signed in{data.isAdmin ? ' as an admin' : ''}. Your
-			page - entries, history and the group's charts - is the next
-			feature to arrive here.
+			You are signed in{data.isAdmin ? ' as an admin' : ''}. Your page - entries, history and the
+			group's charts - is the next feature to arrive here.
 		</p>
 		<form method="POST" action="?/signout">
 			<button>Sign out</button>

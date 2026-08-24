@@ -24,16 +24,12 @@
 	"hooks": {
 		"SessionStart": [
 			{
-				"hooks": [
-					{ "type": "command", "command": "py -3 hooks/session_open.py" }
-				]
+				"hooks": [{ "type": "command", "command": "py -3 hooks/session_open.py" }]
 			}
 		],
 		"UserPromptSubmit": [
 			{
-				"hooks": [
-					{ "type": "command", "command": "py -3 hooks/report_reminder.py" }
-				]
+				"hooks": [{ "type": "command", "command": "py -3 hooks/report_reminder.py" }]
 			}
 		],
 		"PreToolUse": [
@@ -47,15 +43,11 @@
 			},
 			{
 				"matcher": "Write|Edit",
-				"hooks": [
-					{ "type": "command", "command": "py -3 hooks/secret_guard.py" }
-				]
+				"hooks": [{ "type": "command", "command": "py -3 hooks/secret_guard.py" }]
 			},
 			{
 				"matcher": "Task|Agent",
-				"hooks": [
-					{ "type": "command", "command": "py -3 hooks/fleet_guard.py" }
-				]
+				"hooks": [{ "type": "command", "command": "py -3 hooks/fleet_guard.py" }]
 			}
 		]
 	}
