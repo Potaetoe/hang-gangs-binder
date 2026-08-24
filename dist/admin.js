@@ -1691,32 +1691,49 @@
         list.appendChild(empty);
         return;
       }
+      
+
+      const scroller = document.createElement("div");
+      scroller.className = "table-scroll";
+      const table = document.createElement("table");
+      table.className = "log-table";
+
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      for (const heading of ["When", "Who", "What changed"]) {
+        const th = document.createElement("th");
+        th.scope = "col";
+        th.textContent = heading;
+        headRow.appendChild(th);
+      }
+      head.appendChild(headRow);
+      table.appendChild(head);
+
+      const body = document.createElement("tbody");
       const shown = logEntries.slice(0, logRevealed);
       for (const entry of shown) {
         const line = logLine(entry);
-        const row = document.createElement("div");
-         
-         
-         
-         
-        row.className = "row wrap-row";
+        const row = document.createElement("tr");
 
-        const when = document.createElement("span");
-        when.className = "hint";
+        const when = document.createElement("td");
+        when.className = "log-when";
         when.textContent = line.when;
         row.appendChild(when);
 
-        const who = document.createElement("span");
+        const who = document.createElement("td");
         who.textContent = line.who;
         row.appendChild(who);
 
-        const what = document.createElement("span");
+        const what = document.createElement("td");
         what.className = "wrap-row-value";
         what.textContent = line.what;
         row.appendChild(what);
 
-        list.appendChild(row);
+        body.appendChild(row);
       }
+      table.appendChild(body);
+      scroller.appendChild(table);
+      list.appendChild(scroller);
       if (logEntries.length > logRevealed) {
         const more = document.createElement("button");
         more.type = "button";

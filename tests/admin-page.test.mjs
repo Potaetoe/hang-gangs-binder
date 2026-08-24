@@ -2266,9 +2266,27 @@ check("Fields never fetches per-member counts - no /charts-data call " +
 /* -- Change log: newest first, actor id (never a label the Worker      */
 /* does not send), textContent only -- */
 
+/*
+ * The log is a real <table> now (owner, walking the sit 2026-08-24 -
+ * three spans in a flex row per entry read as a wall, with nothing
+ * lining up down the page). Its rows are <tr> inside <tbody> inside
+ * <table> inside the .table-scroll box, not divs directly under
+ * #log-list. One helper so that shape is written once: every check
+ * below asks for rows and cells, which is what they were ever about,
+ * and none of them has to know how deep the table furniture goes.
+ */
+function logRows(list) {
+  const scroller = list.children.find((c) => c.className === "table-scroll");
+  if (!scroller) return [];
+  const table = scroller.children[0];
+  if (!table) return [];
+  const body = table.children.find((c) => c.tag === "tbody");
+  return body ? body.children : [];
+}
+
 {
   const { byId } = await driven(BASE_ROUTES, { isAdmin: true });
-  const rows = byId.get("log-list").children;
+  const rows = logRows(byId.get("log-list"));
   check("the log renders both entries, newest first, exactly as GET sent " +
     "them - this page reorders nothing",
     rows.length === 2 &&
@@ -2297,10 +2315,12 @@ check("Fields never fetches per-member counts - no /charts-data call " +
 
 {
   const { byId } = await driven(BASE_ROUTES, { isAdmin: true });
-  const rows = byId.get("log-list").children;
-  check("every change-log row carries wrap-row, not plain row - the " +
-    "modifier class theme.css's overflow fix (#416, F1) keys on",
-    rows.every((row) => row.className === "row wrap-row"));
+  const rows = logRows(byId.get("log-list"));
+  check("every change-log row is a table row inside the scroller, which " +
+    "is what carries #416 F1's overflow now: a table cannot shrink " +
+    "past its widest cell, so .table-scroll is what keeps a 64-hex id " +
+    "or a pasted URL off the page's own sideways scrollbar",
+    rows.length > 0 && rows.every((row) => row.tag === "tr"));
   check("the change log's value cell (the summary column) carries " +
     "wrap-row-value, which is what gets flex:1 and overflow-wrap so it " +
     "takes the row's slack instead of the fixed when/who columns",
@@ -2331,7 +2351,7 @@ check("Fields never fetches per-member counts - no /charts-data call " +
     ] }),
   });
   const { byId } = await driven(routes, { isAdmin: true });
-  const rows = byId.get("log-list").children;
+  const rows = logRows(byId.get("log-list"));
   check("a 64-hex account id named inside a summary renders whole (it " +
     "is under the 200-char bound), inside the cell the overflow fix " +
     "targets - F1's own sharpest trigger",
@@ -2354,7 +2374,7 @@ check("Fields never fetches per-member counts - no /charts-data call " +
     ] }),
   });
   const { byId } = await driven(routes, { isAdmin: true });
-  const what = byId.get("log-list").children[0].children[2];
+  const what = logRows(byId.get("log-list"))[0].children[2];
   check("a summary past the Worker's own 200-char bound is cut, not " +
     "rendered whole (#416, F1/F5) - the display enforces the contract " +
     "ceiling rather than assuming the Worker held it on every row",
@@ -2393,7 +2413,7 @@ check("Fields never fetches per-member counts - no /charts-data call " +
   });
   const { byId } = await driven(routes, { isAdmin: true });
   const list = byId.get("log-list");
-  const rows = list.children.filter((c) => c.className === "row wrap-row");
+  const rows = logRows(list);
   // logLine() composes "changed a setting: " ahead of the raw summary
   // for a content.set action (checked elsewhere, above) - .endsWith()
   // reads past that prefix to the one fact this block is about.
@@ -2419,8 +2439,7 @@ check("Fields never fetches per-member counts - no /charts-data call " +
    */
   if (offered) {
     await more.dispatch("click");
-    const rowsAfter =
-      list.children.filter((c) => c.className === "row wrap-row");
+    const rowsAfter = logRows(list);
     check("pressing More reveals the rest - all 25, still newest first",
       rowsAfter.length === 25 &&
       rowsAfter[24].children[2].textContent.endsWith("entry 24"));
@@ -2445,7 +2464,7 @@ check("Fields never fetches per-member counts - no /charts-data call " +
   const list = byId.get("log-list");
   check("exactly 20 entries: all render and no More button appears - " +
     "there is nothing more to reveal",
-    list.children.filter((c) => c.className === "row wrap-row").length === 20 &&
+    logRows(list).length === 20 &&
     !list.children.some((c) => c.tag === "button"));
 }
 
@@ -3090,7 +3109,7 @@ check("dist/theme.css: same desktop flex-basis fix survives the build",
   check("a hostile summary renders as literal text too - the actor " +
     "column is always the account id, never server-authored prose, so " +
     "the attack surface here is the summary alone",
-    byId.get("log-list").children[0].children[2].textContent.includes(HOSTILE));
+    logRows(byId.get("log-list"))[0].children[2].textContent.includes(HOSTILE));
 }
 
 /* -- No export control exists anywhere on the rendered page -- */
