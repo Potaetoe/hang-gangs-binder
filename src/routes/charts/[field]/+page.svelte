@@ -138,6 +138,7 @@
 						{#each data.focus.dist.bars as bar, i (i)}
 							<!-- The bar IS the information: focus or tap opens its range
 							     bubble without JavaScript. -->
+							<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 							<div
 								class="dist-bar"
 								class:on={bar.on}

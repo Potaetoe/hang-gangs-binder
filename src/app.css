@@ -1128,3 +1128,21 @@ a.wordmark {
 	z-index: 5;
 	pointer-events: none;
 }
+
+/* The form builder's small controls. */
+.move-form {
+	display: inline-flex;
+	gap: 0.25rem;
+}
+button.move {
+	min-height: 1.9rem;
+	padding: 0.1rem 0.55rem;
+	font-size: 0.85rem;
+}
+.option-flap > summary {
+	min-height: 1.6rem;
+	font-size: 0.85rem;
+}
+.option-flap form {
+	margin-top: 0.5rem;
+}

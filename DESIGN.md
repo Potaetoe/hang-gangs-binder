@@ -68,15 +68,23 @@ decisions.
 2. **Admin surface** — site settings (name, welcome text, timezone,
    default theme), member management (approvals, roles, resets), a
    change log, departed-member cleanup.
-3. **Form builder** — admins add, rename, and retire categorical fields.
-   The contract that failed last time, now the acceptance test: **a field
-   an admin adds appears on the member form and in the chart filters
-   without any code change.**
+3. **Form builder** — admins shape the form: add fields (choices, or
+   numbers that are weights, lengths, or plain), rename and reorder
+   them, edit a choice field's options, and retire fields. The rulings
+   (owner, 2026-08-24): height, weight and BMI are essential and cannot
+   be retired; a new choice field stays off the form until it has at
+   least one option; renaming an option renames it in everyone's
+   history; removing an option only stops new picks; deleting is only
+   for a field that never collected a value. The contract that failed
+   last time, now the acceptance test: **a field an admin adds appears
+   on the member form and in the chart filters without any code
+   change.**
 4. **Combined filters** — multi-filter charts (landed with the core
    loop's charts; floorless by the ruling above).
 
 **Later** (named so they are not forgotten): a calendar/events page, a
-socials-links page.
+socials-links page, admin-defined calculated fields (BMI is the only
+computed field in 1.0, wired in code; the door stays open).
 
 ## Stack
 
