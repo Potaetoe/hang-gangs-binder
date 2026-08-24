@@ -24,7 +24,7 @@
 		<label for="site-name">Site name</label>
 		<input id="site-name" name="site_name" value={data.settings.siteName} />
 
-		<label for="welcome-text">Welcome text on the door</label>
+		<label for="welcome-text">Welcome text on the sign-in page</label>
 		<textarea id="welcome-text" name="welcome_text" rows="3">{data.settings.welcomeText}</textarea>
 
 		<label for="timezone">Timezone (dates entries by it)</label>
