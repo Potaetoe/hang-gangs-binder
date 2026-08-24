@@ -260,14 +260,28 @@
       <p class="muted">Who else can reach this page.</p>
       <p class="muted small" id="roles-via"></p>
 
+      <!--
+        PICK THE PERSON, DO NOT TYPE A NUMBER (owner ruling 2026-08-24,
+        walking the sit: "normal users don't know how to find telegram
+        ids"). This asked for a numeric Telegram id by hand, which
+        nobody knows and Telegram itself will not look up from an
+        @username. The list is everyone who has signed in, newest
+        first, from GET /admin-directory - and the value behind each
+        option is the same un-invertible account id the rows below
+        already carry, never the numeric id, which stays sealed.
+
+        A native select because the owner ruled one for any list past
+        three options (#454, the charts filters).
+      -->
       <div class="field">
-        <label for="member-telegram-id">Telegram id</label>
-        <input type="text" id="member-telegram-id" inputmode="numeric"
-               autocomplete="off" spellcheck="false"
-               aria-describedby="member-telegram-id-help">
-        <p class="hint" id="member-telegram-id-help">
-          The numeric id, not the @handle — scrambled one-way by the
-          service and never shown again.
+        <label for="member-account">Member</label>
+        <select id="member-account" aria-describedby="member-account-help">
+          <option value="">Loading members…</option>
+        </select>
+        <p class="hint" id="member-account-help">
+          Anyone who has signed in at least once. Someone who never has
+          will not be here yet — ask them to open the binder and sign
+          in, then come back.
         </p>
       </div>
 

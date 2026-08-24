@@ -910,7 +910,7 @@ const NEEDED = ["tool", "closed", "surface-mark", "admin-intro",
   "settings-welcome-text", "settings-welcome-text-save",
   "settings-default-theme", "settings-default-theme-save",
   "settings-status",
-  "member-telegram-id", "member-label", "member-add", "roles-status",
+  "member-account", "member-label", "member-add", "roles-status",
   "roles-via", "roles-admin", "roles-secret-only", "roles-secret-only-ids",
   "roles-malformed", "roles-malformed-list", "roles-other",
   "roles-other-body",
@@ -1170,9 +1170,25 @@ const SPEC_FIXTURE = {
 // this ticket's own route.
 const DEPARTED_EMPTY = { ok: true, departed: [], unknown: [], allowed: [] };
 
+/*
+ * The member picker's own source (owner ruling 2026-08-24). Handles and
+ * account ids only - the Worker unseals those two and leaves the
+ * numeric Telegram id sealed, and the arm further down proves this page
+ * never renders one.
+ */
+const DIRECTORY = {
+  ok: true,
+  members: [
+    { accountId: "a".repeat(64), handle: "birch_lane",
+      displayName: "Birch" },
+    { accountId: "b".repeat(64), handle: "quiet_orbit", displayName: "" },
+  ],
+};
+
 const BASE_ROUTES = {
   "GET /content": () => ok({ ok: true, content: CONTENT }),
   "GET /membership": () => ok(MEMBERSHIP),
+  "GET /admin-directory": () => ok(DIRECTORY),
   "GET /me": () => ok({ ok: true, adminVia: "flag" }),
   "GET /admin-log": () => ok(LOG),
   "GET /admin-fields": () => ok({ ok: true, spec: SPEC_FIXTURE }),
@@ -1334,17 +1350,19 @@ const BASE_ROUTES = {
     },
   });
   const { byId } = await driven(routes, { isAdmin: true });
-  byId.get("member-telegram-id").value = "123456";
+  byId.get("member-account").value = "a".repeat(64);
   byId.get("member-label").value = "New admin";
   byId.get("member-add").dispatch("click");
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-  check("adding a member posts role admin - the only role this card " +
-    "offers any more",
+  check("adding a member posts the PICKED account id and role admin - " +
+    "never a numeric Telegram id, which this page no longer holds",
     posts.length === 1 && posts[0].role === "admin" &&
-    posts[0].telegramId === "123456" && posts[0].label === "New admin");
-  check("the telegram id field is cleared after a successful add - the " +
-    "last place that numeric id exists on this page",
-    byId.get("member-telegram-id").value === "");
+    posts[0].accountId === "a".repeat(64) &&
+    posts[0].telegramId === undefined &&
+    posts[0].label === "New admin");
+  check("the picker is returned to its own placeholder after a " +
+    "successful add, so the next add starts from nobody",
+    byId.get("member-account").value === "");
   // Two more ticks than the checks above need: the toast fires after
   // readMembership()'s own re-read (a second fetch and a json() parse),
   // not synchronously with the POST the first two checks read.
@@ -1365,7 +1383,7 @@ const BASE_ROUTES = {
     "POST /membership": () => refused(409, { error: "Already a member." }),
   });
   const { byId } = await driven(routes, { isAdmin: true });
-  byId.get("member-telegram-id").value = "123456";
+  byId.get("member-account").value = "a".repeat(64);
   byId.get("member-label").value = "New admin";
   byId.get("member-add").dispatch("click");
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
@@ -1378,12 +1396,13 @@ const BASE_ROUTES = {
 
 {
   const { byId } = await driven({}, { isAdmin: true });
-  check("an empty telegram id or label is refused before anything is sent",
+  check("no member chosen, or no name given, is refused before anything " +
+    "is sent",
     (() => {
-      byId.get("member-telegram-id").value = "";
+      byId.get("member-account").value = "";
       byId.get("member-label").value = "";
       byId.get("member-add").dispatch("click");
-      return /both needed/.test(byId.get("roles-status").textContent);
+      return /Choose a member/.test(byId.get("roles-status").textContent);
     })());
 }
 
@@ -1393,7 +1412,7 @@ const BASE_ROUTES = {
   // F6) - the fourth text input on this page was the only one left
   // unbounded, and it is the other half of F1's Roles-card overflow.
   const { byId, calls } = await driven({}, { isAdmin: true });
-  byId.get("member-telegram-id").value = "123456";
+  byId.get("member-account").value = "a".repeat(64);
   byId.get("member-label").value = "x".repeat(65);
   byId.get("member-add").dispatch("click");
   check("a label past the Worker's own 64-character bound is refused " +

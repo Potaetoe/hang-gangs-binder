@@ -4538,6 +4538,84 @@ async function handleReadMembership(env, origin) {
 }
 
 /*
+ * WHO AN ADMIN CAN PROMOTE, BY NAME RATHER THAN BY NUMBER (owner
+ * ruling 2026-08-24, after walking the sit: "normal users don't know
+ * how to find telegram ids").
+ *
+ * The Roles card used to ask for a numeric Telegram id typed by hand.
+ * Nobody knows their own, let alone anybody else's, and Telegram's own
+ * bot API has no lookup that turns an @username into one - so the
+ * control asked for a value the person filling it in had no way to
+ * get. This route answers the question the admin actually has: who has
+ * signed in, and what are they called.
+ *
+ * WHAT IT UNSEALS, AND WHAT IT WILL NOT. The directory record carries
+ * handle, displayName, role and telegramId. This reads the first two
+ * and drops the rest on the floor. The numeric id stays sealed and
+ * never crosses this boundary: the owner's ruling of 2026-08-21 keeps
+ * it blob-only, unsealed by the departed check alone, and the ruling
+ * that asked for this picker asked for it precisely so that "nobody
+ * types or sees a numeric id". A picker that leaked one would be the
+ * membership oracle DESIGN.md's "The identifier is the whole problem"
+ * exists to prevent, handed out through a convenience feature.
+ *
+ * THE ACCOUNT ID GOES OUT, and that is not a widening: it is the same
+ * un-invertible HMAC handleReadMembership above already returns for
+ * every row, to the same admin-only caller, with the same reasoning
+ * written beside it. It is what the membership table keys on, so it is
+ * what the picker has to hand back to write a row.
+ *
+ * A ROW THIS WORKER CANNOT OPEN IS SKIPPED, not reported as an error
+ * and not rendered as a blank. Failing the whole list because one
+ * record predates a format or was written under a rotated secret would
+ * take the feature away from every member to report one broken row,
+ * and a nameless entry in a picker is not something an admin can act
+ * on anyway. The count of what opened is what the page shows.
+ */
+async function handleReadDirectory(env, origin) {
+  let rows;
+  try {
+    rows = await env.DB.prepare(
+      "SELECT account_id, ciphertext FROM directory ORDER BY last_seen_at DESC"
+    ).all();
+  } catch (e) {
+    return json({ error: "The member list could not be read." }, 500, origin);
+  }
+  if (!rows || !Array.isArray(rows.results)) {
+    return json({ error: "The member list could not be read." }, 500, origin);
+  }
+
+  const store = await openStore(env);
+  const members = [];
+  for (const row of rows.results) {
+    if (!row || typeof row.ciphertext !== "string") continue;
+    let record;
+    try {
+      record = JSON.parse(await store.openDirectory(
+        base64ToBytes(row.ciphertext),
+        { accountId: row.account_id, recordId: DIRECTORY_SLOT }));
+    } catch (e) {
+      continue;
+    }
+    const handle = record && typeof record.handle === "string"
+      ? record.handle.trim() : "";
+    if (!handle) continue;
+    const displayName = record && typeof record.displayName === "string"
+      ? record.displayName.trim() : "";
+    // Named field by named field, never a spread of `record`: a spread
+    // is how telegramId would arrive here the day somebody adds a
+    // field to syncDirectoryEntry and does not read this comment.
+    members.push({
+      accountId: row.account_id,
+      handle: handle,
+      displayName: displayName,
+    });
+  }
+
+  return json({ ok: true, members: members }, 200, origin);
+}
+
+/*
  * An admin changing their own row, recorded.
  *
  * `added_by` answers who wrote a row that still exists. A removal leaves
@@ -4634,14 +4712,59 @@ async function handleAddMembership(request, env, origin, caller) {
    */
   if (caller && caller.isDev && role === "admin") return unauthorized(origin);
 
+  /*
+   * TWO WAYS TO NAME THE PERSON, and the page only ever uses the first
+   * (owner ruling 2026-08-24, the member picker).
+   *
+   * `accountId` is what the Roles card sends now: the admin picked a
+   * member off GET /admin-directory's list of people who have signed
+   * in, and the value that came back is the same un-invertible HMAC
+   * the membership table keys on. It is CHECKED AGAINST THE DIRECTORY
+   * rather than trusted for its shape - sixty-four hex characters is a
+   * thing anyone can type, and a row for an account that has never
+   * signed in grants nothing to nobody while sitting in the list
+   * looking like authority.
+   *
+   * `telegramId` is the original path and stays. It is what
+   * OPERATIONS.md's own "Making someone an admin" documents for an
+   * operator working outside the page, and the only way to write a row
+   * for somebody who has not signed in yet. Neither is removed for the
+   * other; the page simply stopped asking a person for a number they
+   * have no way to find.
+   */
+  const givenAccount = payload && payload.accountId;
+  let accountFromPicker = null;
+  if (typeof givenAccount === "string" && givenAccount) {
+    if (!ACCOUNT_ID.test(givenAccount)) {
+      return json({ error: "That member could not be read." }, 400, origin);
+    }
+    let known;
+    try {
+      known = await env.DB.prepare(
+        "SELECT 1 AS found FROM directory WHERE account_id = ?"
+      ).bind(givenAccount).first();
+    } catch (e) {
+      return json({
+        error: "The member list could not be read.",
+      }, 500, origin);
+    }
+    if (!known) {
+      return json({
+        error: "That member has not signed in, so there is nothing to " +
+          "make an admin yet.",
+      }, 400, origin);
+    }
+    accountFromPicker = givenAccount;
+  }
+
   // String(anything) would accept an array of one id, which is a caller
   // with a bug rather than a value worth coercing.
   const given = payload && payload.telegramId;
   const telegramId = typeof given === "number" || typeof given === "string"
     ? String(given) : "";
-  if (!TELEGRAM_ID.test(telegramId)) {
+  if (!accountFromPicker && !TELEGRAM_ID.test(telegramId)) {
     return json({
-      error: "A numeric Telegram id is needed.",
+      error: "A member is needed.",
     }, 400, origin);
   }
 
@@ -4659,7 +4782,7 @@ async function handleAddMembership(request, env, origin, caller) {
     }, 400, origin);
   }
 
-  const accountId = await accountIdFor(env, telegramId);
+  const accountId = accountFromPicker || await accountIdFor(env, telegramId);
   await env.DB.prepare(
     "INSERT INTO membership (account_id, role, label, added_at, added_by) " +
     "VALUES (?, ?, ?, ?, ?) ON CONFLICT(account_id, role) " +
@@ -5418,7 +5541,7 @@ async function handleEraseDeparted(env, origin, accountId, caller) {
 const API_SEGMENTS = new Set([
   "auth", "session", "me", "my-entries", "submit", "charts-data", "export",
   "submission", "content", "membership", "config", "admin-log", "spec",
-  "admin-departed", "admin-fields",
+  "admin-departed", "admin-fields", "admin-directory",
 ]);
 
 function isApiPath(pathname) {
@@ -5679,6 +5802,14 @@ async function route(request, env, url, allowed, admitted) {
   if (method === "GET" && path === "/membership") {
     if (!admin) return unauthorized(allowed);
     return handleReadMembership(env, allowed);
+  }
+  // Hyphenated, never /admin/directory: "admin" cannot be a path
+  // segment on this Worker (0.9-M3-S8, #414 - html_handling redirects
+  // /admin.html to /admin and would eat it), which is why /admin-log
+  // and /admin-fields are spelled the way they are.
+  if (method === "GET" && path === "/admin-directory") {
+    if (!admin) return unauthorized(allowed);
+    return handleReadDirectory(env, allowed);
   }
   if (method === "POST" && path === "/membership") {
     if (!admin) return unauthorized(allowed);

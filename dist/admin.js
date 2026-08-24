@@ -907,12 +907,68 @@
       drawMembership(membershipView(payload));
     }
 
+    
+
+    function drawDirectory(members) {
+      const select = $("member-account");
+      select.textContent = "";
+      const first = document.createElement("option");
+      first.value = "";
+      first.textContent = members.length
+        ? "Choose a member…"
+        : "Nobody has signed in yet";
+      select.appendChild(first);
+      for (const member of members) {
+        const option = document.createElement("option");
+        option.value = member.accountId;
+        option.textContent = member.displayName
+          ? "@" + member.handle + " — " + member.displayName
+          : "@" + member.handle;
+        select.appendChild(option);
+      }
+    }
+
+    async function loadDirectory() {
+      let payload;
+      try {
+        const response = await fetch(config.endpoint + "/admin-directory", {
+          headers: root.BinderSession.authorization(),
+        });
+        if (!response.ok) {
+          if (sessionRefused(response, sayRoles)) return;
+          drawDirectory([]);
+          $("member-account").firstChild.textContent =
+            "The member list could not be read";
+          return;
+        }
+        payload = await response.json();
+      } catch (error) {
+        detail(why(error));
+        drawDirectory([]);
+        $("member-account").firstChild.textContent =
+          "The member list could not be read";
+        return;
+      }
+      const members = payload && Array.isArray(payload.members)
+        ? payload.members.filter(function (m) {
+          return m && typeof m.accountId === "string" &&
+            typeof m.handle === "string" && m.handle;
+        })
+        : [];
+      drawDirectory(members);
+    }
+
     $("member-add").addEventListener("click", async function () {
-      const telegramId = $("member-telegram-id").value.trim();
+       
+       
+       
+       
+      const accountId = $("member-account").value;
       const rawLabel = $("member-label").value;
 
-      if (!telegramId || !rawLabel.trim()) {
-        sayRoles("A numeric Telegram id and a label are both needed.", "bad");
+      if (!accountId || !rawLabel.trim()) {
+        sayRoles("Choose a member and give them a name you will " +
+          "recognise.", "bad");
         return;
       }
        
@@ -935,7 +991,7 @@
             root.BinderSession.authorization()),
           body: JSON.stringify({
             role: MEMBERSHIP_ROLES[0],
-            telegramId: telegramId,
+            accountId: accountId,
             label: label,
           }),
         });
@@ -959,7 +1015,7 @@
         return;
       }
 
-      $("member-telegram-id").value = "";
+      $("member-account").value = "";
       $("member-add").disabled = false;
       await readMembership();
        
@@ -1529,6 +1585,7 @@
          
          
          
+         
         add.addEventListener("click", async function () {
           const verdict = validateValueLabel(input.value);
           if (!verdict.ok) {
@@ -2052,6 +2109,7 @@
     wireIdle();
     loadSettings();
     readMembership();
+    loadDirectory();
     loadAdminVia();
     loadFields();
     loadLog();

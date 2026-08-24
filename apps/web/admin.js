@@ -1123,12 +1123,82 @@
       drawMembership(membershipView(payload));
     }
 
+    /*
+     * The member picker's own options (owner ruling 2026-08-24: pick a
+     * person, never type a Telegram id). Everyone who has signed in,
+     * newest first, as GET /admin-directory sends them - this reorders
+     * nothing and shows what it was given.
+     *
+     * The option's VALUE is the account id and its TEXT is the handle,
+     * so the numeric id is nowhere on the page: the Worker unseals a
+     * handle and a display name for this list and leaves the number
+     * sealed, which is the whole point of the ruling that asked for
+     * the picker.
+     *
+     * A failure leaves the select saying so rather than empty. An
+     * empty dropdown is indistinguishable from a group with no members
+     * yet, and the two want opposite things from the admin.
+     */
+    function drawDirectory(members) {
+      const select = $("member-account");
+      select.textContent = "";
+      const first = document.createElement("option");
+      first.value = "";
+      first.textContent = members.length
+        ? "Choose a member…"
+        : "Nobody has signed in yet";
+      select.appendChild(first);
+      for (const member of members) {
+        const option = document.createElement("option");
+        option.value = member.accountId;
+        option.textContent = member.displayName
+          ? "@" + member.handle + " — " + member.displayName
+          : "@" + member.handle;
+        select.appendChild(option);
+      }
+    }
+
+    async function loadDirectory() {
+      let payload;
+      try {
+        const response = await fetch(config.endpoint + "/admin-directory", {
+          headers: root.BinderSession.authorization(),
+        });
+        if (!response.ok) {
+          if (sessionRefused(response, sayRoles)) return;
+          drawDirectory([]);
+          $("member-account").firstChild.textContent =
+            "The member list could not be read";
+          return;
+        }
+        payload = await response.json();
+      } catch (error) {
+        detail(why(error));
+        drawDirectory([]);
+        $("member-account").firstChild.textContent =
+          "The member list could not be read";
+        return;
+      }
+      const members = payload && Array.isArray(payload.members)
+        ? payload.members.filter(function (m) {
+          return m && typeof m.accountId === "string" &&
+            typeof m.handle === "string" && m.handle;
+        })
+        : [];
+      drawDirectory(members);
+    }
+
     $("member-add").addEventListener("click", async function () {
-      const telegramId = $("member-telegram-id").value.trim();
+      // The picked member's account id, not a hand-typed number (owner
+      // ruling 2026-08-24) - loadDirectory() below puts the options
+      // there, and each option's value is the account id the
+      // membership table keys on.
+      const accountId = $("member-account").value;
       const rawLabel = $("member-label").value;
 
-      if (!telegramId || !rawLabel.trim()) {
-        sayRoles("A numeric Telegram id and a label are both needed.", "bad");
+      if (!accountId || !rawLabel.trim()) {
+        sayRoles("Choose a member and give them a name you will " +
+          "recognise.", "bad");
         return;
       }
       // The Worker's own MAX_LABEL bound (#416, F6) - mirrors
@@ -1151,7 +1221,7 @@
             root.BinderSession.authorization()),
           body: JSON.stringify({
             role: MEMBERSHIP_ROLES[0],
-            telegramId: telegramId,
+            accountId: accountId,
             label: label,
           }),
         });
@@ -1175,7 +1245,7 @@
         return;
       }
 
-      $("member-telegram-id").value = "";
+      $("member-account").value = "";
       $("member-add").disabled = false;
       await readMembership();
       // A brief toast for the result, not an inline line (0.9-M3-S33,
@@ -1744,7 +1814,8 @@
         add.textContent = "Add value";
         // F2/F3 (#433 fix wave): clear ONLY on a write the Worker
         // actually accepted - the Roles card's own "Add" precedent
-        // (member-telegram-id). The input surviving a refusal reopens a
+        // (member-account, the picker that replaced the typed
+        // Telegram id). The input surviving a refusal reopens a
         // double-click race a synchronous clear would otherwise have
         // closed by accident, so the button stays disabled for the
         // write's whole duration: a second click before the first
@@ -2304,6 +2375,7 @@
     wireIdle();
     loadSettings();
     readMembership();
+    loadDirectory();
     loadAdminVia();
     loadFields();
     loadLog();

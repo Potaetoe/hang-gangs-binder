@@ -355,6 +355,19 @@ function makeDb(seed) {
         { account_id, ciphertext, joined_at, last_seen_at });
       return { meta: { changes: 1 } };
     }
+    // The member picker's own read (owner ruling 2026-08-24): everyone
+    // who has signed in, newest first.
+    if (sql.startsWith("SELECT account_id, ciphertext FROM directory")) {
+      return { results: [...directory.values()]
+        .sort((a, b) => (a.last_seen_at < b.last_seen_at ? 1 : -1))
+        .map((row) => ({ account_id: row.account_id,
+          ciphertext: row.ciphertext })) };
+    }
+    // "has this account ever signed in" - what POST /membership asks
+    // before it will write a row for a picked account id.
+    if (sql.startsWith("SELECT 1 AS found FROM directory")) {
+      return directory.has(args[0]) ? { found: 1 } : null;
+    }
 
     /* -------- submissions -------- */
     if (/COUNT\(\*\)/.test(sql) && /FROM submissions AS mine/.test(sql)) {
@@ -697,6 +710,7 @@ async function meFor(db, numericId, handle, status, env) {
 const ADMIN_ONLY = [
   ["GET", "/membership"],
   ["GET", "/admin-log"],
+  ["GET", "/admin-directory"],
   ["POST", "/content"],
 ];
 
@@ -1265,8 +1279,85 @@ const PUBLIC_NAMES = ["site.groupName", "site.welcomeText",
 }
 
 /* ------------------------------------------------------------------ */
+/* 9. THE MEMBER PICKER (owner ruling 2026-08-24, after the owner       */
+/* walked the sit: "normal users don't know how to find telegram ids"). */
+/* GET /admin-directory names everyone who has signed in, so an admin   */
+/* promotes a person instead of typing a number Telegram will not even  */
+/* look up from an @username.                                           */
+/*                                                                      */
+/* THE ARM THAT MATTERS IS THE ONE THAT SEARCHES THE WHOLE RESPONSE for */
+/* the numeric id. The directory record carries handle, displayName,    */
+/* role AND telegramId under one seal, so the route opens a blob that   */
+/* holds the number and has to put back everything except it. A field   */
+/* check would pass while a spread of the record leaked it in a key     */
+/* nobody thought to assert on; searching the raw body for the digits   */
+/* is what actually holds the owner's 2026-08-21 blob-only ruling.      */
 
-const EXPECTED = 86;
+{
+  const db = makeDb();
+  const token = await adminSession(db);
+  await signIn(db, MEMBER_ID, "memberhandle", "member");
+  const { status, body, text } = await call(worker, envFor(db), "GET",
+    "/admin-directory", { headers: bearer(token) });
+  const listed = (body && body.members) || [];
+  const mine = listed.find((row) => row.accountId === MEMBER);
+  check("GET /admin-directory names a member who has signed in, by " +
+    "handle and by the account id the membership table keys on",
+    status === 200 && Boolean(mine) && mine.handle === "memberhandle" &&
+    mine.accountId === MEMBER);
+  check("...and the member's NUMERIC Telegram id appears nowhere in the " +
+    "whole response - the seal opens for a handle and closes again, " +
+    "which is the owner's blob-only ruling (2026-08-21) holding",
+    typeof text === "string" && text.indexOf(MEMBER_ID) === -1);
+  check("...and no member carries a telegramId field at all, however " +
+    "the record it came from was shaped",
+    listed.every((row) => row.telegramId === undefined));
+}
+
+{
+  const db = makeDb();
+  const token = await adminSession(db);
+  const signed = await signIn(db, MEMBER_ID, "memberhandle", "member");
+  const { status } = await call(worker, envFor(db), "POST", "/membership", {
+    headers: bearer(token),
+    body: { accountId: MEMBER, role: "admin", label: "picked one" },
+  });
+  const row = db.membership().find((r) => r.account_id === MEMBER);
+  check("POST /membership writes the row for an account id the admin " +
+    "PICKED, with no numeric id anywhere in the request",
+    status === 200 && Boolean(row) && row.role === "admin" &&
+    row.label === "picked one" && Boolean(signed));
+}
+
+{
+  const db = makeDb();
+  const token = await adminSession(db);
+  const { status, body } = await call(worker, envFor(db), "POST",
+    "/membership", {
+      headers: bearer(token),
+      body: { accountId: MEMBER, role: "admin", label: "never here" },
+    });
+  check("an account id that has never signed in is refused - sixty-four " +
+    "hex characters is a thing anyone can type, and a row for nobody " +
+    "would sit in the list looking like authority",
+    status === 400 && body && /has not signed in/.test(body.error) &&
+    db.membership().every((r) => r.account_id !== MEMBER));
+}
+
+{
+  const db = makeDb();
+  const token = await adminSession(db);
+  const { status } = await call(worker, envFor(db), "POST", "/membership", {
+    headers: bearer(token),
+    body: { accountId: "not-an-account-id", role: "admin", label: "no" },
+  });
+  check("a malformed account id is refused on shape, before the " +
+    "directory is even asked", status === 400);
+}
+
+/* ------------------------------------------------------------------ */
+
+const EXPECTED = 94;
 console.log(failures
   ? `\nadmin-identity FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
