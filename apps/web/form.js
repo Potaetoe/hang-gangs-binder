@@ -789,7 +789,32 @@
       });
     });
     const first = problems[0] && $("error-" + problems[0].field);
-    if (first) first.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (first) {
+      /*
+       * A "smooth" behavior argument OVERRIDES theme.css's blanket
+       * reduced-motion rule (scroll-behavior: auto !important) - the CSS
+       * property is only consulted when the argument is "auto" or
+       * absent, so a member who asked their phone for reduced motion
+       * still got an animated jump to their first error (pre-existing
+       * since 0.9-M2-S2, #353; fixed here at 0.9-M3-S33b, #457 re-fire
+       * #1, F3, per the owner's item 4 ruling: no motion at all under
+       * reduced motion). Read the same way theme-init.js and theme.js
+       * read prefers-color-scheme.
+       */
+      // typeof window, not the bare identifier: every DOM stub the
+      // suites in tests/ build for this file sets globalThis.document
+      // but not globalThis.window, and a bare reference would throw
+      // ReferenceError in every one of them rather than reading as "no
+      // preference support", which is what a real browser missing
+      // matchMedia would give it.
+      const reducedMotion = typeof window !== "undefined" &&
+        window.matchMedia &&
+        matchMedia("(prefers-reduced-motion: reduce)").matches;
+      first.scrollIntoView({
+        block: "center",
+        behavior: reducedMotion ? "auto" : "smooth",
+      });
+    }
   }
 
   /*

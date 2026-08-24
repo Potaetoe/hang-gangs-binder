@@ -292,6 +292,11 @@ check("buildRecord ignores a stray 'date' value on the input - the record's " +
 // tell that call apart from an unrelated one, so this records WHICH
 // element, and the F6 arm below reads it by id.
 const SCROLL_CALLS = [];
+// The options object each scrollIntoView call was given, parallel to
+// SCROLL_CALLS by index (0.9-M3-S33b trailing wave, #457 re-fire #1,
+// F3) - showProblems()'s reduced-motion arm below reads .behavior off
+// the last entry.
+const SCROLL_OPTIONS = [];
 
 function makeElement(id, registry) {
   const listeners = new Map();
@@ -379,7 +384,10 @@ function makeElement(id, registry) {
     // updates the attribute and the registry (see the comment above
     // findById() for the same distinction). Reading the closure `id`
     // here would record which TAG scrolled, not which SLOT.
-    scrollIntoView() { SCROLL_CALLS.push(node.getAttribute("id") || id); },
+    scrollIntoView(options) {
+      SCROLL_CALLS.push(node.getAttribute("id") || id);
+      SCROLL_OPTIONS.push(options);
+    },
   };
   return node;
 }
@@ -1315,6 +1323,62 @@ check("and say() carries text - the general status is never left blank " +
   choiceResult.sayCalls[choiceResult.sayCalls.length - 1].message ===
     "Gender is required.");
 
+/*
+ * 6b-1 (0.9-M3-S33b trailing wave, #457 re-fire #1, F3). The scroll to
+ * the first error respects prefers-reduced-motion. An explicit
+ * `behavior` argument OVERRIDES theme.css's blanket reduced-motion
+ * rule (a JS option wins over CSS - the CSS scroll-behavior property is
+ * only consulted when the argument is "auto" or absent), so this can
+ * only be proven by reading what form.js itself hands scrollIntoView,
+ * never by reading theme.css. Same required-choice trigger as F6
+ * above - BINDER_SITE is still SCRATCH_REQUIRED_CHOICE here.
+ *
+ * Nothing before this point in the file sets globalThis.window, and
+ * form.js's own guard (typeof window !== "undefined") reads that
+ * absence as "no preference support" - matchMediaAnswers(undefined)
+ * leaves window unset on purpose, to prove the untouched default still
+ * comes out "smooth" as it always did, not merely "not auto".
+ */
+function matchMediaAnswers(reducesMotion) {
+  if (reducesMotion === undefined) {
+    delete globalThis.window;
+    delete globalThis.matchMedia;
+    return;
+  }
+  const mm = (query) => ({ matches: reducesMotion &&
+    /prefers-reduced-motion:\s*reduce/.test(query) });
+  globalThis.window = { matchMedia: mm };
+  globalThis.matchMedia = mm;
+}
+
+async function scrollBehaviorAfterRequiredChoiceFails() {
+  const result = await loadFormWired();
+  fillValidEntry(result.page.byId);
+  await result.page.submission.dispatch("submit");
+  const last = SCROLL_OPTIONS[SCROLL_OPTIONS.length - 1];
+  return last && last.behavior;
+}
+
+matchMediaAnswers(undefined);
+check("no matchMedia support at all (globalThis.window unset, the " +
+  "baseline every earlier check in this file already ran under): the " +
+  "scroll to the first error is smooth, the pre-existing behavior",
+  await scrollBehaviorAfterRequiredChoiceFails() === "smooth");
+
+matchMediaAnswers(true);
+check("prefers-reduced-motion: reduce - the scroll is instant, never " +
+  "smooth, because form.js reads the media query itself rather than " +
+  "leaving it to theme.css's rule, which a JS behavior argument would " +
+  "silently override",
+  await scrollBehaviorAfterRequiredChoiceFails() === "auto");
+
+matchMediaAnswers(false);
+check("a phone that supports matchMedia but does NOT prefer reduced " +
+  "motion still gets the smooth scroll - the guard reads the query's " +
+  "answer, not merely whether matchMedia exists",
+  await scrollBehaviorAfterRequiredChoiceFails() === "smooth");
+matchMediaAnswers(undefined);
+
 /* ------------------------------------------------------------------ */
 /* F7 (owner ruling on #355, comment 5337476261, carried into this      */
 /* page by the #353 fix-wave review, finding F7): the pre-leave slot    */
@@ -2060,8 +2124,11 @@ async function drivenNavOnYourPage(meAnswer, options) {
 // adds 10 - five for finding F1 (two on the trend card's own empty
 // state, three sweeping both trees for every sentence the voice table
 // listed as replaced) and five for finding F6 (leaving one checkbox
-// for another inside the same field is not leaving the field).
-const EXPECTED = 139;
+// for another inside the same field is not leaving the field). The
+// 0.9-M3-S33b trailing wave (#457 re-fire #1, F3) adds 3 - the scroll
+// to the first error under no matchMedia support, under reduced
+// motion, and under matchMedia support with no preference set.
+const EXPECTED = 142;
 console.log(failures
   ? `\nyour-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

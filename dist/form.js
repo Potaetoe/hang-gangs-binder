@@ -624,7 +624,23 @@
       });
     });
     const first = problems[0] && $("error-" + problems[0].field);
-    if (first) first.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (first) {
+      
+
+       
+       
+       
+       
+       
+       
+      const reducedMotion = typeof window !== "undefined" &&
+        window.matchMedia &&
+        matchMedia("(prefers-reduced-motion: reduce)").matches;
+      first.scrollIntoView({
+        block: "center",
+        behavior: reducedMotion ? "auto" : "smooth",
+      });
+    }
   }
 
   
