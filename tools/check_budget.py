@@ -338,12 +338,49 @@ WEB = os.path.join(REPO, "dist")
 # nobody had looked at, which is what that arm is written to refuse.
 CEILINGS = {
     "404.html": 113400,
-    # Re-pinned at HEADROOM 0.9-M3-S10 (#416): the keyfile-decrypt tool,
-    # the entry exports and the snapshot publish/unpublish controls all
-    # left admin.html/admin.js in the same change, and the old ceiling
-    # (144900) sat 35% above the new, much smaller page - past the 25%
-    # stale allowance.
-    "admin.html": 118432,
+    # 118432 -> 129950. The owner's reviewed act, 2026-08-24, taken on a
+    # decision question with the measurements below in front of them.
+    # THE SECOND CEILING THIS SYSTEM HAS MOVED; your-page.html's entry
+    # further down records the first and the terms.
+    #
+    # The alarm did its job and this is what it turned up. The page
+    # reached 118,133 B against 118,432 - 99.7%, 299 B clear - while
+    # applying what the owner asked for after walking the sit: the
+    # Fields card's create form moved below the list it adds to and
+    # gained a bordered block of its own, its two names rewritten for
+    # someone who has never met the word "field", a rule between one
+    # field and the next, the change log rebuilt as a real table with a
+    # header row, and the Roles card's "Label" explained. None of that
+    # is cruft; the page grew because it got clearer.
+    #
+    # SLIMMING WAS MEASURED AND REFUSED, and the numbers are here so it
+    # is not re-proposed as a saving nobody considered. Of the 118 KB a
+    # browser actually downloads for this page: 87 KB (74%) is the five
+    # font files every page on this site loads, 11 KB (10%) is the CSS
+    # and scripts every page loads, and 20 KB (16%) is the only part
+    # that is admin's own - admin.js and admin.html together. Halving
+    # the admin-only half would save about 10 KB, for admins alone, on
+    # a page they open rarely and their browser caches after the first
+    # visit. That is not a saving worth making a page less clear for.
+    #
+    # WHERE THE WEIGHT ACTUALLY IS, recorded for whoever wants it back:
+    # the fonts, at 74% of this page and of every other page a member
+    # loads far more often. Subsetting them is the real optimisation
+    # and it helps members rather than admins - a slice of its own,
+    # exactly as the mono-face note under your-page.html already says.
+    #
+    # STALE_ABOVE still polices this from the other direction: 129950
+    # stands 10% over what the page measures today, and a ceiling that
+    # outruns its page fails whoever raised it. The standing
+    # no-ceiling-moves ruling on #85 is superseded FOR THIS ONE CEILING
+    # by the owner personally, on the same terms as the other.
+    #
+    # The previous pin's own note, kept: re-pinned at HEADROOM
+    # 0.9-M3-S10 (#416), when the keyfile-decrypt tool, the entry
+    # exports and the snapshot publish/unpublish controls all left
+    # admin.html/admin.js in the same change and the old ceiling
+    # (144900) sat 35% above the new, much smaller page.
+    "admin.html": 129950,
     "charts.html": 130000,
     "index.html": 119400,
     # 138200 -> 142200. The owner's reviewed act, 2026-08-09 evening,
