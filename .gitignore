@@ -1,0 +1,9 @@
+node_modules/
+.svelte-kit/
+.wrangler/
+dist/
+*.log
+.env
+.env.*
+.claude/settings.local.json
+.claude/worktrees/
