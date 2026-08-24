@@ -24,7 +24,7 @@
 				name="units"
 				value="imperial"
 				class:on={data.units === 'imperial'}
-				aria-pressed={data.units === 'imperial'}>Imperial</button
+				aria-pressed={data.units === 'imperial'}>Imperial (US)</button
 			>
 			<button
 				name="units"

@@ -2,12 +2,18 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import { logAdmin } from '$lib/server/admin';
-import { loadSettings, saveSetting, THEME_CHOICES, type SiteSettings } from '$lib/server/settings';
+import {
+	loadSettings,
+	saveSetting,
+	THEME_CHOICES,
+	TIMEZONE_CHOICES,
+	type SiteSettings
+} from '$lib/server/settings';
 import { today } from '$lib/server/stats';
 
 export const load: PageServerLoad = async ({ platform }) => {
 	const settings = await loadSettings(getDb(platform!.env.DB));
-	return { settings, themeChoices: THEME_CHOICES };
+	return { settings, themeChoices: THEME_CHOICES, timezoneChoices: TIMEZONE_CHOICES };
 };
 
 const validTimezone = (tz: string): boolean => {

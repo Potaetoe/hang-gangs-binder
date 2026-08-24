@@ -38,7 +38,7 @@
 
 			<label for="units">Units</label>
 			<select id="units" name="units">
-				<option value="imperial" selected={data.myUnits === 'imperial'}>Imperial</option>
+				<option value="imperial" selected={data.myUnits === 'imperial'}>Imperial (US)</option>
 				<option value="metric" selected={data.myUnits === 'metric'}>Metric</option>
 			</select>
 
@@ -46,9 +46,11 @@
 		</form>
 	</section>
 
-	<section class="card">
-		<h2>Password</h2>
-		<p class="muted">Changing it signs out every other session on your account.</p>
-		<a class="button" href={resolve('/password')}>Change password</a>
-	</section>
+	{#if data.hasPasswordDoor}
+		<section class="card">
+			<h2>Password</h2>
+			<p class="muted">Changing it signs out every other session on your account.</p>
+			<a class="button" href={resolve('/password')}>Change password</a>
+		</section>
+	{/if}
 </main>

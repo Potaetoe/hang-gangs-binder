@@ -107,7 +107,7 @@ test('the admin sees everything, and the passphrase walls the member off', async
 	await signIn(page, boss);
 	await page.goto('/admin/members');
 	await page
-		.locator('.history li')
+		.locator('.admin-table tbody tr')
 		.filter({ hasText: pat })
 		.getByRole('link', { name: 'Open' })
 		.click();
@@ -152,7 +152,7 @@ test('roles guard themselves', async ({ page }) => {
 	// You cannot take your own admin role away.
 	await page.goto('/admin/members');
 	await page
-		.locator('.history li')
+		.locator('.admin-table tbody tr')
 		.filter({ hasText: solo })
 		.getByRole('link', { name: 'Open' })
 		.click();
@@ -162,7 +162,7 @@ test('roles guard themselves', async ({ page }) => {
 	// But you can raise someone else.
 	await page.goto('/admin/members');
 	await page
-		.locator('.history li')
+		.locator('.admin-table tbody tr')
 		.filter({ hasText: riser })
 		.getByRole('link', { name: 'Open' })
 		.click();

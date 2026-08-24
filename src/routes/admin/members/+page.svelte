@@ -10,25 +10,33 @@
 	{#if !data.roster.length}
 		<p class="muted">Nobody yet.</p>
 	{:else}
-		<ul class="history">
-			{#each data.roster as member (member.id)}
-				<li class="card">
-					<div>
-						<p class="entry-summary">
-							{member.name}
-							{#if member.isAdmin}<span class="badge">admin</span>{/if}
-							{#if member.status === 'pending'}<span class="badge pending">pending</span>{/if}
-						</p>
-						<p class="muted entry-date">
-							{member.doors} &middot; {member.entryCount}
-							{member.entryCount === 1 ? 'entry' : 'entries'}{member.lastEntry
-								? ` · last ${member.lastEntry}`
-								: ''}
-						</p>
-					</div>
-					<a href={resolve('/admin/members/[id]', { id: member.id })}>Open</a>
-				</li>
-			{/each}
-		</ul>
+		<div class="table-scroll card">
+			<table class="admin-table">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Standing</th>
+						<th>Doors</th>
+						<th>Entries</th>
+						<th>Last entry</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each data.roster as member (member.id)}
+						<tr>
+							<td>{member.name}</td>
+							<td
+								>{member.status === 'pending' ? 'pending' : member.isAdmin ? 'admin' : 'member'}</td
+							>
+							<td>{member.doors}</td>
+							<td>{member.entryCount}</td>
+							<td>{member.lastEntry ?? ''}</td>
+							<td><a href={resolve('/admin/members/[id]', { id: member.id })}>Open</a></td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 	{/if}
 </section>

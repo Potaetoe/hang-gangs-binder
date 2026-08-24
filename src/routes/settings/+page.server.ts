@@ -1,16 +1,31 @@
 import { redirect } from '@sveltejs/kit';
+import { and, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
+import { getDb } from '$lib/server/db';
+import * as table from '$lib/server/db/schema';
 import { PALETTES } from '$lib/server/settings';
 
 /** The member's own settings (owner ruling 2026-08-24): device-level
  * choices, stored in cookies like the units toggle - the admin's
  * site settings stay the default for anyone who has not chosen. */
-export const load: PageServerLoad = async ({ locals, cookies }) => {
+export const load: PageServerLoad = async ({ locals, platform, cookies }) => {
 	if (!locals.member) redirect(303, '/');
+	const db = getDb(platform!.env.DB);
+	// Telegram-only members have no password to change (owner,
+	// 2026-08-24) - the card only shows where the door exists.
+	const passwordLogin = (
+		await db
+			.select({ kind: table.logins.kind })
+			.from(table.logins)
+			.where(
+				and(eq(table.logins.memberId, locals.member.memberId), eq(table.logins.kind, 'password'))
+			)
+	)[0];
 	return {
 		myTheme: cookies.get('theme') ?? '',
 		myUnits: cookies.get('units') === 'metric' ? 'metric' : 'imperial',
-		themeChoices: ['', ...Object.keys(PALETTES)]
+		themeChoices: ['', ...Object.keys(PALETTES)],
+		hasPasswordDoor: Boolean(passwordLogin)
 	};
 };
 

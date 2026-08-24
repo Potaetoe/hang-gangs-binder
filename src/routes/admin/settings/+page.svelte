@@ -28,7 +28,14 @@
 		<textarea id="welcome-text" name="welcome_text" rows="3">{data.settings.welcomeText}</textarea>
 
 		<label for="timezone">Timezone (dates entries by it)</label>
-		<input id="timezone" name="timezone" value={data.settings.timezone} />
+		<select id="timezone" name="timezone">
+			{#if !data.timezoneChoices.some((z) => z.id === data.settings.timezone)}
+				<option value={data.settings.timezone} selected>{data.settings.timezone}</option>
+			{/if}
+			{#each data.timezoneChoices as zone (zone.id)}
+				<option value={zone.id} selected={data.settings.timezone === zone.id}>{zone.name}</option>
+			{/each}
+		</select>
 
 		<label for="theme">Default theme (each member can pick their own in Settings)</label>
 		<select id="theme" name="theme">

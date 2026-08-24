@@ -107,6 +107,27 @@ export const PALETTES: Record<string, Palette> = {
 
 export const THEME_CHOICES = ['auto', ...Object.keys(PALETTES)];
 
+/** Common zones for the settings dropdown (owner, 2026-08-24) -
+ * matching where the group actually lives, US first. */
+export const TIMEZONE_CHOICES: { id: string; name: string }[] = [
+	{ id: 'America/New_York', name: 'US Eastern (New York)' },
+	{ id: 'America/Chicago', name: 'US Central (Chicago)' },
+	{ id: 'America/Denver', name: 'US Mountain (Denver)' },
+	{ id: 'America/Phoenix', name: 'US Arizona (Phoenix)' },
+	{ id: 'America/Los_Angeles', name: 'US Pacific (Los Angeles)' },
+	{ id: 'America/Anchorage', name: 'US Alaska (Anchorage)' },
+	{ id: 'Pacific/Honolulu', name: 'US Hawaii (Honolulu)' },
+	{ id: 'America/Toronto', name: 'Canada Eastern (Toronto)' },
+	{ id: 'America/Vancouver', name: 'Canada Pacific (Vancouver)' },
+	{ id: 'America/Mexico_City', name: 'Mexico (Mexico City)' },
+	{ id: 'America/Sao_Paulo', name: 'Brazil (Sao Paulo)' },
+	{ id: 'Europe/London', name: 'UK and Ireland (London)' },
+	{ id: 'Europe/Berlin', name: 'Central Europe (Berlin)' },
+	{ id: 'Australia/Sydney', name: 'Australia East (Sydney)' },
+	{ id: 'Asia/Tokyo', name: 'Japan (Tokyo)' },
+	{ id: 'UTC', name: 'UTC' }
+];
+
 /** The <style> body that pins a palette; empty for 'auto', where the
  * stylesheet's own media query keeps following the device. The
  * doubled :root outranks both the stylesheet's base tokens and its
