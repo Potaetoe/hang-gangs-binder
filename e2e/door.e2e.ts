@@ -20,6 +20,16 @@ async function fillStable(page: Page, label: string | RegExp, value: string) {
 	}).toPass({ timeout: 10_000 });
 }
 
+async function openPasswordFlap(page: Page) {
+	// Hydration replays the flap's initial closed state over a click
+	// that beat it - the same replay that wipes early-filled inputs -
+	// so opening retries until it sticks.
+	await expect(async () => {
+		await page.getByText('With a password').click();
+		await expect(page.getByLabel('Username')).toBeVisible({ timeout: 1000 });
+	}).toPass({ timeout: 10_000 });
+}
+
 function signedTelegramQuery(fields: Record<string, string>): string {
 	const dataCheck = Object.keys(fields)
 		.sort()
@@ -37,6 +47,9 @@ test('a stranger asks for an account, an admin approves, they sign in, they sign
 	const username = `walkin${Date.now()}`;
 
 	await page.goto('/');
+	// The register link lives inside the password flap now - a new
+	// person's real path is: open the flap, then ask.
+	await openPasswordFlap(page);
 	await page.getByRole('link', { name: /ask for an account/i }).click();
 	// The door has a Username field too - wait for the register page
 	// before filling, or the fill lands on the page being left.
@@ -49,6 +62,7 @@ test('a stranger asks for an account, an admin approves, they sign in, they sign
 
 	// Signing in before approval is refused, with the pending reason.
 	await page.goto('/');
+	await openPasswordFlap(page);
 	await fillStable(page, 'Username', username);
 	await fillStable(page, 'Password', 'a-decent-password');
 	await page.getByRole('button', { name: 'Sign in' }).click();
@@ -70,6 +84,7 @@ test('a stranger asks for an account, an admin approves, they sign in, they sign
 
 test('a wrong password gets one unrevealing message', async ({ page }) => {
 	await page.goto('/');
+	await openPasswordFlap(page);
 	await fillStable(page, 'Username', 'nobody_here');
 	await fillStable(page, 'Password', 'wrong-password');
 	await page.getByRole('button', { name: 'Sign in' }).click();
@@ -98,6 +113,16 @@ test('a forged Telegram payload is refused', async ({ page }) => {
 	});
 	await page.goto(`/auth/telegram?${query.replace(/hash=\w{8}/, 'hash=00000000')}`);
 	await expect(page.getByText(/could not be verified/i)).toBeVisible();
+});
+
+test('the password door waits behind its flap, closed by default', async ({
+	page
+}) => {
+	await page.goto('/');
+	await expect(page.getByText('With a password')).toBeVisible();
+	await expect(page.getByLabel('Username')).not.toBeVisible();
+	await openPasswordFlap(page);
+	await expect(page.getByLabel('Username')).toBeVisible();
 });
 
 test('the home page is a door for the signed-out', async ({ page }) => {

@@ -168,3 +168,32 @@ button,
 a {
 	color: var(--color-accent);
 }
+
+/* The password door's flap: the summary reads as a quiet button, the
+   form unfolds under it. Quiet on purpose - Telegram is the main way
+   in, this is the side path. */
+.door-flap > summary {
+	cursor: pointer;
+	font-family: var(--font-display);
+	font-weight: 600;
+	font-size: 1.3rem;
+	list-style: none;
+	min-height: 2.75rem;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.door-flap > summary::-webkit-details-marker {
+	display: none;
+}
+.door-flap > summary::after {
+	content: '+';
+	color: var(--color-accent);
+	font-family: var(--font-text);
+}
+.door-flap[open] > summary::after {
+	content: '\2212';
+}
+.door-flap > form {
+	margin-top: 0.75rem;
+}

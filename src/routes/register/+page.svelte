@@ -30,7 +30,7 @@
 					id="username"
 					name="username"
 					autocomplete="username"
-					value={form?.username ?? ''}
+					{...form?.username ? { value: form.username } : {}}
 					required
 				/>
 				<label for="displayName">Name to show (optional)</label>
@@ -38,7 +38,7 @@
 					id="displayName"
 					name="displayName"
 					autocomplete="nickname"
-					value={form?.displayName ?? ''}
+					{...form?.displayName ? { value: form.displayName } : {}}
 				/>
 				<label for="password">Password</label>
 				<input

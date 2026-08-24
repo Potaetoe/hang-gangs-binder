@@ -35,15 +35,23 @@
 		{/if}
 	</section>
 
-	<section class="card">
-		<h2>With a password</h2>
+	<!-- A door behind a click (the owner's ruling on the first
+	     test-drive): Telegram is the main way in, the password form
+	     appears on asking. A native disclosure, so it works before any
+	     script loads - and it opens itself when a sign-in answer needs
+	     showing, or the error would hide behind the closed flap. -->
+	<!-- A plain SSR attribute: open when a sign-in answer needs
+	     showing, closed otherwise. With csr off nothing ever re-applies
+	     it, so the flap belongs to the person after first paint. -->
+	<details class="card door-flap" open={form != null}>
+		<summary>With a password</summary>
 		<form method="POST" action="?/signin">
 			<label for="username">Username</label>
 			<input
 				id="username"
 				name="username"
 				autocomplete="username"
-				value={form?.username ?? ''}
+				{...form?.username ? { value: form.username } : {}}
 				required
 			/>
 			<label for="password">Password</label>
@@ -63,5 +71,5 @@
 			New here? <a href="/register">Ask for an account</a> — an admin
 			approves it before it works.
 		</p>
-	</section>
+	</details>
 </main>
