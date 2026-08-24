@@ -38,12 +38,12 @@ The point of the fleet is to finish faster, not to do it for no reason.
 Claude builds by default; agents are tools pointed at jobs they are
 structurally good at, briefed by these two files plus the task itself.
 
-| Job | Who |
-| --- | --- |
+| Job                                                           | Who            |
+| ------------------------------------------------------------- | -------------- |
 | The overarching process, product judgment, anything unbounded | Claude (Fable) |
-| Complex but well-bounded analysis, adversarial security work | Opus |
-| Specific bounded coding where tests and types define success | Sonnet |
-| Web lookup and doc reading | Haiku |
+| Complex but well-bounded analysis, adversarial security work  | Opus           |
+| Specific bounded coding where tests and types define success  | Sonnet         |
+| Web lookup and doc reading                                    | Haiku          |
 
 Rules that priced in the old lessons:
 

@@ -1,0 +1,21 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "hang-gangs-binder",
+	"compatibility_date": "2026-08-24",
+	"compatibility_flags": ["nodejs_als"],
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+	"workers_dev": true,
+	"preview_urls": true,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "binder-db",
+			"database_id": "9eb1b7e9-11a1-4329-bb7b-f770636ce3d1",
+			"migrations_dir": "drizzle"
+		}
+	]
+}

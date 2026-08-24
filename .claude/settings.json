@@ -1,0 +1,62 @@
+{
+	"permissions": {
+		"allow": [
+			"Bash(git fetch *)",
+			"Bash(git add *)",
+			"Bash(git commit *)",
+			"Bash(git checkout *)",
+			"Bash(git branch *)",
+			"Bash(git status*)",
+			"Bash(git diff *)",
+			"Bash(git log *)",
+			"Bash(npm run *)",
+			"Bash(npm ci*)",
+			"Bash(npx wrangler *)",
+			"Bash(npx playwright *)",
+			"Bash(npx sv *)",
+			"Bash(py -3 hooks/*)",
+			"Bash(gh pr create *)",
+			"Bash(gh pr comment *)",
+			"Bash(gh issue create *)",
+			"Bash(gh issue comment *)"
+		]
+	},
+	"hooks": {
+		"SessionStart": [
+			{
+				"hooks": [
+					{ "type": "command", "command": "py -3 hooks/session_open.py" }
+				]
+			}
+		],
+		"UserPromptSubmit": [
+			{
+				"hooks": [
+					{ "type": "command", "command": "py -3 hooks/report_reminder.py" }
+				]
+			}
+		],
+		"PreToolUse": [
+			{
+				"matcher": "Bash|PowerShell",
+				"hooks": [
+					{ "type": "command", "command": "py -3 hooks/git_guard.py" },
+					{ "type": "command", "command": "py -3 hooks/merge_gate.py" },
+					{ "type": "command", "command": "py -3 hooks/deploy_gate.py" }
+				]
+			},
+			{
+				"matcher": "Write|Edit",
+				"hooks": [
+					{ "type": "command", "command": "py -3 hooks/secret_guard.py" }
+				]
+			},
+			{
+				"matcher": "Task|Agent",
+				"hooks": [
+					{ "type": "command", "command": "py -3 hooks/fleet_guard.py" }
+				]
+			}
+		]
+	}
+}
