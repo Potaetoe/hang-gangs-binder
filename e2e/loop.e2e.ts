@@ -93,11 +93,13 @@ test('a member logs stats, reads them back, corrects and deletes, leaving a trai
 	await page.getByRole('button', { name: /yes, delete it/i }).click();
 	await expect(page.locator('.entry-summary').filter({ hasText: '185 lb' })).not.toBeVisible();
 
-	// Both corrections left their trail for admin review.
+	// Both corrections left their trail for admin review. Same-day
+	// rows have no stored order (the no-timestamp privacy rule), so
+	// the actions are compared sorted.
 	const audit = await page.request.get(`/test/audit?username=${username}`);
 	expect(audit.ok()).toBeTruthy();
 	const trail = (await audit.json()) as { action: string }[];
-	expect(trail.map((row) => row.action)).toEqual(['edit', 'delete']);
+	expect(trail.map((row) => row.action).sort()).toEqual(['delete', 'edit']);
 });
 
 test('a metric member types kilograms and centimeters', async ({ page }) => {

@@ -20,10 +20,13 @@ export async function GET({ url, platform }: RequestEvent) {
 	const lookupHash = await hmacHex(env.ID_SECRET, `password:${username}`);
 	const login = (await db.select().from(logins).where(eq(logins.lookupHash, lookupHash)))[0];
 	if (!login) error(404, 'No such registration');
+	// Date is the only order the trail has: same-day rows carry no
+	// clock on purpose (the no-timestamp privacy rule), so callers
+	// must not read meaning into their order.
 	const rows = await db
 		.select({ action: memberAudit.action, entryDate: memberAudit.entryDate })
 		.from(memberAudit)
 		.where(eq(memberAudit.memberId, login.memberId))
-		.orderBy(asc(memberAudit.id));
+		.orderBy(asc(memberAudit.date));
 	return json(rows);
 }
