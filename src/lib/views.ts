@@ -8,13 +8,16 @@ export type FormFieldView = {
 	id: string;
 	name: string;
 	/** 'length' is the imperial two-box (feet + inches - welcome to
-	 * America); metric lengths arrive as 'single' with a cm unit. */
-	kind: 'choice' | 'length' | 'single' | 'computed';
+	 * America); metric lengths arrive as 'single' with a cm unit;
+	 * 'multi' is a pick-several choice rendered as checkboxes. */
+	kind: 'choice' | 'multi' | 'length' | 'single' | 'computed';
 	options: string[];
 	ft: string;
 	inches: string;
 	single: string;
 	choice: string;
+	/** Pick-several only: the picks that arrive pre-checked. */
+	picks: string[];
 	unit: string;
 };
 
@@ -54,6 +57,14 @@ export type FocusView = {
 		you: string | null;
 	} | null;
 	counts: { label: string; count: number; pct: number }[];
-	filterFields: { id: string; name: string; options: string[]; selected: string }[];
+	/** Pick-several fields filter as checkboxes (`multiple`), single
+	 * choices as a dropdown; `selected` holds every applied value. */
+	filterFields: {
+		id: string;
+		name: string;
+		options: string[];
+		multiple: boolean;
+		selected: string[];
+	}[];
 	empty: string | null;
 };

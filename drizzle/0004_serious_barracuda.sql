@@ -1,0 +1,1 @@
+ALTER TABLE `fields` ADD `multiple` integer DEFAULT false NOT NULL;

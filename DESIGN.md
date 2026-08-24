@@ -79,6 +79,20 @@ decisions.
    last time, now the acceptance test: **a field an admin adds appears
    on the member form and in the chart filters without any code
    change.**
+
+   A choice field can be **pick-several** (owner rulings, 2026-08-24;
+   the first planned field is kinks): members tick checkboxes instead
+   of picking one, and the answer is the whole set of picks. The boxes
+   arrive pre-checked with the member's current picks — that IS the
+   carry-forward — so unchecking every box on a new entry is
+   deliberate and records "none now", which drops the member from
+   that field's counts. In the charts it counts every pick (one member
+   can sit in several bars) and filters as checkboxes too: show people
+   whose picks include ALL the ticked options. A single-pick choice
+   field can be switched to pick-several once, one-way — old answers
+   read as one-item picks, and there is no way back down because
+   squeezing several picks into one would lose answers.
+
 4. **Combined filters** — multi-filter charts (landed with the core
    loop's charts; floorless by the ruling above).
 

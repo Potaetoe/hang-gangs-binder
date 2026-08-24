@@ -29,13 +29,16 @@ const unitsOf = (cookie: string | undefined): Units =>
 	cookie === 'metric' ? 'metric' : 'imperial';
 
 /** Everything a submitted form's fields said, echoed back on failure
- * so a typo never costs the rest of what was typed. */
-const rawEcho = (form: FormData): Record<string, string> =>
-	Object.fromEntries(
-		[...form.entries()].filter(
-			(pair): pair is [string, string] => pair[0].startsWith('f_') && typeof pair[1] === 'string'
-		)
-	);
+ * so a typo never costs the rest of what was typed. Checkboxes repeat
+ * their name once per tick, so every key collects a list. */
+const rawEcho = (form: FormData): Record<string, string[]> => {
+	const raw: Record<string, string[]> = {};
+	for (const [key, value] of form.entries()) {
+		if (!key.startsWith('f_') || typeof value !== 'string') continue;
+		(raw[key] ??= []).push(value);
+	}
+	return raw;
+};
 
 export const load: PageServerLoad = async ({ locals, platform, url, cookies }) => {
 	if (!locals.member) redirect(303, '/');

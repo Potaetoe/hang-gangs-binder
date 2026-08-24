@@ -260,6 +260,38 @@ select {
 	padding-bottom: 0.75rem;
 }
 
+/* Pick-several: a checkbox per option. Each row is a full-width tap
+   target - thumbs, not cursors, do most of the picking. */
+.picks {
+	margin: 0 0 0.75rem;
+	padding: 0;
+	border: none;
+}
+.picks legend {
+	display: block;
+	padding: 0;
+	margin-bottom: 0.25rem;
+	font-weight: 600;
+}
+.pick {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	min-height: 2.25rem;
+	margin-bottom: 0;
+	font-weight: 400;
+	cursor: pointer;
+}
+.pick input {
+	width: 1.15rem;
+	min-height: 0;
+	height: 1.15rem;
+	flex: none;
+	margin: 0;
+	padding: 0;
+	accent-color: var(--color-accent);
+}
+
 .card-head {
 	display: flex;
 	align-items: baseline;
@@ -581,6 +613,18 @@ main.with-rail {
 }
 .filters select {
 	margin-bottom: 0.5rem;
+}
+.filters .filter-picks {
+	margin-bottom: 0.5rem;
+}
+.filter-picks legend {
+	font-size: 0.9rem;
+	color: var(--color-text-muted);
+	font-weight: 600;
+}
+.filter-picks .pick {
+	min-height: 2rem;
+	font-size: 0.95rem;
 }
 .back-to-board {
 	margin: 1.25rem 0 0;

@@ -89,6 +89,11 @@ export const fields = sqliteTable('fields', {
 	computed: text('computed', { enum: ['bmi'] }),
 	// JSON string[] for choice fields.
 	options: text('options'),
+	// Pick-several choice fields: members tick checkboxes and the
+	// stored value is a JSON string[] in entry_values.choice. Flipping
+	// this on is one-way (owner ruling 2026-08-24) - old single answers
+	// read as one-item picks, but several picks cannot become one.
+	multiple: integer('multiple', { mode: 'boolean' }).notNull().default(false),
 	position: integer('position').notNull(),
 	// Retired fields leave the form but their history stays readable.
 	status: text('status', { enum: ['active', 'retired'] })

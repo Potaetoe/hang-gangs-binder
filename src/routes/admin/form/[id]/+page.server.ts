@@ -7,6 +7,7 @@ import {
 	addOption,
 	deleteField,
 	ESSENTIAL,
+	makeMultiple,
 	removeOption,
 	renameField,
 	renameOption,
@@ -32,6 +33,7 @@ export const load: PageServerLoad = async ({ platform, params }) => {
 			id: field.id,
 			name: field.name,
 			isChoice: field.type === 'choice',
+			multiple: field.multiple,
 			computed: Boolean(field.computed),
 			active: field.status === 'active',
 			essential: ESSENTIAL.has(field.id),
@@ -76,6 +78,9 @@ export const actions: Actions = {
 
 	retire: async (event) =>
 		run(event, (db, date, actor) => retireField(db, date, actor, event.params.id)),
+
+	multiple: async (event) =>
+		run(event, (db, date, actor) => makeMultiple(db, date, actor, event.params.id)),
 
 	revive: async (event) =>
 		run(event, (db, date, actor) => reviveField(db, date, actor, event.params.id)),

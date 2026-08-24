@@ -66,6 +66,7 @@
 			<label for="field-kind">What kind of answer it takes</label>
 			<select id="field-kind" name="kind">
 				<option value="choice">A choice from a list (like Gender)</option>
+				<option value="multi">Pick several from a list (like Kinks)</option>
 				<option value="mass">A weight (lb / kg)</option>
 				<option value="length">A length (ft+in / cm)</option>
 				<option value="plain">A plain number</option>

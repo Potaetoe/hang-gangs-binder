@@ -20,7 +20,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import * as table from './db/schema';
 import { logAdmin } from './admin';
-import { fieldOptions, type Field } from './stats';
+import { choicePicks, fieldOptions, type Field } from './stats';
 import { randomToken } from './crypto';
 
 type Db = DrizzleD1Database<typeof import('./db/schema')>;
@@ -30,7 +30,7 @@ export const ESSENTIAL = new Set(['height', 'weight', 'bmi']);
 export const NAME_MAX = 40;
 export const OPTION_MAX = 60;
 
-export type FieldKind = 'choice' | 'mass' | 'length' | 'plain';
+export type FieldKind = 'choice' | 'multi' | 'mass' | 'length' | 'plain';
 
 export async function allFields(db: Db): Promise<Field[]> {
 	return db.select().from(table.fields).orderBy(asc(table.fields.position));
@@ -55,18 +55,20 @@ export async function addField(
 ): Promise<AddResult> {
 	const name = cleanName(nameRaw);
 	if (!name) return { ok: false, reason: 'bad-name' };
+	const isChoice = kind === 'choice' || kind === 'multi';
 	const fields = await allFields(db);
 	const position = Math.max(0, ...fields.map((f) => f.position)) + 1;
 	const id = randomToken(6);
 	await db.insert(table.fields).values({
 		id,
 		name,
-		type: kind === 'choice' ? 'choice' : 'number',
-		measure: kind === 'choice' ? null : kind,
+		type: isChoice ? 'choice' : 'number',
+		measure: kind === 'choice' || kind === 'multi' ? null : kind,
 		computed: null,
-		options: kind === 'choice' ? '[]' : null,
+		options: isChoice ? '[]' : null,
+		multiple: kind === 'multi',
 		position,
-		status: kind === 'choice' ? 'retired' : 'active'
+		status: isChoice ? 'retired' : 'active'
 	});
 	await logAdmin(db, date, actorId, `added the field "${name}"`);
 	return { ok: true, id };
@@ -87,6 +89,24 @@ export async function renameField(
 	if (!field) return { ok: false, reason: 'No such field.' };
 	await db.update(table.fields).set({ name }).where(eq(table.fields.id, id));
 	await logAdmin(db, date, actorId, `renamed the field "${field.name}" to "${name}"`);
+	return { ok: true };
+}
+
+/** One-way (owner ruling 2026-08-24): a single-pick choice field can
+ * start letting members pick several. Old answers read as one-item
+ * picks, so history needs no rewrite - and there is no way back down,
+ * because squeezing several picks into one would lose answers. */
+export async function makeMultiple(
+	db: Db,
+	date: string,
+	actorId: string,
+	id: string
+): Promise<SimpleResult> {
+	const field = await fieldById(db, id);
+	if (!field || field.type !== 'choice') return { ok: false, reason: 'No such choice field.' };
+	if (field.multiple) return { ok: false, reason: 'Members already pick several here.' };
+	await db.update(table.fields).set({ multiple: true }).where(eq(table.fields.id, id));
+	await logAdmin(db, date, actorId, `let members pick several on "${field.name}"`);
 	return { ok: true };
 }
 
@@ -226,10 +246,25 @@ export async function renameOption(
 		id,
 		options.map((o) => (o === fromOption ? to : o))
 	);
+	// Plain single-pick rows rewrite in one stroke; the SQL equality
+	// cannot see inside a pick-several row's JSON list, so those rows
+	// rewrite one by one. A switched field carries both shapes.
 	await db
 		.update(table.entryValues)
 		.set({ choice: to })
 		.where(and(eq(table.entryValues.fieldId, id), eq(table.entryValues.choice, fromOption)));
+	if (field.multiple) {
+		const rows = await db.select().from(table.entryValues).where(eq(table.entryValues.fieldId, id));
+		for (const row of rows) {
+			if (!(row.choice ?? '').startsWith('[')) continue;
+			const picks = choicePicks(row);
+			if (!picks.includes(fromOption)) continue;
+			await db
+				.update(table.entryValues)
+				.set({ choice: JSON.stringify(picks.map((p) => (p === fromOption ? to : p))) })
+				.where(and(eq(table.entryValues.entryId, row.entryId), eq(table.entryValues.fieldId, id)));
+		}
+	}
 	await logAdmin(
 		db,
 		date,

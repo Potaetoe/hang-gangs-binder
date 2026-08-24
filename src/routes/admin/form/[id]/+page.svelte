@@ -10,6 +10,7 @@
 		{data.field.name}
 		{#if !data.field.active}<span class="badge pending">off the form</span>{/if}
 		{#if data.field.essential}<span class="badge">essential</span>{/if}
+		{#if data.field.multiple}<span class="badge">pick several</span>{/if}
 	</h2>
 	{#if data.field.computed}
 		<p class="muted">Worked out from height and weight; nobody types it.</p>
@@ -37,6 +38,9 @@
 	{#if data.field.isChoice}
 		<div class="card">
 			<h3>Options</h3>
+			{#if data.field.multiple}
+				<p class="muted">Members tick as many of these as apply.</p>
+			{/if}
 			{#if !data.field.options.length}
 				<p class="muted">
 					No options yet — the field stays off the form until it has at least one.
@@ -83,6 +87,18 @@
 	{/if}
 
 	<div class="admin-actions card">
+		{#if data.field.isChoice && !data.field.multiple}
+			<details class="flap button-flap">
+				<summary>Let members pick several</summary>
+				<form method="POST" action="?/multiple">
+					<p class="muted">
+						Checkboxes instead of one pick. Answers already given stay as they are. This cannot be
+						undone — several picks can never be squeezed back into one.
+					</p>
+					<button>Yes, allow several</button>
+				</form>
+			</details>
+		{/if}
 		{#if data.field.active}
 			{#if !data.field.essential}
 				<details class="flap button-flap">
