@@ -4,7 +4,7 @@
  * nothing reads globals, so tests drive it the same way routes do.
  */
 
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import * as table from './db/schema';
 import {
@@ -101,7 +101,19 @@ export async function sessionMember(db: Db, token: string | undefined) {
 		await db.select().from(table.members).where(eq(table.members.id, row.memberId))
 	)[0];
 	if (!member || member.status !== 'approved') return null;
-	return { memberId: member.id, isAdmin: row.isAdmin || member.isAdmin };
+	// A temporary passphrase walls the whole site off behind the
+	// password-change page (owner ruling 2026-08-24).
+	const login = (
+		await db
+			.select({ mustChange: table.logins.mustChange })
+			.from(table.logins)
+			.where(and(eq(table.logins.memberId, member.id), eq(table.logins.kind, 'password')))
+	)[0];
+	return {
+		memberId: member.id,
+		isAdmin: row.isAdmin || member.isAdmin,
+		mustChange: login?.mustChange ?? false
+	};
 }
 
 export async function destroySession(db: Db, token: string | undefined) {
@@ -176,6 +188,41 @@ export async function signInPassword(
 	if (!member) return { ok: false, reason: 'wrong' };
 	if (member.status !== 'approved') return { ok: false, reason: 'pending' };
 	return { ok: true, token: await createSession(db, member.id, member.isAdmin) };
+}
+
+export type ChangePassword =
+	{ ok: true } | { ok: false; reason: 'wrong' | 'bad-password' | 'no-password-door' };
+
+/** The member picks a new password: the current one (or the admin's
+ * temporary passphrase) must verify, the walled-off flag clears, and
+ * every OTHER session dies - a changed password should lock a stolen
+ * one out. */
+export async function changePassword(
+	db: Db,
+	memberId: string,
+	current: string,
+	next: string,
+	keepTokenHash: string
+): Promise<ChangePassword> {
+	if (next.length < 8 || next.length > 128) return { ok: false, reason: 'bad-password' };
+	const login = (
+		await db
+			.select()
+			.from(table.logins)
+			.where(and(eq(table.logins.memberId, memberId), eq(table.logins.kind, 'password')))
+	)[0];
+	if (!login?.passwordHash) return { ok: false, reason: 'no-password-door' };
+	if (!(await verifyPassword(current, login.passwordHash))) {
+		return { ok: false, reason: 'wrong' };
+	}
+	await db
+		.update(table.logins)
+		.set({ passwordHash: await hashPassword(next), mustChange: false })
+		.where(eq(table.logins.lookupHash, login.lookupHash));
+	await db
+		.delete(table.sessions)
+		.where(and(eq(table.sessions.memberId, memberId), ne(table.sessions.tokenHash, keepTokenHash)));
+	return { ok: true };
 }
 
 /* ---------------------------------------------------------------- */

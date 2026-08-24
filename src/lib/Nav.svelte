@@ -1,14 +1,17 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 
-	let { active }: { active: 'home' | 'charts' } = $props();
+	let { active }: { active: 'home' | 'charts' | 'admin' } = $props();
+	const isAdmin = $derived(Boolean(page.data.isAdmin));
+	const siteName = $derived(String(page.data.siteName ?? 'Hang Gang'));
 </script>
 
 <!-- Phone: a fixed bottom rail. Desktop: a top bar wearing the brand.
      Same markup, restyled by the media query in app.css. -->
 <nav class="rail">
 	<div class="rail-brand">
-		<p class="rail-brand-name">Hang Gang</p>
+		<p class="rail-brand-name">{siteName}</p>
 		<p class="rail-brand-sub">Binder</p>
 	</div>
 	<a
@@ -52,6 +55,27 @@
 		</svg>
 		<span>Charts</span>
 	</a>
+	{#if isAdmin}
+		<a
+			href={resolve('/admin')}
+			class:on={active === 'admin'}
+			aria-current={active === 'admin' ? 'page' : undefined}
+		>
+			<svg
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.8"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<path d="M12 3l7 3v5c0 4.6-3 8.4-7 10-4-1.6-7-5.4-7-10V6z"></path>
+				<path d="M9.5 12l2 2 3.5-3.5"></path>
+			</svg>
+			<span>Admin</span>
+		</a>
+	{/if}
 	<form method="POST" action={resolve('/signout')} class="rail-out">
 		<button>
 			<svg

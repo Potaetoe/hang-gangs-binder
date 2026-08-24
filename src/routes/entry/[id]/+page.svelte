@@ -8,12 +8,12 @@
 </script>
 
 <svelte:head>
-	<title>Correct an entry — Hang Gang Binder</title>
+	<title>Correct an entry — {data.siteName} Binder</title>
 </svelte:head>
 
 <Nav active="home" />
 <main class="with-rail">
-	<p class="wordmark">Hang Gang</p>
+	<p class="wordmark">{data.siteName}</p>
 	<h1>Entry from {data.dateLabel}</h1>
 
 	<section class="card">

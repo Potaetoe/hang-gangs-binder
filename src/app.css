@@ -852,3 +852,65 @@ main.with-rail {
 		font-size: 1.35rem;
 	}
 }
+
+/* ------------------------------------------------------------------ */
+/* The admin surface                                                  */
+
+textarea {
+	display: block;
+	width: 100%;
+	padding: 0.5rem 0.75rem;
+	margin-bottom: 0.75rem;
+	font: inherit;
+	color: inherit;
+	background: var(--color-bg);
+	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius);
+	resize: vertical;
+}
+
+.badge {
+	display: inline-block;
+	margin-left: 0.4rem;
+	padding: 0.05rem 0.55rem;
+	font-family: var(--font-text);
+	font-size: 0.7rem;
+	font-weight: 600;
+	color: var(--color-on-accent);
+	background: var(--color-accent);
+	border-radius: 999px;
+	vertical-align: middle;
+}
+.badge.pending {
+	color: var(--color-text);
+	background: transparent;
+	border: 1px solid var(--color-border-strong);
+}
+
+.approve-actions {
+	display: flex;
+	gap: 0.5rem;
+	flex: none;
+}
+button.quiet {
+	color: var(--color-text-muted);
+	background: transparent;
+	border-color: var(--color-border-strong);
+}
+
+.admin-actions {
+	display: flex;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+	align-items: center;
+}
+.admin-actions form {
+	margin: 0;
+}
+
+.done {
+	font-weight: 600;
+}
+.settings-form label:first-child {
+	margin-top: 0;
+}

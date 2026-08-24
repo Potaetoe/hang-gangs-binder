@@ -8,14 +8,14 @@
 </script>
 
 <svelte:head>
-	<title>{data.focus.name} — Hang Gang Binder</title>
+	<title>{data.focus.name} — {data.siteName} Binder</title>
 </svelte:head>
 
 <Nav active="charts" />
 <main class="wide with-rail">
 	<div class="page-head">
 		<div>
-			<p class="wordmark">Hang Gang</p>
+			<p class="wordmark">{data.siteName}</p>
 			<h1>{data.focus.name}</h1>
 		</div>
 		<form method="POST" action="?/units" class="units">

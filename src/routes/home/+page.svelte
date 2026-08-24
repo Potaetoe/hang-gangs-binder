@@ -8,12 +8,12 @@
 </script>
 
 <svelte:head>
-	<title>Your page — Hang Gang Binder</title>
+	<title>Your page — {data.siteName} Binder</title>
 </svelte:head>
 
 <Nav active="home" />
 <main class="wide with-rail">
-	<p class="wordmark">Hang Gang</p>
+	<p class="wordmark">{data.siteName}</p>
 	<h1>Hello, {data.name}</h1>
 	{#if data.isAdmin}
 		<p class="muted">You are signed in as an admin.</p>

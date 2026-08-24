@@ -1,0 +1,44 @@
+<script lang="ts">
+	import type { ActionData, PageData } from './$types';
+
+	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	const themeNames: Record<string, string> = {
+		auto: 'Follow the device (daylight / midnight)',
+		midnight: 'Midnight',
+		daylight: 'Daylight',
+		plum: 'Plum',
+		meadow: 'Meadow'
+	};
+</script>
+
+<section>
+	<h2>Settings</h2>
+	{#if form?.message}
+		<p class="error">{form.message}</p>
+	{/if}
+	{#if form?.done}
+		<p class="muted done">{form.done}</p>
+	{/if}
+	<form method="POST" action="?/save" class="card settings-form">
+		<label for="site-name">Site name</label>
+		<input id="site-name" name="site_name" value={data.settings.siteName} />
+
+		<label for="welcome-text">Welcome text on the door</label>
+		<textarea id="welcome-text" name="welcome_text" rows="3">{data.settings.welcomeText}</textarea>
+
+		<label for="timezone">Timezone (dates entries by it)</label>
+		<input id="timezone" name="timezone" value={data.settings.timezone} />
+
+		<label for="theme">Theme</label>
+		<select id="theme" name="theme">
+			{#each data.themeChoices as choice (choice)}
+				<option value={choice} selected={data.settings.theme === choice}
+					>{themeNames[choice] ?? choice}</option
+				>
+			{/each}
+		</select>
+
+		<button>Save settings</button>
+	</form>
+</section>

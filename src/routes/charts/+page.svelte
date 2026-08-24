@@ -7,14 +7,14 @@
 </script>
 
 <svelte:head>
-	<title>Charts — Hang Gang Binder</title>
+	<title>Charts — {data.siteName} Binder</title>
 </svelte:head>
 
 <Nav active="charts" />
 <main class="wide with-rail">
 	<div class="page-head">
 		<div>
-			<p class="wordmark">Hang Gang</p>
+			<p class="wordmark">{data.siteName}</p>
 			<h1>Charts</h1>
 			<p class="muted">
 				{data.members === 1 ? '1 member' : `${data.members} members`} &middot; tap a tile for detail and

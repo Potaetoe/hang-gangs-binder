@@ -13,7 +13,4 @@ interface Env {
 	TELEGRAM_ALLOW_IDS?: string;
 	/** "1" only in local dev (.dev.vars) - enables the /test/* hooks. */
 	TEST_HOOKS?: string;
-	/** IANA zone that dates entries for the whole group; defaults to
-	 * America/Chicago. Becomes an admin setting in the admin surface. */
-	TIMEZONE?: string;
 }

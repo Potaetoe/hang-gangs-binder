@@ -1,16 +1,17 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
 </script>
 
 <svelte:head>
-	<title>Ask for an account — Hang Gang Binder</title>
+	<title>Ask for an account — {page.data.siteName} Binder</title>
 </svelte:head>
 
 <main>
-	<p class="wordmark">Hang Gang</p>
+	<p class="wordmark">{page.data.siteName}</p>
 	<h1>Ask for an account</h1>
 
 	{#if form?.registered}

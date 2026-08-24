@@ -1,6 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
+import { loadSettings } from '$lib/server/settings';
 import {
 	computeBmi,
 	deleteEntry,
@@ -60,19 +61,25 @@ export const actions: Actions = {
 		if (problems.length) return fail(400, { problems, raw: rawEcho(form) });
 
 		computeBmi(fields, values);
-		const ok = await editEntry(db, locals.member.memberId, params.id, values, today(env.TIMEZONE));
+		const ok = await editEntry(
+			db,
+			locals.member.memberId,
+			params.id,
+			values,
+			today((await loadSettings(db)).timezone)
+		);
 		if (!ok) error(404, 'Not found');
 		redirect(303, '/home');
 	},
 
 	delete: async ({ locals, platform, params }) => {
 		if (!locals.member) redirect(303, '/');
-		const env = platform!.env;
+		const db = getDb(platform!.env.DB);
 		const ok = await deleteEntry(
-			getDb(env.DB),
+			db,
 			locals.member.memberId,
 			params.id,
-			today(env.TIMEZONE)
+			today((await loadSettings(db)).timezone)
 		);
 		if (!ok) error(404, 'Not found');
 		redirect(303, '/home');

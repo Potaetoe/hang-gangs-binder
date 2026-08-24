@@ -25,8 +25,40 @@ export const logins = sqliteTable('logins', {
 	kind: text('kind', { enum: ['telegram', 'password'] }).notNull(),
 	// PBKDF2 output for password logins, null for Telegram ones.
 	passwordHash: text('password_hash'),
+	// Set when an admin hands out a temporary passphrase: the next
+	// sign-in is walled off until the member picks their own password.
+	mustChange: integer('must_change', { mode: 'boolean' }).notNull().default(false),
 	createdAt: integer('created_at').notNull()
 });
+
+/**
+ * Site-wide settings, written by admins (owner ruling 2026-08-24):
+ * one row per key, read with code defaults when absent. Keys today:
+ * site_name, welcome_text, timezone, theme.
+ */
+export const settings = sqliteTable('settings', {
+	key: text('key').primaryKey(),
+	value: text('value').notNull()
+});
+
+/**
+ * The admin change log (DESIGN.md "Admin surface"): every admin action
+ * writes a line. Day-only dates, like everything else. Members are
+ * named by their opaque ids; the page unseals names at display time,
+ * so a purged member simply reads as departed.
+ */
+export const adminLog = sqliteTable(
+	'admin_log',
+	{
+		id: text('id').primaryKey(),
+		date: text('date').notNull(),
+		actorId: text('actor_id').notNull(),
+		action: text('action').notNull(),
+		subjectId: text('subject_id'),
+		detail: text('detail')
+	},
+	(t) => [index('admin_log_date').on(t.date)]
+);
 
 export const directory = sqliteTable('directory', {
 	memberId: text('member_id').primaryKey(),

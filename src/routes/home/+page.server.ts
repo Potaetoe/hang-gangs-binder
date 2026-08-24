@@ -18,6 +18,7 @@ import {
 	today,
 	type Units
 } from '$lib/server/stats';
+import { loadSettings } from '$lib/server/settings';
 import type { HistoryRow, TrendView } from '$lib/views';
 
 const PAGE_SIZE = 10;
@@ -69,7 +70,7 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 		name: identity.displayName || identity.handle || identity.username || 'member',
 		isAdmin: locals.member.isAdmin,
 		units,
-		todayLabel: formatDate(today(env.TIMEZONE)),
+		todayLabel: formatDate(today((await loadSettings(db)).timezone)),
 		formFields: formFieldViews(fields, latest, units),
 		trends,
 		history,
@@ -101,7 +102,7 @@ export const actions: Actions = {
 		}
 
 		computeBmi(fields, values);
-		await createEntry(db, locals.member.memberId, today(env.TIMEZONE), values);
+		await createEntry(db, locals.member.memberId, today((await loadSettings(db)).timezone), values);
 		redirect(303, '/home');
 	},
 

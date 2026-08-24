@@ -9,7 +9,7 @@ declare global {
 		}
 
 		interface Locals {
-			member: { memberId: string; isAdmin: boolean } | null;
+			member: { memberId: string; isAdmin: boolean; mustChange: boolean } | null;
 		}
 	}
 }
