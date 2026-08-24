@@ -38,14 +38,23 @@ tier.
 
 ## The privacy promise
 
-**A leaked copy of the database shows numbers, never who they belong
-to.**
+**A leaked copy of the database shows numbers with no name attached to
+them.**
 
 Stat rows are keyed by opaque member ids that reverse to nobody.
-Identities live in exactly one table, sealed under a server secret.
-Sign-in lookups are one-way scrambles, so even the login table holds no
-plain name. Timestamps are dates only, never clock times, so a leaked
-copy cannot be lined up against chat activity.
+Identities live in exactly one table, sealed under a server secret and
+padded so even the length tells you nothing. Sign-in lookups are
+one-way scrambles, so even the login table holds no plain name.
+Timestamps are dates only, never clock times, so a leaked copy cannot
+be lined up against chat activity.
+
+Read that promise carefully, because it is deliberately narrow. The
+binder will not hand anyone the mapping from a row to a person. It
+cannot stop someone who was already in your group from recognising a
+profile — one person's height and country and history, sitting
+together, is close to a fingerprint in a group of twenty. That is the
+cost of keeping history at all, and it is stated here rather than
+hidden.
 
 The full model, including what it deliberately does _not_ protect
 against, is in [DESIGN.md](DESIGN.md). Read it before you trust it with

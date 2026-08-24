@@ -4,16 +4,19 @@
  * nothing reads globals, so tests drive it the same way routes do.
  */
 
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, lt, ne } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import * as table from './db/schema';
 import {
+	DECOY_HASH,
 	hashPassword,
 	hmacHex,
 	open,
 	randomToken,
 	seal,
+	sha1Hex,
 	sha256Hex,
+	timingSafeEqual,
 	verifyPassword
 } from './crypto';
 
@@ -28,10 +31,32 @@ export type Secrets = {
 	 * the operator's escape hatch, and how tests avoid calling
 	 * Telegram. */
 	TELEGRAM_ALLOW_IDS?: string;
+	/** '1' only in local development and CI. It kills the test-only
+	 * endpoints in production, and it is also what stops the test suite
+	 * calling the breached-password service on every registration. */
+	TEST_HOOKS?: string;
 };
+
+const isTestEnv = (secrets: Secrets) => secrets.TEST_HOOKS === '1';
 
 const now = () => Math.floor(Date.now() / 1000);
 const SESSION_DAYS = 30;
+const DAY = 86_400;
+
+/**
+ * The calendar day, and nothing finer. Everything this file writes to
+ * a member-linked row uses this instead of a clock (security pass,
+ * 2026-08-24): a row that says WHEN to the second, sitting beside a
+ * member id, is an activity log - and lining an activity log up
+ * against the group's chat is exactly what DESIGN.md's date-only rule
+ * exists to prevent. UTC on purpose; this is plumbing, never shown.
+ */
+const todayUtc = () => new Date().toISOString().slice(0, 10);
+
+/** Midnight tonight, plus the session's life. Sessions need a real
+ * expiry to enforce, but rounding to the day keeps the row from
+ * recording the minute somebody signed in. */
+const sessionExpiry = () => (Math.floor(now() / DAY) + 1 + SESSION_DAYS) * DAY;
 
 /* ---------------------------------------------------------------- */
 /* Identity records                                                  */
@@ -59,10 +84,10 @@ async function writeIdentity(db: Db, secrets: Secrets, memberId: string, identit
 	const sealed = await seal(secrets.DIRECTORY_SECRET, JSON.stringify(identity));
 	await db
 		.insert(table.directory)
-		.values({ memberId, sealed, updatedAt: now() })
+		.values({ memberId, sealed, updatedAt: todayUtc() })
 		.onConflictDoUpdate({
 			target: table.directory.memberId,
-			set: { sealed, updatedAt: now() }
+			set: { sealed, updatedAt: todayUtc() }
 		});
 }
 
@@ -86,8 +111,7 @@ export async function createSession(db: Db, memberId: string, isAdmin: boolean) 
 		tokenHash: await sha256Hex(token),
 		memberId,
 		isAdmin,
-		createdAt: now(),
-		expiresAt: now() + SESSION_DAYS * 86_400
+		expiresAt: sessionExpiry()
 	});
 	return token;
 }
@@ -96,7 +120,13 @@ export async function sessionMember(db: Db, token: string | undefined) {
 	if (!token) return null;
 	const hash = await sha256Hex(token);
 	const row = (await db.select().from(table.sessions).where(eq(table.sessions.tokenHash, hash)))[0];
-	if (!row || row.expiresAt < now()) return null;
+	if (!row) return null;
+	if (row.expiresAt < now()) {
+		// Sweep it rather than just refusing it: a dead session row is
+		// still a member id sitting in the database for no reason.
+		await db.delete(table.sessions).where(lt(table.sessions.expiresAt, now()));
+		return null;
+	}
 	const member = (
 		await db.select().from(table.members).where(eq(table.members.id, row.memberId))
 	)[0];
@@ -125,9 +155,54 @@ export async function destroySession(db: Db, token: string | undefined) {
 /* The password door                                                 */
 
 export type RegisterResult =
-	{ ok: true } | { ok: false; reason: 'username-taken' | 'bad-username' | 'bad-password' };
+	| { ok: true }
+	| { ok: false; reason: 'username-taken' | 'bad-username' | 'bad-password' | 'breached-password' };
 
 const USERNAME = /^[a-z0-9_]{3,32}$/;
+
+export const PASSWORD_MIN = 12;
+export const PASSWORD_MAX = 128;
+
+/**
+ * Is this password one of the ones already in circulation from other
+ * sites' breaches? (Owner ruling 2026-08-24, following NIST: length
+ * alone does not save "password123456".)
+ *
+ * Only the first five characters of the password's SHA-1 ever leave
+ * this Worker, and the answer comes back as a list of thousands of
+ * suffixes we match locally - so the service is never told which
+ * password was asked about, or by whom.
+ *
+ * If the service is unreachable we let the password through. A member
+ * locked out of setting a password because someone else's API is down
+ * is a worse outcome than a weak password on a private site.
+ */
+export async function isBreachedPassword(password: string): Promise<boolean> {
+	const digest = (await sha1Hex(password)).toUpperCase();
+	const prefix = digest.slice(0, 5);
+	const suffix = digest.slice(5);
+	try {
+		const res = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
+			headers: { 'Add-Padding': 'true' }
+		});
+		if (!res.ok) return false;
+		const body = await res.text();
+		return body.split('\n').some((line) => line.split(':')[0]?.trim().toUpperCase() === suffix);
+	} catch {
+		return false;
+	}
+}
+
+/** Length first, then the breach list - so an obviously-too-short
+ * password never costs a network round trip. */
+async function passwordProblem(
+	password: string,
+	skipBreachCheck = false
+): Promise<'bad-password' | 'breached-password' | null> {
+	if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) return 'bad-password';
+	if (skipBreachCheck) return null;
+	return (await isBreachedPassword(password)) ? 'breached-password' : null;
+}
 
 export async function register(
 	db: Db,
@@ -138,7 +213,8 @@ export async function register(
 ): Promise<RegisterResult> {
 	const username = usernameRaw.trim().toLowerCase();
 	if (!USERNAME.test(username)) return { ok: false, reason: 'bad-username' };
-	if (password.length < 8 || password.length > 128) return { ok: false, reason: 'bad-password' };
+	const problem = await passwordProblem(password, isTestEnv(secrets));
+	if (problem) return { ok: false, reason: problem };
 
 	const lookupHash = await hmacHex(secrets.ID_SECRET, `password:${username}`);
 	const existing = (
@@ -147,13 +223,13 @@ export async function register(
 	if (existing) return { ok: false, reason: 'username-taken' };
 
 	const memberId = randomToken(16);
-	await db.insert(table.members).values({ id: memberId, status: 'pending', createdAt: now() });
+	await db.insert(table.members).values({ id: memberId, status: 'pending', createdAt: todayUtc() });
 	await db.insert(table.logins).values({
 		lookupHash,
 		memberId,
 		kind: 'password',
 		passwordHash: await hashPassword(password),
-		createdAt: now()
+		createdAt: todayUtc()
 	});
 	await writeIdentity(db, secrets, memberId, {
 		username,
@@ -177,8 +253,15 @@ export async function signInPassword(
 		await db.select().from(table.logins).where(eq(table.logins.lookupHash, lookupHash))
 	)[0];
 	// A missing user and a wrong password are the same answer on
-	// purpose: the door does not confirm which usernames exist.
-	if (!login?.passwordHash) return { ok: false, reason: 'wrong' };
+	// purpose: the door does not confirm which usernames exist. It used
+	// to give that answer FASTER when nobody matched, because only the
+	// real branch paid for PBKDF2 - a ~35ms tell, measured during the
+	// security pass. Verifying against a decoy costs the same, so the
+	// two paths now take the same time as well as saying the same thing.
+	if (!login?.passwordHash) {
+		await verifyPassword(password, DECOY_HASH);
+		return { ok: false, reason: 'wrong' };
+	}
 	if (!(await verifyPassword(password, login.passwordHash))) {
 		return { ok: false, reason: 'wrong' };
 	}
@@ -191,7 +274,8 @@ export async function signInPassword(
 }
 
 export type ChangePassword =
-	{ ok: true } | { ok: false; reason: 'wrong' | 'bad-password' | 'no-password-door' };
+	| { ok: true }
+	| { ok: false; reason: 'wrong' | 'bad-password' | 'breached-password' | 'no-password-door' };
 
 /** The member picks a new password: the current one (or the admin's
  * temporary passphrase) must verify, the walled-off flag clears, and
@@ -202,9 +286,11 @@ export async function changePassword(
 	memberId: string,
 	current: string,
 	next: string,
-	keepTokenHash: string
+	keepTokenHash: string,
+	skipBreachCheck = false
 ): Promise<ChangePassword> {
-	if (next.length < 8 || next.length > 128) return { ok: false, reason: 'bad-password' };
+	const problem = await passwordProblem(next, skipBreachCheck);
+	if (problem) return { ok: false, reason: problem };
 	const login = (
 		await db
 			.select()
@@ -239,7 +325,7 @@ export async function verifyTelegramPayload(
 	const { hash, ...fields } = payload;
 	if (!hash) return false;
 	const authDate = Number(fields.auth_date);
-	if (!Number.isFinite(authDate) || Math.abs(now() - authDate) > 600) return false;
+	if (!Number.isFinite(authDate) || Math.abs(now() - authDate) > TELEGRAM_WINDOW) return false;
 	const dataCheck = Object.keys(fields)
 		.sort()
 		.map((k) => `${k}=${fields[k]}`)
@@ -256,7 +342,32 @@ export async function verifyTelegramPayload(
 		await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(dataCheck))
 	);
 	const signedHex = [...signed].map((b) => b.toString(16).padStart(2, '0')).join('');
-	return signedHex === hash.toLowerCase();
+	// Constant-time, like the password path - the two comparisons in
+	// this file should not disagree about how carefully they compare.
+	return timingSafeEqual(signedHex, hash.toLowerCase());
+}
+
+/**
+ * A signed Telegram payload is good once, and only for a couple of
+ * minutes (security pass, 2026-08-24). It used to be good for ten
+ * minutes and any number of times, and it travels in a URL - so a
+ * captured link was a working key for the window's remainder. Burning
+ * the hash on first use turns a captured link into a dead one.
+ */
+const TELEGRAM_WINDOW = 120;
+
+async function burnPayload(db: Db, hash: string): Promise<boolean> {
+	const cutoff = now() - TELEGRAM_WINDOW;
+	await db.delete(table.usedLogins).where(lt(table.usedLogins.expiresAt, cutoff));
+	try {
+		await db
+			.insert(table.usedLogins)
+			.values({ hash: await sha256Hex(hash), expiresAt: now() + TELEGRAM_WINDOW });
+		return true;
+	} catch {
+		// The primary key already holds it: this payload has been spent.
+		return false;
+	}
 }
 
 type Standing = 'member' | 'admin' | 'out' | 'unknown';
@@ -303,6 +414,8 @@ export async function signInTelegram(
 	if (!(await verifyTelegramPayload(payload, secrets.TELEGRAM_BOT_TOKEN))) {
 		return { ok: false, reason: 'bad-signature' };
 	}
+	// Signed, fresh - and not already spent.
+	if (!(await burnPayload(db, payload.hash))) return { ok: false, reason: 'bad-signature' };
 	const telegramId = payload.id;
 	const standing = await groupStanding(secrets, telegramId);
 	if (standing === 'unknown') return { ok: false, reason: 'unavailable' };
@@ -320,14 +433,14 @@ export async function signInTelegram(
 			id: memberId,
 			status: 'approved',
 			isAdmin: standing === 'admin',
-			createdAt: now()
+			createdAt: todayUtc()
 		});
 		await db.insert(table.logins).values({
 			lookupHash,
 			memberId,
 			kind: 'telegram',
 			passwordHash: null,
-			createdAt: now()
+			createdAt: todayUtc()
 		});
 	} else if (standing === 'admin') {
 		await db.update(table.members).set({ isAdmin: true }).where(eq(table.members.id, memberId));

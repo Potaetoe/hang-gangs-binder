@@ -23,18 +23,41 @@ can run a copy for their own group. One deployment serves one group.
 
 ## Privacy model
 
-The promise: **a leaked copy of the database shows numbers, never who
-they belong to.**
+The promise: **a leaked copy of the database shows numbers with no name
+attached to them.**
+
+That sentence was narrowed on 2026-08-24, after the security pass, and
+the narrowing matters. It used to read "never who they belong to,"
+which claimed more than the design delivers. The names really are
+sealed — but the rows are still one profile per person, and in a group
+this size a stable number like height, plus a country and a gender, is
+close to a fingerprint. Someone who was _in_ the group can put names to
+those profiles from memory. Nothing short of not keeping the history
+would fix that, and the history is the point of the site. So the
+promise is the one the design can actually keep: the binder itself
+never hands over the mapping.
 
 - Stat rows are plain data — no per-row encryption — keyed by one-way
   scrambled member IDs. You cannot reverse an ID into a person.
 - The one table that maps IDs to identities (Telegram handle, username,
   display name) is sealed under a server secret. Database access alone
-  cannot link a row to a person.
+  cannot link a row to a person. Every sealed record is padded to a
+  fixed size, so its length gives nothing away either.
 - Username lookups for sign-in use one-way scrambles too, so even the
   login path stores no plain identity.
 - Cloudflare's built-in encryption covers the disk. TLS covers transit.
-- No member data ever goes to logs.
+- **Day-only timestamps, everywhere a member is involved** — entries,
+  corrections, the change log, accounts, sign-in doors, and the sealed
+  directory row itself. A clock reading beside a member ID would be an
+  activity log, and an activity log can be lined up against the group's
+  chat. Sessions keep a real expiry because they must enforce one, but
+  it is rounded to a day and nothing records when a session began.
+- The app writes no member data to logs — there is not one logging call
+  in it. One caveat, stated plainly: Telegram's sign-in widget returns
+  its answer as a redirect, so a member's Telegram name passes through
+  a URL, and a hosting platform may record URLs. Nothing else about
+  them travels that way, and the payload is now spent on first use, so
+  a captured link is not a key.
 - No floor (owner ruling 2026-08-24, replacing the old N-member floor):
   charts show whatever matches the filters, however few members that
   is. In a small group a narrow filter can point at one person's

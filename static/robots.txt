@@ -1,3 +1,9 @@
-# allow crawling everything by default
+# This is a private group's binder. It is not for the open web, and
+# nothing here should turn up in a search result - not the sign-in
+# page, not the group's name, not the fact that it exists.
+#
+# Crawlers that respect this file stop at the door. The ones that do
+# not are answered by the X-Robots-Tag header the app sends on every
+# response, and by the fact that every real page needs a session.
 User-agent: *
-Disallow:
+Disallow: /

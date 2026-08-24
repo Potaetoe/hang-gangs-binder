@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { form, data }: { form: ActionData; data: PageData } = $props();
 </script>
 
 <svelte:head>
@@ -47,7 +47,7 @@
 					name="password"
 					type="password"
 					autocomplete="new-password"
-					minlength="8"
+					minlength={data.passwordMin}
 					required
 				/>
 				{#if form?.message}
