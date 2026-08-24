@@ -525,13 +525,21 @@
       .filter(Boolean)
       .sort(function (a, b) { return a.t - b.t; });
 
+     
+     
+     
+     
+     
+     
+     
+     
+     
     if (points.length < 2) {
       container.appendChild(el("p", { class: "muted",
         text: current.length
           ? "One entry isn't a trend yet — add another and a line " +
             "appears here."
-          : "Nothing recorded yet — fill in the form above and it " +
-            "starts here." }));
+          : "No entries yet — a line appears here once you have two." }));
       return;
     }
 

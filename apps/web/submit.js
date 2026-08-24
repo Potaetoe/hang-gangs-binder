@@ -608,13 +608,21 @@
       .filter(Boolean)
       .sort(function (a, b) { return a.t - b.t; });
 
+    // Two empty states, one voice, and no second button (#454 item 10,
+    // owner ruling 2026-08-22). The card below this one carries the
+    // ruled sentence AND the control that jumps to the form, so the
+    // next step item 10 asks for is already one card down and is the
+    // same act - offering "Add your first one" twice on one screen
+    // would be two controls for one thing. What this sentence owes is
+    // the other half: saying what makes the line appear, without
+    // telling a member to scroll up past a button that scrolls for
+    // them.
     if (points.length < 2) {
       container.appendChild(el("p", { class: "muted",
         text: current.length
           ? "One entry isn't a trend yet — add another and a line " +
             "appears here."
-          : "Nothing recorded yet — fill in the form above and it " +
-            "starts here." }));
+          : "No entries yet — a line appears here once you have two." }));
       return;
     }
 

@@ -626,13 +626,12 @@ check("signing out leaves a mark for the page it is sending the member to",
  * second differing from the first only in what the first left behind -
  * which is the whole claim, so both halves are one arm's business.
  *
- * THE VEHICLE IS A TOAST NOW (owner ruling 2026-08-23, UX record #454
- * comment 5389445914, raised as F2 by the 0.9-M3-S33b review on #457):
- * the acknowledgement used to reveal an inline <p id="signed-out">,
- * which made it a fourth thing painting above the sign-in button on
- * the commonest way back to this page. The ruled WORDS are unchanged
- * and are asserted here, so this arm proves the sentence a member
- * actually reads rather than only that something was revealed.
+ * THE VEHICLE IS A TOAST (owner ruling 2026-08-23, UX record #454
+ * comment 5389445914): an inline line on this page would be a fourth
+ * thing painting above the sign-in button on the commonest way back
+ * here, which item 14's fold does not admit. The ruled WORDS are
+ * asserted too, so this arm proves the sentence a member actually
+ * reads rather than only that something was revealed.
  */
 const ack = { hidden: true, textContent: "" };
 const realShowToast = globalThis.BinderUI.showToast;

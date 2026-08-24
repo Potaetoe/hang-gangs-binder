@@ -666,9 +666,15 @@ p {
  * welcome sentence the admin wrote, and the Telegram sign-in button.
  * Nothing else above the fold.") The masthead's own runner and <h1>,
  * and the sign-in card's own runner, <h2> and explanation paragraph,
- * all stay in index.html's markup and in tools/check_web.py's
+ * all stay in apps/web/index.html's markup and in tools/check_web.py's
  * PAGE_HEADERS pin (a file-text check, unaffected by any CSS class) -
- * only what a sighted visitor sees at 375 px changes.
+ * only what a sighted visitor sees changes.
+ *
+ * NO MEDIA QUERY, ON PURPOSE. The owner read item 14 as
+ * minimal-at-EVERY-width on 2026-08-23 (#454 comment 5389445914): the
+ * door shows the three named things at any screen size, so wrapping
+ * this rule in a width would put the desktop copy back. A ruling, not
+ * an oversight - tests/door.test.mjs holds it.
  */
 .sr-only {
   position: absolute;

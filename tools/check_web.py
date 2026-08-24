@@ -6380,14 +6380,14 @@ def styling_exclusivity_problems():
 # than drift past the gate unnoticed. At M4 the pin and the sentence
 # move together.
 RULED_LINES = {
-    # index.html's "signed-out" entry MOVED, it did not retire: the
+    # The door's "signed-out" entry MOVED, it did not retire: the
     # sign-out acknowledgement is a TOAST now (owner ruling 2026-08-23,
     # UX record #454 comment 5389445914, raised by the 0.9-M3-S33b
     # review on #457, finding F2), so its ruled words are no longer in
-    # this page's markup for a markup pin to read. RULED_TOAST_LINES
-    # below is the same pin, following the words to the file that now
-    # holds them - dropping the entry instead would have retired a
-    # ruling the owner re-sited.
+    # apps/web/index.html's markup for a markup pin to read.
+    # RULED_TOAST_LINES below is the same pin, following the words to
+    # the file that now holds them - dropping the entry instead would
+    # have retired a ruling the owner re-sited.
     "index.html": {
         "privacy-line": "[Privacy line — the owner writes this "
                          "sentence at the 0.9-M4 register sitting.]",
@@ -6448,10 +6448,59 @@ RULED_TOAST_LINES = (
 JS_CONST_STRING = r'const\s+%s\s*=\s*"((?:[^"\\]|\\.)*)"\s*;'
 
 
+def ruled_toast_problems(row, code, markup):
+    """[(file, problem)] for one RULED_TOAST_LINES row against the two
+    texts that have to agree about it.
+
+    Takes the texts rather than reading them, for the reason
+    page_label_problems() gives: a rule exercised only on the files
+    that ship is a rule tested against today's content, and this one's
+    fixtures are the only way to drive its four failures on purpose.
+    `code` is the script with its comments stripped - the words are
+    pinned as CODE, so a sentence quoted in a comment must not satisfy
+    the pin.
+    """
+    script, constant, ruled, page = row
+    problems = []
+
+    found = re.search(JS_CONST_STRING % re.escape(constant), code)
+    if found is None:
+        problems.append((script,
+            "carries no `const %s = \"...\"`, which is where the owner's "
+            "ruled line \"%s\" now lives (#275, re-sited to a toast by the "
+            "owner's 2026-08-23 ruling). RULED_TOAST_LINES in "
+            "tools/check_web.py is the record of it" % (constant, ruled)))
+    elif found.group(1) != ruled:
+        problems.append((script,
+            "holds \"%s\" in %s where the owner ruled \"%s\" (#275). The "
+            "vehicle changed and the words did not"
+            % (found.group(1), constant, ruled)))
+
+    if not re.search(r"showToast\(\s*%s\s*\)" % re.escape(constant), code):
+        problems.append((script,
+            "never hands %s to BinderUI.showToast(). A ruled sentence held "
+            "in a constant nobody shows is a sentence the member never "
+            "reads, and every text pin over it still passes" % constant))
+
+    if markup is None:
+        problems.append((page,
+            "is named in RULED_TOAST_LINES in tools/check_web.py and is not "
+            "a page in apps/web"))
+    elif not re.search(r'\bid="toast"', markup):
+        problems.append((page,
+            "carries no #toast, and %s speaks the owner's ruled line \"%s\" "
+            "through BinderUI.showToast() - which finds its element by that "
+            "id and returns silently when the page has none. The "
+            "acknowledgement would be a no-op" % (script, ruled)))
+
+    return problems
+
+
 def ruled_toast_line_problems():
     """[(file, problem)] for the ruled lines that a toast now speaks."""
     problems = []
-    for script, constant, ruled, page in RULED_TOAST_LINES:
+    for row in RULED_TOAST_LINES:
+        script, _constant, ruled, page = row
         path = os.path.join(WEB, script)
         if not os.path.exists(path):
             problems.append((script,
@@ -6461,37 +6510,8 @@ def ruled_toast_line_problems():
                 "words" % ruled))
             continue
         code = strip_js_comments(open(path, encoding="utf-8").read())
-        found = re.search(JS_CONST_STRING % re.escape(constant), code)
-        if found is None:
-            problems.append((script,
-                "carries no `const %s = \"...\"`, which is where the "
-                "owner's ruled line \"%s\" now lives (#275, re-sited to a "
-                "toast by the owner's 2026-08-23 ruling). RULED_TOAST_LINES "
-                "in tools/check_web.py is the record of it"
-                % (constant, ruled)))
-        elif found.group(1) != ruled:
-            problems.append((script,
-                "holds \"%s\" in %s where the owner ruled \"%s\" (#275). "
-                "The vehicle changed and the words did not"
-                % (found.group(1), constant, ruled)))
-        if not re.search(r"showToast\(\s*%s\s*\)" % re.escape(constant),
-                         code):
-            problems.append((script,
-                "never hands %s to BinderUI.showToast(). A ruled sentence "
-                "held in a constant nobody shows is a sentence the member "
-                "never reads, and every text pin over it still passes"
-                % constant))
-        if page not in html_pages():
-            problems.append((page,
-                "is named in RULED_TOAST_LINES in tools/check_web.py and is "
-                "not a page in apps/web"))
-        elif not re.search(r'\bid="toast"', page_text(page)):
-            problems.append((page,
-                "carries no #toast, and %s speaks the owner's ruled line "
-                "\"%s\" through BinderUI.showToast() - which finds its "
-                "element by that id and returns silently when the page has "
-                "none. The acknowledgement would be a no-op"
-                % (script, ruled)))
+        markup = page_text(page) if page in html_pages() else None
+        problems.extend(ruled_toast_problems(row, code, markup))
     return problems
 
 # The disclosure the whys moved behind, and the three things about it

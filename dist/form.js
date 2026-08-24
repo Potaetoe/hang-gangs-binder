@@ -600,8 +600,11 @@
 
   function wireFieldValidation(container) {
     plan().forEach(function (entry) {
-      inputsFor(entry.name).forEach(function (ctrl) {
-        ctrl.addEventListener("focusout", function () {
+      const controls = inputsFor(entry.name);
+      controls.forEach(function (ctrl) {
+        ctrl.addEventListener("focusout", function (event) {
+          const went = event && event.relatedTarget;
+          if (went && controls.indexOf(went) !== -1) return;
           validateFieldNow(entry, container);
         });
       });

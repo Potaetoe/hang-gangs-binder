@@ -116,10 +116,11 @@
    *
    * The mark is sessionStorage, written by signout.js immediately before
    * the navigation. This reads it and REMOVES IT IN THE SAME BREATH,
-   * which is the half that makes the line honest: it acknowledges an
-   * act, so a reload of this page - or a visit tomorrow in the same tab
-   * - must say nothing. A mark that survived its reading would turn one
-   * sign-out into a standing notice on a page nobody signed out from.
+   * which is the half that makes the acknowledgement honest: it
+   * acknowledges an act, so a reload of this page - or a visit tomorrow
+   * in the same tab - must say nothing. A mark that survived its
+   * reading would turn one sign-out into a standing notice on a page
+   * nobody signed out from.
    *
    * The name is a second literal rather than a borrowed constant
    * because this page does not load signout.js, and it must not: the
@@ -127,10 +128,22 @@
    * dev/session.test.mjs compares the two literals.
    *
    * Nothing here runs without scripts, and that costs nothing: sign-out
-   * itself is a script, so a browser that cannot show this line is one
-   * that could not have produced the state it describes.
+   * itself is a script, so a browser that cannot show this is one that
+   * could not have produced the state it describes.
+   *
+   * THE VEHICLE IS THE SHARED TOAST (owner ruling 2026-08-23, UX record
+   * #454 comment 5389445914): item 8 sends the result of an act to the
+   * toast, and item 14 admits only three things above the door's
+   * sign-in button - an inline line here was a fourth one on the
+   * commonest way back to this page. SIGNED_OUT_LINE is a CONSTANT and
+   * is the whole of what is ever shown: the sessionStorage mark is a
+   * boolean trigger and never a source of text, so nothing a page,
+   * a URL or a store can write reaches the screen through here.
+   * tools/check_web.py's RULED_TOAST_LINES pins the words (#275),
+   * the call below, and index.html's own #toast element.
    */
   const SIGNED_OUT_KEY = "hgb-signed-out";
+  const SIGNED_OUT_LINE = "Signed out.";
 
   function acknowledgeSignOut() {
     let marked = false;
@@ -147,8 +160,9 @@
       return;
     }
     if (!marked) return;
-    const line = document.getElementById("signed-out");
-    if (line && UI && typeof UI.show === "function") UI.show(line, true);
+    if (UI && typeof UI.showToast === "function") {
+      UI.showToast(SIGNED_OUT_LINE);
+    }
   }
 
   if (typeof document !== "undefined" && UI) {

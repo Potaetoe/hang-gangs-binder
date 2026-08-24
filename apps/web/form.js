@@ -740,15 +740,36 @@
    * "change" listener already uses below, rather than one delegated
    * listener on the container. "focusout" rather than "blur": blur does
    * not bubble and this file wires every control anyway, but focusout
-   * is the DOM's own name for exactly "the member left this field",
-   * which is what the ruling asks for - "as the member leaves each
-   * field", never on keystroke (there is no "input" listener here) and
-   * never held until submit.
+   * is the DOM's own name for leaving a control, and the ruling is
+   * about leaving a FIELD - "as the member leaves each field", never on
+   * keystroke (there is no "input" listener here) and never held until
+   * submit.
+   *
+   * A FIELD IS NOT A CONTROL, and several field kinds are more than one
+   * control: a multi-choice field is a checkbox per option, and a
+   * measured field is an imperial box (two, for a compound one like
+   * feet-and-inches) beside a metric one. Tabbing from one of those to
+   * the next is a member still answering the same question, so
+   * validating there tells them they have not answered something they
+   * are in the middle of. focusout's own relatedTarget - where the
+   * focus WENT - is the only thing that can tell the two apart, and it
+   * is compared against this field's own controls rather than against a
+   * container element, because the field kinds wrap their controls in
+   * different shapes (a <fieldset>, a <div>, a units group) and a
+   * markup-shaped test would be right about some of them.
+   *
+   * relatedTarget is null when the focus left the document entirely, or
+   * went to something that cannot hold it - that IS a field exit, and
+   * falls through to validating, which is the state a member who
+   * clicked the page background is in.
    */
   function wireFieldValidation(container) {
     plan().forEach(function (entry) {
-      inputsFor(entry.name).forEach(function (ctrl) {
-        ctrl.addEventListener("focusout", function () {
+      const controls = inputsFor(entry.name);
+      controls.forEach(function (ctrl) {
+        ctrl.addEventListener("focusout", function (event) {
+          const went = event && event.relatedTarget;
+          if (went && controls.indexOf(went) !== -1) return;
           validateFieldNow(entry, container);
         });
       });
