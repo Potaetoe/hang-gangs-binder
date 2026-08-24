@@ -14,6 +14,14 @@ export default defineConfig({
 			typescript: {
 				config: (config) => {
 					config.include.push('../drizzle.config.ts');
+					// Keep svelte-check out of build output: without
+					// these, a local run after any build drowns real
+					// errors in hundreds from the compiled _worker.js.
+					config.exclude.push(
+						'../.svelte-kit/cloudflare/**',
+						'../.svelte-kit/output/**',
+						'../.wrangler/**'
+					);
 				}
 			}
 		})
