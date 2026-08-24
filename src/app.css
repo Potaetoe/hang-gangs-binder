@@ -875,6 +875,30 @@ main.with-rail {
 	.stat-value {
 		font-size: 1.35rem;
 	}
+	/* Desktop: the bubble floats over its own bar. */
+	.dist-bar {
+		position: relative;
+	}
+	.dist-bar:hover::after,
+	.dist-bar:focus::after {
+		left: 50%;
+		right: auto;
+		transform: translateX(-50%);
+		white-space: nowrap;
+		text-align: left;
+		bottom: calc(100% + 8px);
+	}
+	.dist-bar:first-child:hover::after,
+	.dist-bar:first-child:focus::after {
+		left: 0;
+		transform: none;
+	}
+	.dist-bar:last-child:hover::after,
+	.dist-bar:last-child:focus::after {
+		left: auto;
+		right: 0;
+		transform: none;
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -1070,10 +1094,14 @@ a.wordmark {
 	flex: none;
 }
 
-/* The bar's bubble: hover on a mouse, tap on a phone, no JavaScript.
-   (owner, 2026-08-24). */
-.dist-bar {
+/* The bar's bubble: hover on a mouse, tap on a phone, no JavaScript
+   (owner, 2026-08-24). On the phone the bubble is a full-width strip
+   above the chart, so it can never clip at the walls; the desktop
+   media query floats it over the bar instead. */
+.dist {
 	position: relative;
+}
+.dist-bar {
 	cursor: pointer;
 }
 .dist-bar:focus-visible {
@@ -1084,10 +1112,10 @@ a.wordmark {
 .dist-bar:focus::after {
 	content: attr(data-label);
 	position: absolute;
-	bottom: calc(100% + 8px);
-	left: 50%;
-	transform: translateX(-50%);
-	white-space: nowrap;
+	bottom: calc(100% + 10px);
+	left: 0;
+	right: 0;
+	text-align: center;
 	padding: 0.3rem 0.6rem;
 	font-family: var(--font-mono);
 	font-size: 0.75rem;
@@ -1097,15 +1125,4 @@ a.wordmark {
 	border-radius: 0.5rem;
 	z-index: 5;
 	pointer-events: none;
-}
-.dist-bar:first-child:hover::after,
-.dist-bar:first-child:focus::after {
-	left: 0;
-	transform: none;
-}
-.dist-bar:last-child:hover::after,
-.dist-bar:last-child:focus::after {
-	left: auto;
-	right: 0;
-	transform: none;
 }
