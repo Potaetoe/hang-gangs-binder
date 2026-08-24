@@ -1312,6 +1312,18 @@ const PUBLIC_NAMES = ["site.groupName", "site.welcomeText",
   check("...and no member carries a telegramId field at all, however " +
     "the record it came from was shaped",
     listed.every((row) => row.telegramId === undefined));
+  // EXACTLY THESE THREE KEYS, not "the ones we thought to check for".
+  // The sealed record also carries `role`, and naming the absent field
+  // one at a time only ever refuses the leaks somebody already
+  // imagined - an allow-list refuses the next field added to
+  // syncDirectoryEntry too, which is the one nobody will re-read this
+  // comment before adding.
+  check("...and a member carries EXACTLY accountId, handle and " +
+    "displayName - an allow-list, so a field added to the sealed " +
+    "record later cannot ride out through here unnoticed",
+    listed.length > 0 && listed.every((row) =>
+      JSON.stringify(Object.keys(row).sort()) ===
+      JSON.stringify(["accountId", "displayName", "handle"])));
 }
 
 {
@@ -1365,7 +1377,7 @@ const PUBLIC_NAMES = ["site.groupName", "site.welcomeText",
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 94;
+const EXPECTED = 95;
 console.log(failures
   ? `\nadmin-identity FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
