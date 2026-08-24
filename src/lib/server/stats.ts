@@ -34,12 +34,15 @@ export function round(value: number, places: number): number {
 /** A positive number, or null. Strict on purpose: Number('') is 0 and
  * parseFloat('5kg') is 5, and both would sail through as a value
  * nobody meant. A comma decimal is accepted because half the world
- * types one. */
-export function parseNumber(text: string): number | null {
+ * types one. `allowZero` exists for the inch box - a person who is
+ * exactly 6 ft 0 in types a zero and means it (owner's drive,
+ * 2026-08-24). */
+export function parseNumber(text: string, allowZero = false): number | null {
 	const value = text.trim().replace(',', '.');
 	if (value === '' || !/^\d*\.?\d+$/.test(value)) return null;
 	const number = Number(value);
-	return Number.isFinite(number) && number > 0 ? number : null;
+	if (!Number.isFinite(number)) return null;
+	return number > 0 || (allowZero && number === 0) ? number : null;
 }
 
 /** feet/inches derived from the total so they cannot disagree with
@@ -207,8 +210,9 @@ export function parseEntryForm(fields: Field[], form: FormData, units: Units): P
 			const ftRaw = String(form.get(`f_${field.id}_ft`) ?? '').trim();
 			const inRaw = String(form.get(`f_${field.id}_in`) ?? '').trim();
 			if (!ftRaw && !inRaw) continue;
-			const feet = ftRaw ? parseNumber(ftRaw) : 0;
-			const inches = inRaw ? parseNumber(inRaw) : 0;
+			// Either box may be zero; the TOTAL must be above zero.
+			const feet = ftRaw ? parseNumber(ftRaw, true) : 0;
+			const inches = inRaw ? parseNumber(inRaw, true) : 0;
 			if (feet === null || inches === null) {
 				problems.push(`${field.name}: enter feet and inches as numbers.`);
 				continue;

@@ -380,10 +380,12 @@ export function focusView(
 	}
 
 	// Distribution of the latest values, with the viewer's own bucket
-	// lit ("you are here").
+	// lit ("you are here") - but only when the viewer is IN the
+	// filtered view. Outside the filters, nothing shows (owner's
+	// drive, 2026-08-24).
 	const b = buckets(latest);
 	if (b) {
-		const viewerValue = latestValue(group.get(viewerId) ?? [], field.id, {});
+		const viewerValue = latestValue(group.get(viewerId) ?? [], field.id, filters);
 		const you = viewerValue ? numberOf(viewerValue, units) : null;
 		const youBucket =
 			you == null ? -1 : Math.min(b.counts.length - 1, Math.floor((you - b.start) / b.step));

@@ -84,22 +84,26 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 	await expect(page.getByRole('heading', { name: 'Weight' })).toBeVisible();
 
 	// Filter: men from Iceland - exactly one member, shown floorless.
+	// The viewer is a woman, so no "you are here" marker may show.
 	await page.getByLabel('Gender').selectOption('Male');
 	await page.getByLabel('Country').selectOption('Iceland');
 	await page.getByRole('button', { name: 'Apply' }).click();
 	await expect(page.locator('.stat').filter({ hasText: '200 lb' })).toBeVisible();
 	await expect(page.getByText(/^1 of \d+/).first()).toBeVisible();
+	await expect(page.getByText(/you are here/)).not.toBeVisible();
 
 	// The same member in the other system: both were stored.
 	await page.getByRole('button', { name: 'Metric' }).click();
 	await expect(page.locator('.stat').filter({ hasText: '90.7 kg' })).toBeVisible();
 	await page.getByRole('button', { name: 'Imperial' }).click();
 
-	// Loosen to everyone from Iceland: two members averaged.
+	// Loosen to everyone from Iceland: two members averaged, and the
+	// viewer is one of them - now the marker may speak.
 	await page.getByLabel('Gender').selectOption('');
 	await page.getByRole('button', { name: 'Apply' }).click();
 	await expect(page.locator('.stat').filter({ hasText: '175 lb' })).toBeVisible();
 	await expect(page.getByText(/^2 of \d+/).first()).toBeVisible();
+	await expect(page.getByText(/you are here: 150 lb/)).toBeVisible();
 
 	// A choice field focuses into counts.
 	await page.locator('.fieldlist').getByRole('link', { name: 'Gender' }).click();
