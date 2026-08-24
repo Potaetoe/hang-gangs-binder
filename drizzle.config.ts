@@ -1,18 +1,14 @@
 import { defineConfig } from 'drizzle-kit';
 
-if (!process.env.CLOUDFLARE_ACCOUNT_ID) throw new Error('CLOUDFLARE_ACCOUNT_ID is not set');
-if (!process.env.CLOUDFLARE_DATABASE_ID) throw new Error('CLOUDFLARE_DATABASE_ID is not set');
-if (!process.env.CLOUDFLARE_D1_TOKEN) throw new Error('CLOUDFLARE_D1_TOKEN is not set');
-
+// Migrations are generated offline (`npm run db:generate`) and applied
+// with wrangler (`wrangler d1 migrations apply binder-db`), so this
+// config needs no Cloudflare credentials. `db:push`/`db:studio` would -
+// we do not use them; the migration files are the only schema channel
+// (WORKING.md, ops runbook).
 export default defineConfig({
 	schema: './src/lib/server/db/schema.ts',
+	out: './drizzle',
 	dialect: 'sqlite',
-	driver: 'd1-http',
-	dbCredentials: {
-		accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-		databaseId: process.env.CLOUDFLARE_DATABASE_ID,
-		token: process.env.CLOUDFLARE_D1_TOKEN
-	},
 	verbose: true,
 	strict: true
 });

@@ -52,6 +52,35 @@ def segments(command):
     return [s.strip() for s in re.split(r"[;&|]+", command) if s.strip()]
 
 
+def strip_quoted(command):
+    """The command with quoted spans blanked. A real `git push` is
+    never quoted; a MENTION of one - a commit message, a test fixture
+    string, a heredoc writing a test - always is. Matching the raw
+    text made the gate deny the selftest that was being written to
+    prove the gate (2026-08-24), which is this function's birthday."""
+    return re.sub(r"'[^']*'|\"[^\"]*\"", "''", command)
+
+
+def chained(command):
+    """[(segment, joiner_before)] with joiner_before in
+    {None, "&&", "||", ";", "|"}. A gate may honor a recording command
+    that stands EARLIER in an all-&& chain: if the record fails, &&
+    stops the gated act anyway - so record-then-act in one command is
+    atomic-safe, and denying it twice taught us to read it instead
+    (owner, 2026-08-24)."""
+    parts = re.split(r"(\s*&&\s*|\s*\|\|\s*|\s*;\s*|\s*\|\s*)", command)
+    out = []
+    joiner = None
+    for part in parts:
+        stripped = part.strip()
+        if stripped in ("&&", "||", ";", "|"):
+            joiner = stripped
+        elif stripped:
+            out.append((stripped, joiner))
+            joiner = None
+    return out
+
+
 def current_branch():
     override = os.environ.get("BINDER_BRANCH")
     if override:

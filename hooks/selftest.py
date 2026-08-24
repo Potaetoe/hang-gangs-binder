@@ -81,6 +81,27 @@ with tempfile.TemporaryDirectory() as tmp:
           state_env({"signoff": {"target": "v1"}}))
     check("feature-branch push needs no sign-off", "merge_gate.py",
           bash("git push origin feature-x"), False, state_env())
+    check("record-signoff && push in ONE chain passes - a failed "
+          "record stops the chain anyway", "merge_gate.py",
+          bash('py -3 hooks/record.py signoff v1 "ok" && '
+               'git push origin v1'),
+          False, state_env())
+    check("record ; push (not &&) is still denied - a failed record "
+          "would not stop it", "merge_gate.py",
+          bash('py -3 hooks/record.py signoff v1 "ok" ; '
+               'git push origin v1'),
+          True, state_env())
+    check("push && record-AFTER is still denied - too late",
+          "merge_gate.py",
+          bash('git push origin v1 && '
+               'py -3 hooks/record.py signoff v1 "ok"'),
+          True, state_env())
+    check("a QUOTED mention of a push is not a push - a commit "
+          "message or a fixture string never trips the gate",
+          "merge_gate.py",
+          bash('git commit -m "the gate denies git push origin v1 '
+               'without a signoff"'),
+          False, state_env())
 
     # deploy_gate
     mig = os.path.join(tmp, "mig")
@@ -95,6 +116,22 @@ with tempfile.TemporaryDirectory() as tmp:
     env_ok["BINDER_MIGRATIONS_DIR"] = mig
     check("deploy with migrations current", "deploy_gate.py",
           bash("npx wrangler deploy"), False, env_ok)
+    # state_env writes ONE shared file, so behind-state is rebuilt
+    # before each case that needs it - the first version of these two
+    # reused a dict whose file a later case had already overwritten.
+    env_behind = dict(state_env({"migrations_applied": "0000_older.sql"}))
+    env_behind["BINDER_MIGRATIONS_DIR"] = mig
+    check("record-migration && deploy in ONE chain passes",
+          "deploy_gate.py",
+          bash("py -3 hooks/record.py migrations-applied "
+               "0001_first.sql && npx wrangler deploy"),
+          False, env_behind)
+    env_behind = dict(state_env({"migrations_applied": "0000_older.sql"}))
+    env_behind["BINDER_MIGRATIONS_DIR"] = mig
+    check("record ; deploy (not &&) is still denied", "deploy_gate.py",
+          bash("py -3 hooks/record.py migrations-applied "
+               "0001_first.sql ; npx wrangler deploy"),
+          True, env_behind)
 
     # secret_guard
     def write(path, content):
@@ -111,6 +148,10 @@ with tempfile.TemporaryDirectory() as tmp:
                 "const s = platform.env.SESSION_SECRET;"), False)
     check(".env itself passes", "secret_guard.py",
           write("C:/repo/.env", "SESSION_SECRET=abcdefabcdefabcdefabcdef"),
+          False)
+    check(".dev.vars passes - it is the local secrets file",
+          "secret_guard.py",
+          write("C:/repo/.dev.vars", "ID_SECRET=abcdefabcdefabcdefabcdef"),
           False)
 
     # fleet_guard

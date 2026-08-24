@@ -3,10 +3,10 @@ to the frozen old branches, no skipping checks."""
 
 import re
 
-from _common import read_input, command_of, segments, deny
+from _common import read_input, command_of, segments, strip_quoted, deny
 
 payload = read_input()
-for seg in segments(command_of(payload)):
+for seg in segments(strip_quoted(command_of(payload))):
     is_git_push = bool(re.search(r"\bgit\s+push\b", seg))
 
     if is_git_push and re.search(r"(\s|^)(-f|--force)(\s|$)", seg):

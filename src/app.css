@@ -1,0 +1,170 @@
+/* The Binder's face, carried over from the old world (DESIGN.md, "The
+   look"): Playfair Display for the wordmark and headings, DM Sans for
+   text, JetBrains Mono for data, the midnight and daylight palettes
+   following the phone. The remaining palettes arrive with the theme
+   picker feature. */
+
+@font-face {
+	font-family: 'Playfair Display';
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+	src: url('/fonts/playfair-display-600-latin.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'Playfair Display';
+	font-style: italic;
+	font-weight: 600;
+	font-display: swap;
+	src: url('/fonts/playfair-display-600-italic-latin.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'DM Sans';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/dm-sans-400-latin.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'DM Sans';
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+	src: url('/fonts/dm-sans-600-latin.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'JetBrains Mono';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/jetbrains-mono-400-latin.woff2') format('woff2');
+}
+
+:root {
+	--font-text: 'DM Sans', system-ui, sans-serif;
+	--font-display: 'Playfair Display', Georgia, serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+	/* daylight */
+	--color-bg: #f3eadb;
+	--color-surface: #fbf5ea;
+	--color-accent: #8e2530;
+	--color-on-accent: #fbf1e4;
+	--color-text: #2e2226;
+	--color-text-muted: #61524b;
+	--color-border: #d6c6b0;
+	--color-border-strong: #857567;
+
+	--radius: 0.75rem;
+	--space: 1rem;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		/* midnight */
+		--color-bg: #120d10;
+		--color-surface: #1c1417;
+		--color-accent: #c73743;
+		--color-on-accent: #fff7f1;
+		--color-text: #f1e9e2;
+		--color-text-muted: #bba9a6;
+		--color-border: #4a3a40;
+		--color-border-strong: #7a6870;
+	}
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--color-bg);
+	color: var(--color-text);
+	font-family: var(--font-text);
+	font-size: 16px;
+	line-height: 1.5;
+	min-height: 100svh;
+}
+
+main {
+	max-width: 26rem;
+	margin: 0 auto;
+	padding: 1.5rem 1rem 3rem;
+}
+
+h1,
+h2 {
+	font-family: var(--font-display);
+	font-weight: 600;
+	margin: 0 0 0.5rem;
+}
+
+.wordmark {
+	font-family: var(--font-mono);
+	font-size: 0.8rem;
+	letter-spacing: 0.2em;
+	text-transform: uppercase;
+	color: var(--color-accent);
+	margin: 0.5rem 0 0;
+}
+
+.wordmark + h1 {
+	font-style: italic;
+	font-size: 2rem;
+}
+
+.card {
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius);
+	padding: var(--space);
+	margin-block: var(--space);
+}
+
+label {
+	display: block;
+	font-weight: 600;
+	margin-bottom: 0.25rem;
+}
+
+input {
+	display: block;
+	width: 100%;
+	min-height: 2.75rem;
+	padding: 0.5rem 0.75rem;
+	margin-bottom: 0.75rem;
+	font: inherit;
+	color: inherit;
+	background: var(--color-bg);
+	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius);
+}
+
+button,
+.button {
+	display: inline-block;
+	min-height: 2.75rem;
+	padding: 0.5rem 1rem;
+	font: inherit;
+	font-weight: 600;
+	color: var(--color-on-accent);
+	background: var(--color-accent);
+	border: 1px solid var(--color-accent);
+	border-radius: var(--radius);
+	cursor: pointer;
+	text-decoration: none;
+}
+
+.muted {
+	color: var(--color-text-muted);
+}
+
+.error {
+	color: var(--color-accent);
+	font-weight: 600;
+}
+
+a {
+	color: var(--color-accent);
+}
