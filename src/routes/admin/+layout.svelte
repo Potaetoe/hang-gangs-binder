@@ -3,7 +3,8 @@
 	import { resolve } from '$app/paths';
 	import Nav from '$lib/Nav.svelte';
 
-	let { children }: { children: import('svelte').Snippet } = $props();
+	let { data, children }: { data: { pendingCount: number }; children: import('svelte').Snippet } =
+		$props();
 
 	const sections = [
 		{ path: '/admin/approvals', name: 'Approvals' },
@@ -26,7 +27,9 @@
 				{#each sections as section (section.path)}
 					<li>
 						<a href={resolve(section.path)} class:on={active.startsWith(section.path)}
-							>{section.name}</a
+							>{section.name}{section.name === 'Approvals' && data.pendingCount
+								? ` (${data.pendingCount})`
+								: ''}</a
 						>
 					</li>
 				{/each}

@@ -8,7 +8,7 @@
 </script>
 
 <svelte:head>
-	<title>Your page — {data.siteName} Binder</title>
+	<title>Home — {data.siteName} Binder</title>
 </svelte:head>
 
 <Nav active="home" />
@@ -17,6 +17,11 @@
 	<h1>Hello, {data.name}</h1>
 	{#if data.isAdmin}
 		<p class="muted">You are signed in as an admin.</p>
+	{/if}
+	{#if data.pendingCount}
+		<a class="card banner" href={resolve('/admin/approvals')}
+			>{data.pendingCount === 1 ? 'Someone is' : `${data.pendingCount} people are`} waiting to be approved</a
+		>
 	{/if}
 
 	<details class="flap name-flap">

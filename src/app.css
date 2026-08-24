@@ -384,7 +384,7 @@ select {
 	border-top: 1px solid var(--color-border);
 	background: var(--color-surface);
 }
-.rail-brand {
+.rail .rail-brand {
 	display: none;
 }
 .rail a {
@@ -746,8 +746,10 @@ main.with-rail {
 		gap: 1.75rem;
 		padding: 0.4rem 2.5rem;
 	}
-	.rail-brand {
+	.rail .rail-brand {
 		display: block;
+		flex: none;
+		padding: 0;
 		margin-right: auto;
 	}
 	.rail-brand-name {
@@ -947,4 +949,41 @@ button.quiet {
 }
 .admin-table tr:last-child td {
 	border-bottom: 0;
+}
+
+/* The brand is a way home (owner, 2026-08-24). */
+a.rail-brand {
+	text-decoration: none;
+	color: var(--color-text);
+}
+
+/* A flap wearing a button face: Reset password, Remove member. */
+.button-flap > summary {
+	display: inline-flex;
+	justify-content: center;
+	min-height: 2.75rem;
+	padding: 0.5rem 1rem;
+	font-family: var(--font-text);
+	font-size: 1rem;
+	font-weight: 600;
+	color: var(--color-text-muted);
+	background: transparent;
+	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius);
+}
+.button-flap > summary::after {
+	content: '';
+}
+
+.units.wrap {
+	flex-wrap: wrap;
+}
+
+/* The waiting-to-be-approved banner on an admin's home. */
+a.banner {
+	display: block;
+	font-weight: 600;
+	color: var(--color-accent);
+	border-color: var(--color-accent);
+	text-decoration: none;
 }

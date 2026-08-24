@@ -138,7 +138,7 @@ export const actions: Actions = {
 			return fail(400, {
 				message:
 					result.reason === 'no-password-door'
-						? 'This member has no password door to reset.'
+						? 'This member has no password sign-in to reset.'
 						: 'A passphrase needs 8 to 128 characters.'
 			});
 		}

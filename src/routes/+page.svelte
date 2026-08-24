@@ -27,8 +27,8 @@
 			></script>
 		{:else}
 			<p class="muted">
-				The Telegram door is not set up yet — the operator still has to connect the bot. The
-				password door below works.
+				Telegram sign-in is not set up yet — the operator still has to connect the bot. The password
+				sign-in below works.
 			</p>
 		{/if}
 	</section>

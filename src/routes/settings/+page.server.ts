@@ -7,7 +7,8 @@ import { PALETTES } from '$lib/server/settings';
 
 /** The member's own settings (owner ruling 2026-08-24): device-level
  * choices, stored in cookies like the units toggle - the admin's
- * site settings stay the default for anyone who has not chosen. */
+ * site settings stay the default for anyone who has not chosen. One
+ * tap saves; there is no Save button. */
 export const load: PageServerLoad = async ({ locals, platform, cookies }) => {
 	if (!locals.member) redirect(303, '/');
 	const db = getDb(platform!.env.DB);
@@ -38,15 +39,20 @@ const COOKIE = {
 } as const;
 
 export const actions: Actions = {
-	save: async ({ request, locals, cookies }) => {
+	theme: async ({ request, locals, cookies }) => {
 		if (!locals.member) redirect(303, '/');
-		const form = await request.formData();
-		const theme = String(form.get('theme') ?? '');
+		const theme = String((await request.formData()).get('theme') ?? '');
 		if (theme && theme in PALETTES) {
 			cookies.set('theme', theme, COOKIE);
 		} else {
 			cookies.delete('theme', { path: '/' });
 		}
+		redirect(303, '/settings');
+	},
+
+	units: async ({ request, locals, cookies }) => {
+		if (!locals.member) redirect(303, '/');
+		const form = await request.formData();
 		cookies.set('units', form.get('units') === 'metric' ? 'metric' : 'imperial', COOKIE);
 		redirect(303, '/settings');
 	}

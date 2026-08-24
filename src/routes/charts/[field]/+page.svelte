@@ -63,7 +63,7 @@
 				</form>
 			{/if}
 
-			<p class="back-to-board"><a href={resolve('/charts')}>&larr; All charts</a></p>
+			<p class="back-to-board"><a href={resolve('/charts')}>&larr; All stats</a></p>
 		</div>
 
 		<div class="charts-col">

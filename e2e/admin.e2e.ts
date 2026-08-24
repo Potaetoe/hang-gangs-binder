@@ -60,9 +60,9 @@ test('the admin approves, denies, and the log remembers', async ({ page }) => {
 	await signIn(page, boss);
 	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).toBeVisible();
 
-	// The admin sees who is asking and lets one in.
-	await page.locator('.rail').getByRole('link', { name: 'Admin' }).click();
-	await page.locator('.fieldlist').getByRole('link', { name: 'Approvals' }).click();
+	// The waiting banner carries the admin straight to approvals.
+	await expect(page.locator('.banner')).toContainText('waiting to be approved');
+	await page.locator('.banner').click();
 	const askerRow = page.locator('.history li').filter({ hasText: asker });
 	await expect(askerRow).toBeVisible();
 	await askerRow.getByRole('button', { name: 'Approve' }).click();
@@ -114,7 +114,7 @@ test('the admin sees everything, and the passphrase walls the member off', async
 	await expect(page.getByText('200 lb').first()).toBeVisible();
 
 	// A temporary passphrase, typed by the admin.
-	await page.getByText('Set a temporary passphrase').click();
+	await page.getByText('Reset password', { exact: true }).click();
 	await fillStable(page, /temporary passphrase/i, 'temp-pass-123');
 	await page.getByRole('button', { name: 'Set passphrase' }).click();
 	await expect(page.getByText(/hand it over out of band/i)).toBeVisible();
@@ -180,16 +180,14 @@ test('a member paints their own device', async ({ page }) => {
 
 	// The rail carries every member to their settings.
 	await page.locator('.rail').getByRole('link', { name: 'Settings' }).click();
-	await page.getByLabel('Theme').selectOption('meadow');
-	await page.getByRole('button', { name: 'Save' }).click();
+	await page.getByRole('button', { name: 'Meadow' }).click();
 	await expect(async () => {
 		const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 		expect(bg).toBe('rgb(242, 239, 233)');
 	}).toPass({ timeout: 5000 });
 
 	// Back to the site default.
-	await page.getByLabel('Theme').selectOption('');
-	await page.getByRole('button', { name: 'Save' }).click();
+	await page.getByRole('button', { name: 'Site default' }).click();
 });
 
 test('settings shape the site', async ({ page }) => {

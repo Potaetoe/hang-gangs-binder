@@ -75,8 +75,8 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 	await logEntry(page, { weight: '150', gender: 'Female', country: 'Iceland' });
 
 	// The rail carries them to the board.
-	await page.locator('.rail').getByRole('link', { name: 'Charts' }).click();
-	await expect(page.getByRole('heading', { name: 'Charts' })).toBeVisible();
+	await page.locator('.rail').getByRole('link', { name: 'Group Stats' }).click();
+	await expect(page.getByRole('heading', { name: 'Group Stats' })).toBeVisible();
 	await expect(page.locator('.tile').filter({ hasText: 'Weight' })).toBeVisible();
 
 	// Into the focused field.
@@ -125,5 +125,5 @@ test('the rail is a bottom bar on the phone and wears the brand on desktop', asy
 	await page.setViewportSize({ width: 375, height: 812 });
 	await page.reload();
 	await expect(page.locator('.rail-brand-name')).not.toBeVisible();
-	await expect(page.locator('.rail').getByRole('link', { name: 'Charts' })).toBeVisible();
+	await expect(page.locator('.rail').getByRole('link', { name: 'Group Stats' })).toBeVisible();
 });

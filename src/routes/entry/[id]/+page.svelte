@@ -34,5 +34,5 @@
 		</form>
 	</details>
 
-	<p><a href={resolve('/home')}>&larr; Back to your page</a></p>
+	<p><a href={resolve('/home')}>&larr; Back home</a></p>
 </main>

@@ -7,7 +7,7 @@
 </script>
 
 <svelte:head>
-	<title>Charts — {data.siteName} Binder</title>
+	<title>Group Stats — {data.siteName} Binder</title>
 </svelte:head>
 
 <Nav active="charts" />
@@ -15,7 +15,7 @@
 	<div class="page-head">
 		<div>
 			<p class="wordmark">{data.siteName}</p>
-			<h1>Charts</h1>
+			<h1>Group Stats</h1>
 			<p class="muted">
 				{data.members === 1 ? '1 member' : `${data.members} members`} &middot; tap a tile for detail and
 				filters

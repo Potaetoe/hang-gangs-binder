@@ -23,26 +23,35 @@
 <main class="with-rail">
 	<p class="wordmark">{page.data.siteName}</p>
 	<h1>Settings</h1>
-	<p class="muted">Yours, on this device.</p>
+	<p class="muted">Yours, on this device. A tap saves it.</p>
 
 	<section class="card">
-		<form method="POST" action="?/save">
-			<label for="theme">Theme</label>
-			<select id="theme" name="theme">
-				{#each data.themeChoices as choice (choice)}
-					<option value={choice} selected={data.myTheme === choice}
-						>{themeNames[choice] ?? choice}</option
-					>
-				{/each}
-			</select>
+		<h2>Theme</h2>
+		<form method="POST" action="?/theme" class="units wrap">
+			{#each data.themeChoices as choice (choice)}
+				<button
+					name="theme"
+					value={choice}
+					class:on={data.myTheme === choice}
+					aria-pressed={data.myTheme === choice}>{themeNames[choice] ?? choice}</button
+				>
+			{/each}
+		</form>
 
-			<label for="units">Units</label>
-			<select id="units" name="units">
-				<option value="imperial" selected={data.myUnits === 'imperial'}>Imperial (US)</option>
-				<option value="metric" selected={data.myUnits === 'metric'}>Metric</option>
-			</select>
-
-			<button>Save</button>
+		<h2>Units</h2>
+		<form method="POST" action="?/units" class="units">
+			<button
+				name="units"
+				value="imperial"
+				class:on={data.myUnits === 'imperial'}
+				aria-pressed={data.myUnits === 'imperial'}>Imperial (US)</button
+			>
+			<button
+				name="units"
+				value="metric"
+				class:on={data.myUnits === 'metric'}
+				aria-pressed={data.myUnits === 'metric'}>Metric</button
+			>
 		</form>
 	</section>
 

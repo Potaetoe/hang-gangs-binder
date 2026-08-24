@@ -14,7 +14,7 @@
 	<p class="muted">
 		{data.member.username ? `username: ${data.member.username} · ` : ''}{data.member.handle
 			? `telegram: @${data.member.handle} · `
-			: ''}doors: {data.member.doors || 'none'}
+			: ''}sign-in: {data.member.doors || 'none'}
 	</p>
 
 	{#if form?.message}
@@ -41,8 +41,8 @@
 	</div>
 
 	{#if data.hasPasswordDoor}
-		<details class="flap">
-			<summary>Set a temporary passphrase</summary>
+		<details class="flap button-flap">
+			<summary>Reset password</summary>
 			<form method="POST" action="?/passphrase">
 				<label for="passphrase">Temporary passphrase (8+ characters)</label>
 				<input id="passphrase" name="passphrase" autocomplete="off" />
@@ -55,12 +55,12 @@
 		</details>
 	{/if}
 
-	<details class="flap">
+	<details class="flap button-flap">
 		<summary>Remove this member for good</summary>
 		<form method="POST" action="?/purge">
 			<p class="muted">
-				Everything goes: the account, both doors, every entry, the correction trail. The change log
-				keeps one unlinkable line. There is no undo.
+				Everything goes: the account, every sign-in, every entry, the correction trail. The change
+				log keeps one unlinkable line. There is no undo.
 			</p>
 			<button>Yes, remove everything</button>
 		</form>

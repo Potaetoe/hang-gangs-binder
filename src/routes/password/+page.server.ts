@@ -32,7 +32,7 @@ export const actions: Actions = {
 						? 'The current password did not match.'
 						: result.reason === 'bad-password'
 							? 'A password needs 8 to 128 characters.'
-							: 'This account has no password door.'
+							: 'This account has no password sign-in.'
 			});
 		}
 		redirect(303, '/home');

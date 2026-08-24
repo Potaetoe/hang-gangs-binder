@@ -16,7 +16,7 @@
 					<tr>
 						<th>Name</th>
 						<th>Standing</th>
-						<th>Doors</th>
+						<th>Sign-in</th>
 						<th>Entries</th>
 						<th>Last entry</th>
 						<th></th>
