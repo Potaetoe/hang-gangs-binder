@@ -66,6 +66,17 @@ async function writeIdentity(db: Db, secrets: Secrets, memberId: string, identit
 		});
 }
 
+/** Your page's "call me" control (owner ruling 2026-08-24): the
+ * display name is the member's to change; the rest of the sealed
+ * identity stays as it is. */
+export async function setDisplayName(db: Db, secrets: Secrets, memberId: string, name: string) {
+	const existing = await identityOf(db, secrets, memberId);
+	await writeIdentity(db, secrets, memberId, {
+		...existing,
+		displayName: name.trim().slice(0, 64) || undefined
+	});
+}
+
 /* ---------------------------------------------------------------- */
 /* Sessions                                                          */
 

@@ -169,10 +169,11 @@ a {
 	color: var(--color-accent);
 }
 
-/* The password door's flap: the summary reads as a quiet button, the
-   form unfolds under it. Quiet on purpose - Telegram is the main way
-   in, this is the side path. */
-.door-flap > summary {
+/* The flap: a summary that reads as a quiet control, a form that
+   unfolds under it. The password door wears it big; the smaller flaps
+   (name, delete) wear it quiet. */
+.door-flap > summary,
+.flap > summary {
 	cursor: pointer;
 	font-family: var(--font-display);
 	font-weight: 600;
@@ -183,17 +184,170 @@ a {
 	align-items: center;
 	gap: 0.5rem;
 }
-.door-flap > summary::-webkit-details-marker {
+.door-flap > summary::-webkit-details-marker,
+.flap > summary::-webkit-details-marker {
 	display: none;
 }
-.door-flap > summary::after {
+.door-flap > summary::after,
+.flap > summary::after {
 	content: '+';
 	color: var(--color-accent);
 	font-family: var(--font-text);
 }
-.door-flap[open] > summary::after {
+.door-flap[open] > summary::after,
+.flap[open] > summary::after {
 	content: '\2212';
 }
-.door-flap > form {
+.door-flap > form,
+.flap > form {
 	margin-top: 0.75rem;
+}
+.flap > summary {
+	font-family: var(--font-text);
+	font-size: 0.9rem;
+	font-weight: 400;
+	color: var(--color-text-muted);
+	min-height: 2rem;
+}
+
+/* The entry form (the core loop). */
+select {
+	display: block;
+	width: 100%;
+	min-height: 2.75rem;
+	padding: 0.5rem 0.75rem;
+	margin-bottom: 0.75rem;
+	font: inherit;
+	color: inherit;
+	background: var(--color-bg);
+	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius);
+}
+
+/* A number and the unit it belongs to; must never wrap apart. */
+.row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.row input {
+	flex: 1;
+	min-width: 0;
+}
+.suffix {
+	flex: none;
+	font-size: 0.9rem;
+	color: var(--color-text-muted);
+	padding-bottom: 0.75rem;
+}
+
+.card-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
+.card-head p {
+	margin: 0;
+}
+
+/* Imperial | Metric: one form, two submit buttons, the active one
+   filled in. */
+.units {
+	display: flex;
+	gap: 0.5rem;
+	margin-bottom: 1rem;
+}
+.units button {
+	min-height: 2.25rem;
+	padding: 0.25rem 0.9rem;
+	font-size: 0.9rem;
+	color: var(--color-text-muted);
+	background: transparent;
+	border: 1px solid var(--color-border-strong);
+}
+.units button.on {
+	color: var(--color-on-accent);
+	background: var(--color-accent);
+	border-color: var(--color-accent);
+}
+
+.problems {
+	margin: 0 0 0.75rem;
+	padding-left: 1.25rem;
+}
+.computed {
+	font-size: 0.9rem;
+	margin: 0 0 0.75rem;
+}
+
+/* Trends: small server-drawn lines, latest value underneath. */
+.trends {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+	gap: 0.75rem;
+}
+.trend {
+	margin-block: 0;
+}
+.trend svg {
+	display: block;
+	width: 100%;
+	height: 44px;
+}
+.trend polyline {
+	fill: none;
+	stroke: var(--color-accent);
+	stroke-width: 2;
+	stroke-linejoin: round;
+	stroke-linecap: round;
+}
+.trend-name {
+	margin: 0 0 0.25rem;
+	font-size: 0.8rem;
+	color: var(--color-text-muted);
+}
+.trend-latest {
+	margin: 0.25rem 0 0;
+	font-family: var(--font-mono);
+	font-size: 0.9rem;
+}
+
+/* History: a dated row of numbers, the edit link at its side. */
+.history {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.history li {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+.entry-date {
+	margin: 0;
+	font-size: 0.8rem;
+}
+.entry-summary {
+	margin: 0;
+	font-family: var(--font-mono);
+	font-size: 0.85rem;
+	overflow-wrap: anywhere;
+}
+.pager {
+	display: flex;
+	justify-content: space-between;
+	margin-block: var(--space);
+}
+.pager .older {
+	margin-left: auto;
+}
+
+.name-flap,
+.delete-flap {
+	margin-block: var(--space);
+}
+.signout {
+	margin-top: 2rem;
 }

@@ -28,3 +28,4 @@ worker-configuration.d.ts
 .claude/session.lock
 .claude/state.json
 hooks/__pycache__/
+.claude/launch.json
