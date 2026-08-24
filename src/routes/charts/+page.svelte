@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Brand from '$lib/Brand.svelte';
 	import { resolve } from '$app/paths';
 	import Nav from '$lib/Nav.svelte';
 	import type { PageData } from './$types';
@@ -7,15 +8,15 @@
 </script>
 
 <svelte:head>
-	<title>Charts — Hang Gang Binder</title>
+	<title>Group Stats — {data.siteName} Binder</title>
 </svelte:head>
 
 <Nav active="charts" />
 <main class="wide with-rail">
 	<div class="page-head">
 		<div>
-			<p class="wordmark">Hang Gang</p>
-			<h1>Charts</h1>
+			<Brand />
+			<h1>Group Stats</h1>
 			<p class="muted">
 				{data.members === 1 ? '1 member' : `${data.members} members`} &middot; tap a tile for detail and
 				filters

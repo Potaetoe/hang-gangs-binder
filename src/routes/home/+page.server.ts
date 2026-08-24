@@ -1,7 +1,9 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
+import { eq } from 'drizzle-orm';
 import { getDb } from '$lib/server/db';
-import { identityOf, setDisplayName, type Secrets } from '$lib/server/auth';
+import * as table from '$lib/server/db/schema';
+import { identityOf, type Secrets } from '$lib/server/auth';
 import {
 	carryForward,
 	computeBmi,
@@ -18,6 +20,7 @@ import {
 	today,
 	type Units
 } from '$lib/server/stats';
+import { loadSettings } from '$lib/server/settings';
 import type { HistoryRow, TrendView } from '$lib/views';
 
 const PAGE_SIZE = 10;
@@ -65,11 +68,23 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 		latest: t.latest
 	}));
 
+	// The door-knock banner: admins hear about waiting registrations
+	// the moment they land (owner, 2026-08-24).
+	const pendingCount = locals.member.isAdmin
+		? (
+				await db
+					.select({ id: table.members.id })
+					.from(table.members)
+					.where(eq(table.members.status, 'pending'))
+			).length
+		: 0;
+
 	return {
 		name: identity.displayName || identity.handle || identity.username || 'member',
 		isAdmin: locals.member.isAdmin,
+		pendingCount,
 		units,
-		todayLabel: formatDate(today(env.TIMEZONE)),
+		todayLabel: formatDate(today((await loadSettings(db)).timezone)),
 		formFields: formFieldViews(fields, latest, units),
 		trends,
 		history,
@@ -101,20 +116,7 @@ export const actions: Actions = {
 		}
 
 		computeBmi(fields, values);
-		await createEntry(db, locals.member.memberId, today(env.TIMEZONE), values);
-		redirect(303, '/home');
-	},
-
-	name: async ({ request, locals, platform }) => {
-		if (!locals.member) redirect(303, '/');
-		const env = platform!.env;
-		const form = await request.formData();
-		await setDisplayName(
-			getDb(env.DB),
-			env as unknown as Secrets,
-			locals.member.memberId,
-			String(form.get('display_name') ?? '')
-		);
+		await createEntry(db, locals.member.memberId, today((await loadSettings(db)).timezone), values);
 		redirect(303, '/home');
 	},
 

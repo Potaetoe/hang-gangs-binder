@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Brand from '$lib/Brand.svelte';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import Nav from '$lib/Nav.svelte';
@@ -8,31 +9,16 @@
 </script>
 
 <svelte:head>
-	<title>{data.focus.name} — Hang Gang Binder</title>
+	<title>{data.focus.name} — {data.siteName} Binder</title>
 </svelte:head>
 
 <Nav active="charts" />
 <main class="wide with-rail">
 	<div class="page-head">
 		<div>
-			<p class="wordmark">Hang Gang</p>
+			<Brand />
 			<h1>{data.focus.name}</h1>
 		</div>
-		<form method="POST" action="?/units" class="units">
-			<input type="hidden" name="back" value={page.url.pathname + page.url.search} />
-			<button
-				name="units"
-				value="imperial"
-				class:on={data.units === 'imperial'}
-				aria-pressed={data.units === 'imperial'}>Imperial</button
-			>
-			<button
-				name="units"
-				value="metric"
-				class:on={data.units === 'metric'}
-				aria-pressed={data.units === 'metric'}>Metric</button
-			>
-		</form>
 	</div>
 
 	<div class="focus-layout">
@@ -62,11 +48,26 @@
 					<button>Apply</button>
 				</form>
 			{/if}
-
-			<p class="back-to-board"><a href={resolve('/charts')}>&larr; All charts</a></p>
 		</div>
 
 		<div class="charts-col">
+			{#if data.hasUnits}
+				<form method="POST" action="?/units" class="units">
+					<input type="hidden" name="back" value={page.url.pathname + page.url.search} />
+					<button
+						name="units"
+						value="imperial"
+						class:on={data.units === 'imperial'}
+						aria-pressed={data.units === 'imperial'}>Imperial (US)</button
+					>
+					<button
+						name="units"
+						value="metric"
+						class:on={data.units === 'metric'}
+						aria-pressed={data.units === 'metric'}>Metric</button
+					>
+				</form>
+			{/if}
 			<div class="stats-row">
 				{#each data.focus.stats as stat (stat.label)}
 					<div class="stat card">
@@ -135,7 +136,17 @@
 					<h2>Where everyone sits</h2>
 					<div class="dist">
 						{#each data.focus.dist.bars as bar, i (i)}
-							<div class="dist-bar" class:on={bar.on} style={`height: ${bar.pct}%`}></div>
+							<!-- The bar IS the information: focus or tap opens its range
+							     bubble without JavaScript. -->
+							<div
+								class="dist-bar"
+								class:on={bar.on}
+								style={`height: ${bar.pct}%`}
+								tabindex="0"
+								role="img"
+								aria-label={bar.label}
+								data-label={bar.label}
+							></div>
 						{/each}
 					</div>
 					<div class="axis-row">
@@ -149,4 +160,6 @@
 			{/if}
 		</div>
 	</div>
+
+	<p class="back-to-board"><a href={resolve('/charts')}>&larr; All stats</a></p>
 </main>

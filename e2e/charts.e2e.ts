@@ -75,8 +75,8 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 	await logEntry(page, { weight: '150', gender: 'Female', country: 'Iceland' });
 
 	// The rail carries them to the board.
-	await page.locator('.rail').getByRole('link', { name: 'Charts' }).click();
-	await expect(page.getByRole('heading', { name: 'Charts' })).toBeVisible();
+	await page.locator('.rail').getByRole('link', { name: 'Group Stats' }).click();
+	await expect(page.getByRole('heading', { name: 'Group Stats' })).toBeVisible();
 	await expect(page.locator('.tile').filter({ hasText: 'Weight' })).toBeVisible();
 
 	// Into the focused field.
@@ -95,7 +95,7 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 	// The same member in the other system: both were stored.
 	await page.getByRole('button', { name: 'Metric' }).click();
 	await expect(page.locator('.stat').filter({ hasText: '90.7 kg' })).toBeVisible();
-	await page.getByRole('button', { name: 'Imperial' }).click();
+	await page.getByRole('button', { name: /imperial/i }).click();
 
 	// Loosen to everyone from Iceland: two members averaged, and the
 	// viewer is one of them - now the marker may speak.
@@ -104,6 +104,12 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 	await expect(page.locator('.stat').filter({ hasText: '175 lb' })).toBeVisible();
 	await expect(page.getByText(/^2 of \d+/).first()).toBeVisible();
 	await expect(page.getByText(/you are here: 150 lb/)).toBeVisible();
+
+	// Every bar explains itself: fixed 20 lb buckets, range and share.
+	await expect(page.locator('.dist-bar').first()).toHaveAttribute(
+		'data-label',
+		'140–160 lb · 1 member'
+	);
 
 	// A choice field focuses into counts.
 	await page.locator('.fieldlist').getByRole('link', { name: 'Gender' }).click();
@@ -125,5 +131,5 @@ test('the rail is a bottom bar on the phone and wears the brand on desktop', asy
 	await page.setViewportSize({ width: 375, height: 812 });
 	await page.reload();
 	await expect(page.locator('.rail-brand-name')).not.toBeVisible();
-	await expect(page.locator('.rail').getByRole('link', { name: 'Charts' })).toBeVisible();
+	await expect(page.locator('.rail').getByRole('link', { name: 'Group Stats' })).toBeVisible();
 });

@@ -70,7 +70,7 @@ test('a member logs stats, reads them back, corrects and deletes, leaving a trai
 	// Metric shows the same entry in the other system.
 	await page.getByRole('button', { name: 'Metric' }).click();
 	await expect(page.getByText('84.8 kg').first()).toBeVisible();
-	await page.getByRole('button', { name: 'Imperial' }).click();
+	await page.getByRole('button', { name: /imperial/i }).click();
 
 	// A correction: 187 was a typo for 186.
 	await page
@@ -113,7 +113,7 @@ test('a metric member types kilograms and centimeters', async ({ page }) => {
 	await expect(page.getByText('178 cm · 84 kg · 26.5')).toBeVisible();
 
 	// The same entry back in American: both systems were stored.
-	await page.getByRole('button', { name: 'Imperial' }).click();
+	await page.getByRole('button', { name: /imperial/i }).click();
 	await expect(page.getByText('5 ft 10.1 in · 185.2 lb · 26.5')).toBeVisible();
 });
 
@@ -182,10 +182,11 @@ test('the shown name can be changed by its member', async ({ page }) => {
 	const username = `renamer${Date.now()}`;
 	await signInFreshMember(page, username);
 
-	await page.getByText('Called something else?').click();
-	await fillStable(page, 'Name to show', 'Slim');
+	await page.locator('.rail').getByRole('link', { name: 'Settings' }).click();
+	await fillStable(page, 'Name to show', 'Slimmy');
 	await page.getByRole('button', { name: 'Save name' }).click();
-	await expect(page.getByRole('heading', { name: /hello, slim/i })).toBeVisible();
+	await page.goto('/home');
+	await expect(page.getByRole('heading', { name: /hello, slimmy/i })).toBeVisible();
 });
 
 test('another member entry answers not-found, not forbidden', async ({ page }) => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Brand from '$lib/Brand.svelte';
 	import { resolve } from '$app/paths';
 	import EntryForm from '$lib/EntryForm.svelte';
 	import Nav from '$lib/Nav.svelte';
@@ -8,12 +9,12 @@
 </script>
 
 <svelte:head>
-	<title>Correct an entry — Hang Gang Binder</title>
+	<title>Correct an entry — {data.siteName} Binder</title>
 </svelte:head>
 
 <Nav active="home" />
 <main class="with-rail">
-	<p class="wordmark">Hang Gang</p>
+	<Brand />
 	<h1>Entry from {data.dateLabel}</h1>
 
 	<section class="card">
@@ -34,5 +35,5 @@
 		</form>
 	</details>
 
-	<p><a href={resolve('/home')}>&larr; Back to your page</a></p>
+	<p><a href={resolve('/home')}>&larr; Back home</a></p>
 </main>

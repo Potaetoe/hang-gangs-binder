@@ -6,15 +6,13 @@
 </script>
 
 <svelte:head>
-	<title>Sign in — Hang Gang Binder</title>
+	<title>Sign in — {data.siteName} Binder</title>
 </svelte:head>
 
 <main>
-	<h1 class="brand-title">Hang Gang</h1>
+	<h1 class="brand-title">{data.siteName}</h1>
 	<p class="brand-sub">Binder</p>
-	<p class="muted">
-		Sign in once — then it is your page to fill in, and everyone's numbers to read.
-	</p>
+	<p class="muted">{data.welcomeText}</p>
 
 	<section class="card">
 		<h2>With Telegram</h2>
@@ -29,8 +27,8 @@
 			></script>
 		{:else}
 			<p class="muted">
-				The Telegram door is not set up yet — the operator still has to connect the bot. The
-				password door below works.
+				Telegram sign-in is not set up yet — the operator still has to connect the bot. The password
+				sign-in below works.
 			</p>
 		{/if}
 	</section>

@@ -18,6 +18,9 @@ export const load: PageServerLoad = async ({ locals, platform, params, url, cook
 	const filters = readFilters(fields, url.searchParams);
 	return {
 		units,
+		// Units mean nothing on a choice or unitless chart (owner,
+		// 2026-08-24) - the toggle only shows where they change it.
+		hasUnits: field.type === 'number' && (field.measure === 'length' || field.measure === 'mass'),
 		fieldId: field.id,
 		fieldList: fields.map((f) => ({ id: f.id, name: f.name })),
 		focus: focusView(group, fields, field, filters, units, locals.member.memberId),

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Brand from '$lib/Brand.svelte';
 	import { resolve } from '$app/paths';
 	import EntryForm from '$lib/EntryForm.svelte';
 	import Nav from '$lib/Nav.svelte';
@@ -8,25 +9,21 @@
 </script>
 
 <svelte:head>
-	<title>Your page — Hang Gang Binder</title>
+	<title>Home — {data.siteName} Binder</title>
 </svelte:head>
 
 <Nav active="home" />
 <main class="wide with-rail">
-	<p class="wordmark">Hang Gang</p>
+	<Brand />
 	<h1>Hello, {data.name}</h1>
 	{#if data.isAdmin}
 		<p class="muted">You are signed in as an admin.</p>
 	{/if}
-
-	<details class="flap name-flap">
-		<summary>Called something else?</summary>
-		<form method="POST" action="?/name">
-			<label for="display-name">Name to show</label>
-			<input id="display-name" name="display_name" autocomplete="off" value={data.name} />
-			<button>Save name</button>
-		</form>
-	</details>
+	{#if data.pendingCount}
+		<a class="card banner" href={resolve('/admin/members')}
+			>{data.pendingCount === 1 ? 'Someone is' : `${data.pendingCount} people are`} waiting to be approved</a
+		>
+	{/if}
 
 	<div class="home-layout">
 		<section class="card home-entry">
@@ -39,7 +36,7 @@
 					name="units"
 					value="imperial"
 					class:on={data.units === 'imperial'}
-					aria-pressed={data.units === 'imperial'}>Imperial</button
+					aria-pressed={data.units === 'imperial'}>Imperial (US)</button
 				>
 				<button
 					name="units"

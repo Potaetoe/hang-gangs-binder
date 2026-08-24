@@ -13,11 +13,11 @@
 </script>
 
 <svelte:head>
-	<title>Not signed in — Hang Gang Binder</title>
+	<title>Not signed in — {page.data.siteName} Binder</title>
 </svelte:head>
 
 <main>
-	<p class="wordmark">Hang Gang</p>
+	<p class="wordmark">{page.data.siteName}</p>
 	<h1>Not signed in</h1>
 	<section class="card">
 		<p>{message}</p>

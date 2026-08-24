@@ -139,6 +139,20 @@ function axisText(field: Field, n: number, units: Units): string {
 	return String(round(n, 1));
 }
 
+/** "200–220 lb", "5'6\"–5'8\"", "30–35" - a bucket's range,
+ * readable at 18. */
+function rangeLabel(field: Field, from: number, to: number, units: Units): string {
+	const suffix =
+		field.measure === 'mass'
+			? units === 'imperial'
+				? ' lb'
+				: ' kg'
+			: field.measure === 'length' && units === 'metric'
+				? ' cm'
+				: '';
+	return `${axisText(field, from, units)}–${axisText(field, to, units)}${suffix}`;
+}
+
 const unitSuffix = (field: Field, units: Units): string => {
 	if (field.measure === 'mass') return units === 'imperial' ? ' lb' : ' kg';
 	if (field.measure === 'length') return units === 'imperial' ? ' in' : ' cm';
@@ -167,14 +181,26 @@ function niceStep(raw: number): number {
 	return 10 * power;
 }
 
+/** The old world's ruling, kept (owner, 2026-08-24): matched widths
+ * per measure, so flipping units never reshapes the histogram -
+ * 20 lb is about 10 kg, 2 in is about 5 cm, BMI bins by 5. Fields
+ * with no known scale fall back to automatic round steps. */
+export function bucketWidth(field: Field, units: Units): number | null {
+	if (field.measure === 'mass') return units === 'imperial' ? 20 : 10;
+	if (field.measure === 'length') return units === 'imperial' ? 2 : 5;
+	if (field.computed === 'bmi') return 5;
+	return null;
+}
+
 export function buckets(
 	values: number[],
+	width: number | null = null,
 	target = 7
 ): { start: number; step: number; counts: number[] } | null {
 	if (!values.length) return null;
 	const min = Math.min(...values);
 	const max = Math.max(...values);
-	const step = min === max ? 1 : niceStep((max - min) / target);
+	const step = width ?? (min === max ? 1 : niceStep((max - min) / target));
 	const start = Math.floor(min / step) * step;
 	const count = Math.max(1, Math.floor((max - start) / step) + 1);
 	const counts = new Array(count).fill(0) as number[];
@@ -383,7 +409,7 @@ export function focusView(
 	// lit ("you are here") - but only when the viewer is IN the
 	// filtered view. Outside the filters, nothing shows (owner's
 	// drive, 2026-08-24).
-	const b = buckets(latest);
+	const b = buckets(latest, bucketWidth(field, units));
 	if (b) {
 		const viewerValue = latestValue(group.get(viewerId) ?? [], field.id, filters);
 		const you = viewerValue ? numberOf(viewerValue, units) : null;
@@ -393,7 +419,8 @@ export function focusView(
 		view.dist = {
 			bars: b.counts.map((c, i) => ({
 				pct: Math.max(c === 0 ? 2 : 8, Math.round((c / maxCount) * 100)),
-				on: i === youBucket
+				on: i === youBucket,
+				label: `${rangeLabel(field, b.start + i * b.step, b.start + (i + 1) * b.step, units)} · ${c} ${c === 1 ? 'member' : 'members'}`
 			})),
 			from: axisText(field, b.start, units),
 			to: axisText(field, b.start + b.step * b.counts.length, units),

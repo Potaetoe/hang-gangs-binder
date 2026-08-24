@@ -1,8 +1,9 @@
 /* The Binder's face, carried over from the old world (DESIGN.md, "The
    look"): Playfair Display for the wordmark and headings, DM Sans for
-   text, JetBrains Mono for data, the midnight and daylight palettes
-   following the phone. The remaining palettes arrive with the theme
-   picker feature. */
+   text, JetBrains Mono for data. These tokens are the daylight and
+   midnight palettes following the device; the pinned palettes (plum
+   and meadow included) override them from src/lib/server/settings.ts
+   via the layout's injected style. */
 
 @font-face {
 	font-family: 'Playfair Display';
@@ -383,7 +384,7 @@ select {
 	border-top: 1px solid var(--color-border);
 	background: var(--color-surface);
 }
-.rail-brand {
+.rail .rail-brand {
 	display: none;
 }
 .rail a {
@@ -448,15 +449,16 @@ main.with-rail {
 /* ------------------------------------------------------------------ */
 /* Charts: the board                                                  */
 
+/* Phone: the title and its controls stack; desktop puts them back on
+   one line (media query below). */
 .page-head {
 	display: flex;
-	justify-content: space-between;
-	align-items: flex-end;
-	gap: 0.75rem;
-	flex-wrap: wrap;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0;
 }
 .page-head .units {
-	margin-bottom: 0.5rem;
+	margin: 0.5rem 0 0.75rem;
 }
 
 .board {
@@ -535,6 +537,14 @@ main.with-rail {
 	background: transparent;
 	border: 0;
 	border-radius: 0;
+	/* No scrollbar; the fading right edge says there is more to swipe
+	   (owner, 2026-08-24). */
+	scrollbar-width: none;
+	-webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
+	mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
+}
+.fieldlist::-webkit-scrollbar {
+	display: none;
 }
 .fieldlist li {
 	flex: none;
@@ -573,7 +583,7 @@ main.with-rail {
 	margin-bottom: 0.5rem;
 }
 .back-to-board {
-	margin: 0;
+	margin: 1.25rem 0 0;
 }
 
 .stats-row {
@@ -745,8 +755,10 @@ main.with-rail {
 		gap: 1.75rem;
 		padding: 0.4rem 2.5rem;
 	}
-	.rail-brand {
+	.rail .rail-brand {
 		display: block;
+		flex: none;
+		padding: 0;
 		margin-right: auto;
 	}
 	.rail-brand-name {
@@ -823,6 +835,16 @@ main.with-rail {
 		max-width: 72rem;
 		padding-inline: 2.5rem;
 	}
+	.page-head {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: flex-end;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
+	.page-head .units {
+		margin: 0 0 0.5rem;
+	}
 	.board {
 		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 16px;
@@ -840,6 +862,8 @@ main.with-rail {
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		padding: 8px;
+		-webkit-mask-image: none;
+		mask-image: none;
 	}
 	.fieldlist a {
 		display: block;
@@ -851,4 +875,256 @@ main.with-rail {
 	.stat-value {
 		font-size: 1.35rem;
 	}
+	/* Desktop: the bubble floats over its own bar, sized to its own
+	   words - never to the bar. */
+	.dist-bar {
+		position: relative;
+	}
+	.dist-bar:hover::after,
+	.dist-bar:focus::after {
+		left: 50%;
+		right: auto;
+		width: max-content;
+		transform: translateX(-50%);
+		white-space: nowrap;
+		text-align: left;
+		bottom: calc(100% + 8px);
+	}
+	.dist-bar:first-child:hover::after,
+	.dist-bar:first-child:focus::after {
+		left: 0;
+		transform: none;
+	}
+	.dist-bar:last-child:hover::after,
+	.dist-bar:last-child:focus::after {
+		left: auto;
+		right: 0;
+		transform: none;
+	}
+}
+
+/* ------------------------------------------------------------------ */
+/* The admin surface                                                  */
+
+textarea {
+	display: block;
+	width: 100%;
+	padding: 0.5rem 0.75rem;
+	margin-bottom: 0.75rem;
+	font: inherit;
+	color: inherit;
+	background: var(--color-bg);
+	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius);
+	resize: vertical;
+}
+
+.badge {
+	display: inline-block;
+	margin-left: 0.4rem;
+	padding: 0.05rem 0.55rem;
+	font-family: var(--font-text);
+	font-size: 0.7rem;
+	font-weight: 600;
+	color: var(--color-on-accent);
+	background: var(--color-accent);
+	border-radius: 999px;
+	vertical-align: middle;
+}
+.badge.pending {
+	color: var(--color-text);
+	background: transparent;
+	border: 1px solid var(--color-border-strong);
+}
+
+.approve-actions {
+	display: flex;
+	gap: 0.5rem;
+	flex: none;
+}
+button.quiet {
+	color: var(--color-text-muted);
+	background: transparent;
+	border-color: var(--color-border-strong);
+}
+
+.admin-actions {
+	display: flex;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+	align-items: center;
+}
+.admin-actions form {
+	margin: 0;
+}
+
+.done {
+	font-weight: 600;
+}
+.settings-form label:first-child {
+	margin-top: 0;
+}
+
+/* Log and corrections read as tables (owner, 2026-08-24); wide ones
+   scroll inside their card, never the page. */
+.table-scroll {
+	overflow-x: auto;
+	padding: 0.5rem 1rem;
+}
+.admin-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-family: var(--font-mono);
+	font-size: 0.8rem;
+}
+.admin-table th {
+	text-align: left;
+	font-family: var(--font-text);
+	font-size: 0.7rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--color-text-muted);
+	padding: 0.6rem 1rem 0.6rem 0;
+	border-bottom: 1px solid var(--color-border-strong);
+	white-space: nowrap;
+}
+.admin-table td {
+	padding: 0.55rem 1rem 0.55rem 0;
+	border-bottom: 1px solid var(--color-border);
+	vertical-align: top;
+}
+.admin-table tr:last-child td {
+	border-bottom: 0;
+}
+
+/* The brand is a way home (owner, 2026-08-24). */
+a.rail-brand {
+	text-decoration: none;
+	color: var(--color-text);
+}
+
+/* A flap wearing a button face: Reset password, Remove member. */
+.button-flap > summary {
+	display: inline-flex;
+	justify-content: center;
+	min-height: 2.75rem;
+	padding: 0.5rem 1rem;
+	font-family: var(--font-text);
+	font-size: 1rem;
+	font-weight: 600;
+	color: var(--color-text-muted);
+	background: transparent;
+	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius);
+}
+.button-flap > summary::after {
+	content: '';
+}
+
+.units.wrap {
+	flex-wrap: wrap;
+}
+
+/* The waiting-to-be-approved banner on an admin's home. */
+a.banner {
+	display: block;
+	font-weight: 600;
+	color: var(--color-accent);
+	border-color: var(--color-accent);
+	text-decoration: none;
+}
+
+/* The action card holds the flap-buttons too; an opened flap takes
+   the full row for its form. */
+.admin-actions details {
+	margin: 0;
+}
+.admin-actions details[open] {
+	flex-basis: 100%;
+}
+
+/* The in-page brand pair (Brand.svelte). */
+a.wordmark {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 0.5rem;
+	text-decoration: none;
+}
+.wordmark-sub {
+	color: var(--color-text-muted);
+	font-size: 0.7rem;
+}
+
+.charts-col .units {
+	margin-bottom: 0;
+}
+
+/* Settings as one divided list, not a stack of boxes (owner,
+   2026-08-24). */
+.settings-list {
+	display: flex;
+	flex-direction: column;
+	margin-top: 0.5rem;
+}
+.setting {
+	padding: 1.25rem 0;
+	border-top: 1px solid var(--color-border);
+}
+.setting:first-child {
+	border-top: 0;
+	padding-top: 0.5rem;
+}
+.setting h2 {
+	font-size: 1.05rem;
+	margin: 0 0 0.6rem;
+}
+.setting .units {
+	margin-bottom: 0;
+}
+.name-row {
+	display: flex;
+	gap: 0.5rem;
+	align-items: stretch;
+}
+.name-row input {
+	flex: 1;
+	min-width: 0;
+	margin-bottom: 0;
+}
+.name-row button {
+	flex: none;
+}
+
+/* The bar's bubble: hover on a mouse, tap on a phone, no JavaScript
+   (owner, 2026-08-24). On the phone the bubble is a full-width strip
+   above the chart, so it can never clip at the walls; the desktop
+   media query floats it over the bar instead. */
+.dist {
+	position: relative;
+}
+.dist-bar {
+	cursor: pointer;
+}
+.dist-bar:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 2px;
+}
+.dist-bar:hover::after,
+.dist-bar:focus::after {
+	content: attr(data-label);
+	position: absolute;
+	bottom: calc(100% + 10px);
+	left: 0;
+	right: 0;
+	text-align: center;
+	padding: 0.3rem 0.6rem;
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	color: var(--color-text);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border-strong);
+	border-radius: 0.5rem;
+	z-index: 5;
+	pointer-events: none;
 }
