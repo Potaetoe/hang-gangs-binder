@@ -437,11 +437,59 @@ check(".sr-only is defined as the real visually-hidden-but-accessible " +
  * intent rather than an overreach. This pins the CODE that makes it
  * true, so a later "fix" wrapping the rule in a width query has to
  * argue with a check rather than sail past one.
+ *
+ * STRUCTURAL, NOT COLUMN POSITION (0.9-M3-S33b trailing wave, #457
+ * re-fire #1, F1). A column-0 regex (`/(^|\n)\.sr-only\s*\{/`) asks
+ * whether the selector starts a line - true whether or not a media
+ * query wraps it, since CSS does not care about indentation, so
+ * `@media (max-width: 480px) {\n.sr-only {` (the rule left un-indented)
+ * sailed straight past the old check while genuinely restoring the
+ * width scope the ruling removed. braceDepthBefore walks the file from
+ * the top, skipping comments and quoted strings, and counts open minus
+ * close braces up to the rule's own position: depth 0 means nothing
+ * encloses it, indented or not.
  */
+function braceDepthBefore(source, index) {
+  let depth = 0;
+  let inComment = false;
+  let quote = null;
+  for (let i = 0; i < index; i++) {
+    const c = source[i];
+    if (inComment) {
+      if (c === "*" && source[i + 1] === "/") {
+        inComment = false;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (c === "\\") {
+        i++;
+        continue;
+      }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === "/" && source[i + 1] === "*") {
+      inComment = true;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      continue;
+    }
+    if (c === "{") depth++;
+    else if (c === "}") depth--;
+  }
+  return depth;
+}
+const srOnlyRuleMatch = /\.sr-only\s*\{/.exec(themeCssSource);
 check(".sr-only is not scoped to a width - the door is this minimal at " +
-  "every size, and a media query around this rule would quietly " +
-  "restore the desktop copy the ruling removed",
-  /(^|\n)\.sr-only\s*\{/.test(themeCssSource));
+  "every size, and a media query around this rule (indented or not) " +
+  "would quietly restore the desktop copy the ruling removed",
+  srOnlyRuleMatch !== null &&
+  braceDepthBefore(themeCssSource, srOnlyRuleMatch.index) === 0);
 
 /* ------------------------------------------------------------------ */
 /* 6. The sign-out acknowledgement is a TOAST (owner ruling 2026-08-23, */
