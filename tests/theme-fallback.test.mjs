@@ -554,6 +554,62 @@ async function drivenNoPicker(storedPalette, defaultTheme, darkMatches) {
     documentElement.getAttribute("data-theme") === "pink");
 }
 
+/*
+ * THE ALLOWLIST AGAINST DRIFT (#457 review, finding F3; 0.9-M3-S33
+ * part B fix wave 1).
+ *
+ * theme-init.js's PALETTES is a hand-typed copy of four names, and it
+ * HAS to be one: the file runs first, in <head>, with nothing loaded
+ * yet to import a list from. Everything above proves the guard REFUSES
+ * a name that is not in that list. Nothing above proves the list is
+ * the right list - drop "contrast" from it and every check in this
+ * file still passed, while a member whose stored palette is
+ * "contrast" (the accessibility high-contrast one, a real thing they
+ * can pick) got exactly the dark-to-light flash the guard exists to
+ * close, with the whole gate green.
+ *
+ * This is the review bar's own corollary: "a check computed entirely
+ * from the file it guards cannot detect that the file was rearranged;
+ * something outside the file has to say what it may contain." The
+ * something is the two files that must agree with it - theme.js's BG
+ * map, which is what actually gets painted into the browser chrome,
+ * and theme.css's own :root[data-theme="..."] rules, which are what
+ * actually paint the page. All three are read from disk as text: a
+ * fourth hand-typed list here would be one more copy to drift.
+ *
+ * Set equality both ways, not "PALETTES is a subset": a palette added
+ * to the stylesheet and not to the guard flashes on load, and a name
+ * in the guard with no stylesheet behind it paints a data-theme
+ * nothing styles. Neither direction is the safe one.
+ */
+{
+  const themeCssSrc = await read("../apps/web/theme.css");
+  const listed = (/const PALETTES = \[([^\]]*)\]/.exec(themeInitSrc) ||
+    [, ""])[1];
+  const guard = new Set(
+    Array.from(listed.matchAll(/"([^"]+)"/g), (m) => m[1]));
+  const bgBlock = (/const BG = \{([^}]*)\}/.exec(themeSrc) || [, ""])[1];
+  const painted = new Set(
+    Array.from(bgBlock.matchAll(/(\w+)\s*:/g), (m) => m[1]));
+  // Anchored to the start of a line, so the same selector QUOTED in a
+  // comment (theme.css carries two) is not read as a rule that exists.
+  const styled = new Set(Array.from(
+    themeCssSrc.matchAll(/^:root\[data-theme="([^"]+)"\]/gm),
+    (m) => m[1]));
+
+  const same = (a, b) => a.size === b.size && [...a].every((n) => b.has(n));
+  check("CONTROL: all three lists were actually parsed - an empty set " +
+    "would make every comparison below true for the wrong reason",
+    guard.size > 1 && painted.size > 1 && styled.size > 1);
+  check("theme-init.js's PALETTES names exactly the palettes theme.js " +
+    "paints chrome for - a name in one and not the other is either a " +
+    "flash on load or a data-theme nothing colors",
+    same(guard, painted));
+  check("...and exactly the palettes theme.css writes a " +
+    ":root[data-theme] rule for",
+    same(guard, styled));
+}
+
 console.log(failures
   ? `\ntheme-fallback FAILED ${failures} of ${performed} check(s)`
   : `\ntheme-fallback OK - ${performed} checks`);

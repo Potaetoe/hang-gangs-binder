@@ -2402,16 +2402,36 @@ check("Fields never fetches per-member counts - no /charts-data call " +
     rows[0].children[2].textContent.endsWith("entry 0") &&
     rows[19].children[2].textContent.endsWith("entry 19"));
   const more = list.children.find((c) => c.tag === "button");
+  const offered = Boolean(more) && more.textContent === "More";
   check("...and a More button is offered, since there are more than 20",
-    Boolean(more) && more.textContent === "More");
+    offered);
 
-  await more.dispatch("click");
-  const rowsAfter = list.children.filter((c) => c.className === "row wrap-row");
-  check("pressing More reveals the rest - all 25, still newest first",
-    rowsAfter.length === 25 &&
-    rowsAfter[24].children[2].textContent.endsWith("entry 24"));
-  check("...and the button is gone now there is nothing left to reveal",
-    !list.children.some((c) => c.tag === "button"));
+  /*
+   * The two checks below need the button to exist before they can ask
+   * anything. Dispatching to a missing one throws (#457 review, F5),
+   * and a thrown arm prints no performed/failures line, never reaches
+   * this file's own EXPECTED-count guard, and skips every check below
+   * it - so one regression here would hide any second regression in
+   * the rest of the file behind a stack trace. Failing them explicitly
+   * keeps the count whole and the failure readable, which is the
+   * difference between a red that names two defects and one that names
+   * a line number.
+   */
+  if (offered) {
+    await more.dispatch("click");
+    const rowsAfter =
+      list.children.filter((c) => c.className === "row wrap-row");
+    check("pressing More reveals the rest - all 25, still newest first",
+      rowsAfter.length === 25 &&
+      rowsAfter[24].children[2].textContent.endsWith("entry 24"));
+    check("...and the button is gone now there is nothing left to reveal",
+      !list.children.some((c) => c.tag === "button"));
+  } else {
+    check("pressing More reveals the rest - all 25, still newest first " +
+      "(NOT REACHED: no More button to press)", false);
+    check("...and the button is gone now there is nothing left to " +
+      "reveal (NOT REACHED: no More button to press)", false);
+  }
 }
 
 {
