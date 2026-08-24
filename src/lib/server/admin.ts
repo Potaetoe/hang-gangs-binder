@@ -11,7 +11,7 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import * as table from './db/schema';
-import { identityOf, type Identity, type Secrets } from './auth';
+import { identityOf, PASSWORD_MAX, PASSWORD_MIN, type Identity, type Secrets } from './auth';
 import { hashPassword, randomToken } from './crypto';
 
 type Db = DrizzleD1Database<typeof import('./db/schema')>;
@@ -202,7 +202,10 @@ export async function setTempPassphrase(
 	id: string,
 	passphrase: string
 ): Promise<PassphraseResult> {
-	if (passphrase.length < 8 || passphrase.length > 128) {
+	// A temporary passphrase signs somebody in before they change it, so
+	// it is a working credential and holds to the same length as any
+	// other password (security pass, 2026-08-24 - it used to allow 8).
+	if (passphrase.length < PASSWORD_MIN || passphrase.length > PASSWORD_MAX) {
 		return { ok: false, reason: 'bad-passphrase' };
 	}
 	const login = (
