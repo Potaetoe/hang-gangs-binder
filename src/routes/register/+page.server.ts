@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import { PASSWORD_MIN, register, type Secrets } from '$lib/server/auth';
+import { TOO_MANY_MESSAGE, tooManyAttempts } from '$lib/server/throttle';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (locals.member) redirect(303, '/home');
@@ -24,6 +25,13 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const username = String(form.get('username') ?? '');
 		const displayName = String(form.get('displayName') ?? '');
+
+		// This form answers "is that name taken?", which is a roster
+		// oracle for a private group. Nobody registers six times a
+		// minute; a script checking a list of handles does.
+		if (await tooManyAttempts(env, request, 'register')) {
+			return fail(429, { username, displayName, message: TOO_MANY_MESSAGE });
+		}
 
 		const result = await register(
 			getDb(env.DB),

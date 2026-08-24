@@ -13,4 +13,8 @@ interface Env {
 	TELEGRAM_ALLOW_IDS?: string;
 	/** "1" only in local dev (.dev.vars) - enables the /test/* hooks. */
 	TEST_HOOKS?: string;
+	/** Declared in wrangler.jsonc, so it exists in production but not in
+	 * local development. Optional on purpose: the throttle fails open
+	 * when it is absent. */
+	LOGIN_LIMIT?: RateLimit;
 }

@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import { signInPassword, type Secrets } from '$lib/server/auth';
+import { TOO_MANY_MESSAGE, tooManyAttempts } from '$lib/server/throttle';
 
 export const load: PageServerLoad = async ({ locals, platform }) => {
 	if (locals.member) redirect(303, '/home');
@@ -19,6 +20,12 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const username = String(form.get('username') ?? '');
 		const password = String(form.get('password') ?? '');
+
+		// Checked BEFORE the password is, so a refused attempt costs an
+		// attacker a round trip and costs us no hashing at all.
+		if (await tooManyAttempts(env, request, 'signin')) {
+			return fail(429, { username, message: TOO_MANY_MESSAGE });
+		}
 
 		const result = await signInPassword(
 			getDb(env.DB),

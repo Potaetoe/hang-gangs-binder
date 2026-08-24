@@ -10,6 +10,18 @@
 	},
 	"workers_dev": true,
 	"preview_urls": true,
+	// Brute-force defence for the sign-in and register forms. The
+	// dashboard's rate-limiting rules are scoped to a DOMAIN, and this
+	// site answers on workers.dev, which is not one we own - so the
+	// limiting lives in the Worker instead, where it works regardless
+	// (security pass, 2026-08-24). period must be 10 or 60.
+	"ratelimits": [
+		{
+			"name": "LOGIN_LIMIT",
+			"namespace_id": "1001",
+			"simple": { "limit": 6, "period": 60 }
+		}
+	],
 	"d1_databases": [
 		{
 			"binding": "DB",
