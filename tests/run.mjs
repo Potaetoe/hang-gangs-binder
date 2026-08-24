@@ -54,9 +54,12 @@
  * the only thing consulted. On green the runner shows the arm's last
  * line - its own verdict - and drops the rest.
  *
- * Arms run one at a time. Not for speed: a suite that binds a socket
- * or writes a scratch directory is a suite this ordering lets stay
- * simple, and the old gate learned that with its demo stage.
+ * Arms ran one at a time until 0.9-M3-S35 (#460) put them through a
+ * pool - see THE POOL, further down, for what changed and what did not:
+ * a suite that binds a socket or writes a scratch directory still gets
+ * to assume nothing else is racing it, because that half of the
+ * argument was never about ORDER, only about ISOLATION, and isolation
+ * is what the pool's own reading and 20-run proof are about.
  *
  * TWO WAYS TO GO GREEN WITHOUT CHECKING ANYTHING, both refused here.
  * Finding no arms is a red - a gate that passes because it swept an
@@ -204,14 +207,16 @@
  * their own named red now.
  */
 import { readdir, readFile, stat } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { runPool } from "./gate-pool.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const ARM_SUFFIX = ".test.mjs";
 const PREFLIGHT = "tests/preflight.mjs";
 const ROSTER = "tests/ROSTER";
+const GATE_POOL = "tests/gate-pool.mjs";
 
 /* Repo-relative and forward-slashed, so a name reads the same in a
    Windows terminal and in the Actions log. */
@@ -222,9 +227,240 @@ const rel = (absolute) =>
    itself. The sweep below is over every file in tests/, so a spelled-
    out "tests/run.mjs" is a second copy of this file's own path: rename
    the runner and it reports itself as a stray it is in the middle of
-   running. */
+   running. GATE_POOL is the runner's own helper (0.9-M3-S35, #460): it
+   exports a function and calls no check(), so it is a non-arm the same
+   way this file, PREFLIGHT and ROSTER already are - see gate-pool.mjs's
+   own header for the argument this set's own doc comment asks for. */
 const NOT_ARMS = new Set([rel(fileURLToPath(import.meta.url)), PREFLIGHT,
-                          ROSTER]);
+                          ROSTER, GATE_POOL]);
+
+/* THE POOL (0.9-M3-S35, #460). Arms used to run one at a time - not for
+   speed, the header above said, because a suite that binds a socket or
+   writes a scratch directory is one this ordering let stay simple. That
+   reasoning is now the FLOOR the pool has to clear rather than a
+   standing prohibition: every arm was read for shared, colliding state
+   (fixed ports, the fleet's real records under BINDER_FLEET_STATE, a
+   temp directory named by branch rather than randomly) and each one
+   that touches anything like that drives it through an isolated
+   `tempfile`-rooted fixture with its own `--state`/env override -
+   tools/reaper_suite.py, tools/fleet_status_suite.py, tools/
+   prime_lock_suite.py, tools/agent_init_suite.py, tools/
+   claim_vs_diff_suite.py, tools/ship_check_suite.py and tools/
+   session_open_suite.py all say so in their own header comments, and
+   none of them reads or writes this repository's own real git state,
+   the real fleet directory, or a fixed port. The two `wrangler --help`
+   arms (operations-sit-procedure, operations-bot-rotation) make no
+   write at all. Twenty consecutive pool runs with zero flakes is the
+   proof this reading earns, carried in the ticket rather than pinned
+   here as a comment nothing re-checks - the READING is what licenses
+   the pool, and the twenty-run proof is what confirms the reading was
+   right, not a substitute for either half.
+   POOL SIZE DEFAULTS TO 4, NEVER THE CPU COUNT (fix wave 4, re-fire #3,
+   finding F1, Prime's ruling 2026-08-22: "the pool's DEFAULT width is 4
+   (the reviewer's measured point - as fast as 12 and green under fleet
+   load; 12 exhausts the commit limit), with the env override kept"). It
+   used to default to `cpus().length` - on the 12-core machine this
+   ticket was built on, that opened 12 concurrent arms plus their own
+   `python`/`git` children, and under ordinary fleet load (this machine
+   running other agents at the same time) that exhausted the machine's
+   own memory commit: 10 of the reviewer's 15 full-gate runs at pool 12
+   went red, with node processes dying mid-arm (`0xC0000409`) and `git`
+   spawns returning nothing, never the arms' own logic failing. The same
+   head was green at pool 1 and green at pool 4, and pool 4 was AS FAST
+   as pool 12 (87.0s vs 82.3s in the reviewer's own back-to-back run) -
+   the width that broke the machine bought no speed a narrower width did
+   not already have. `BINDER_GATE_POOL` still overrides it - the
+   suppressed lever the mutation battery uses to prove pool size 1
+   restores the old sequential wall time, and the lever a machine known
+   to have room for more may raise, with a reason stated where it is
+   raised. Read with `envNumber` below, not a bare `Number(...) ||
+   default` - `0` is a legitimate override for a lever like this
+   (gate-budget.test.mjs's own "forced 0s budget" scenario needs it to
+   mean zero, not "unset"), and `||` treats the falsy number 0 exactly
+   like an absent variable, silently discarding it back to the
+   default. */
+function envNumber(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+const DEFAULT_POOL = 4;
+const POOL_SIZE = envNumber("BINDER_GATE_POOL", DEFAULT_POOL);
+
+/* THE BUDGET (0.9-M3-S35, #460; ENFORCEMENT SPLIT at re-fire #2, F1-F5's
+   own Prime ruling 2026-08-22). 300s is the figure this slice measured
+   room under on an idle machine after the pool and the reaper-suite cut
+   landed; BINDER_GATE_BUDGET_SECONDS overrides it for a machine known to
+   run slower (a contended worktree, a loaded CI runner) - always with
+   the reason stated where it is raised, never silently.
+
+   RE-FIRE #2 finding F5 (and the ruling closing the whole class):
+   comparing this run's own real wall time against a fixed-second
+   ceiling is exactly the "timing decision on a contended machine" the
+   ruling retires - the SAME shared, contended machine this whole ticket
+   was built on turned a real, honest 300s overage into a red for a
+   reason that has nothing to do with whether the code is slow. THE
+   BUDGET stays (a reader still wants to know a run got slow), but it
+   only REDS - joins `problems`, fails the gate - when
+   BINDER_GATE_ENFORCE_BUDGET reads EXACTLY "1". CI sets that variable
+   (the one line Prime's ruling leaves for Prime to add to
+   .github/workflows/deploy.yml, since that file is sensitive-tier and
+   not this slice's to touch); every other caller - a bare `./run
+   check`, a builder's own terminal, this file's own suite - gets the
+   IDENTICAL wall-time line and an ADVISORY message that never fails the
+   run, because the whole point of ENFORCE_BUDGET is that "this specific
+   machine, right now, was slow" is not a fact a builder can fix by
+   editing code. */
+const DEFAULT_BUDGET_SECONDS = 300;
+const BUDGET_SECONDS = envNumber("BINDER_GATE_BUDGET_SECONDS",
+  DEFAULT_BUDGET_SECONDS);
+const ENFORCE_BUDGET = process.env.BINDER_GATE_ENFORCE_BUDGET === "1";
+
+/* THE PER-ARM TIMEOUT (0.9-M3-S35 fix wave 1, #460, review comment
+   5379811881, finding F3) IS A HANG GUARD, NOT A SLOWNESS GUARD
+   (sharpened at re-fire #2, findings F1/F3/F4, Prime's ruling
+   2026-08-22). THE BUDGET above reds (or, locally, advisories) a run
+   that finished slow; it cannot catch one that never finishes at all,
+   because it runs AFTER `await runPool(...)` returns - a hung arm (one
+   that never exits on its own: a deadlock, a wedged subprocess, an
+   `await` on something that never resolves) hangs the whole gate
+   forever and the budget line never prints. This timeout's only job is
+   killing THAT case; it is not supposed to fire on an arm that is
+   merely running slow under load, and fix wave 2's 200s default did
+   exactly that - re-fire #2 watched it kill six genuinely healthy arms
+   in one loaded run (tests/fleet-status.test.mjs,
+   tests/operations-bot-rotation.test.mjs, tests/operations-sit-
+   procedure.test.mjs, tests/reaper.test.mjs, tests/ship-check.test.mjs,
+   tests/worktree-contract.test.mjs - none of them hung, all of them
+   just slow that run) and measured tests/reaper.test.mjs itself as high
+   as 93.5s on this machine, a number that keeps climbing with the
+   fleet's own size rather than holding still the way a per-code-change
+   figure should. Chasing that number with an ever-larger multiplier is
+   the same whack-a-mole class the ruling closes: the fix is to stop
+   asking this lever to distinguish "slow" from "hung" at all. The
+   default is now 600s - comfortably clear of anything this ticket has
+   ever measured a real arm take, including under heavy load, while
+   staying a HANG guard rather than a performance ceiling (THE BUDGET
+   above is the performance ceiling, and it is advisory locally for the
+   same reason). 600 > 300 (the advisory local budget) is fine on
+   purpose: a single arm can run past the whole gate's own advisory
+   budget without being killed, because locally that is a "this run was
+   slow" fact, not a "something is stuck" fact - CI's own 300s ENFORCED
+   budget is what actually catches a slow arm there, well before 600s
+   per-arm would. BINDER_ARM_TIMEOUT_SECONDS overrides it, with a reason
+   stated where it is raised, the same convention BINDER_GATE_BUDGET_
+   SECONDS already uses - CI reads this default, since neither workflow
+   sets either variable.
+
+   PREFLIGHT IS EXEMPT FROM THIS TIMEOUT, EXPLICITLY (re-fire #2, finding
+   F1/F3). tests/preflight.mjs used to run through the exact same
+   `runFile()` as every arm, so ARM_TIMEOUT_SECONDS silently governed it
+   too - under load, the fixture in tests/gate-budget.test.mjs's own
+   hung-arm scenario killed its stub preflight before the scenario's
+   hung arm ever started, which graded a scenario that never ran the
+   thing it claimed to. `runFile()` below now takes an explicit
+   `timeoutSeconds` argument rather than reading the module-level
+   constant itself, and the ONE call below for PREFLIGHT passes `null` -
+   no timer is armed at all, so no load this machine can produce ever
+   trips it, which is the cleanest form of the "measured so that no load
+   seen on this machine can trip it" bar the ruling sets for whichever
+   of the two options (exempt, or a separate generous timeout) a builder
+   picks: exemption needs no measurement, because there is nothing to
+   trip. Preflight is a handful of fast, local checks (git attributes,
+   `agent-init --verify`'s own record), never a suite that spawns
+   arbitrary work the way an arm can, so the risk this trades away is
+   different in kind from a wedged arm, not merely smaller - and a
+   preflight that genuinely never returns is a problem with THIS
+   machine's environment, not a code defect this gate exists to catch by
+   killing a process tree. */
+const DEFAULT_ARM_TIMEOUT_SECONDS = 600;
+const ARM_TIMEOUT_SECONDS = envNumber("BINDER_ARM_TIMEOUT_SECONDS",
+  DEFAULT_ARM_TIMEOUT_SECONDS);
+
+/* THE TEST-DURATION SEAM (0.9-M3-S35 fix wave 2, #460, re-fire #1,
+   finding F1). tests/gate-budget.test.mjs used to grade two things by
+   comparing REAL measured wall-clock durations against each other - a
+   pool-of-3-vs-pool-of-1 ratio, and the "slowest" line's claimed name
+   ordering. Both flaked, on two different checks in the same file,
+   under real contention on the machine this ticket was built on:
+   `runFile()`'s own `ms` starts before `spawn()`, so it carries node's
+   own process start-up jitter, and neither check's margin survived it.
+   Fix wave 1 widened the ordering check's fixture gaps to fix the FIRST
+   flake; the re-fire found that widening pushed the ratio check's ideal
+   value from about 0.5 up to about 0.69 against an unmoved 0.75
+   threshold, and it flaked twice in 26 runs - a wider margin on one
+   check narrowed the other's, because both read the SAME three
+   fixture arms. A real deadline is no answer to a check whose margin is
+   a measurement of the machine, not of the code.
+
+   The fix is structural rather than a wider margin. An arm may report
+   its OWN duration by printing a line reading
+   "__GATE_TEST_DURATION_MS__ <n>", and this runner substitutes that
+   EXACT number for the REAL measured `ms` everywhere `ms` feeds once
+   arm reporting happens - the per-arm printed duration and the
+   "slowest" sort - but ONLY when BINDER_GATE_TEST_DURATIONS_MS reads
+   EXACTLY "1". With an injected, exact duration,
+   tests/gate-budget.test.mjs's ordering and "right total" checks
+   compare a number the fixture arm CHOSE against this runner's own
+   arithmetic on that number - there is no measurement left for a busy
+   machine to jitter, so there is nothing left to flake.
+
+   ARMED AGAINST A LYING ARM IN A REAL RUN. BINDER_GATE_TEST_DURATIONS_MS
+   is never set by CI (`.github/workflows/deploy.yml` sets no
+   BINDER_GATE_* variable at all - confirmed in review comment
+   5379811881, "What held"), by `./run check`, or by any of this
+   repository's own tooling - so a real arm's own
+   __GATE_TEST_DURATION_MS__ line, printed for any reason, is inert:
+   `effectiveMs()` below never even looks for the marker unless the
+   variable is EXACTLY "1", not merely truthy or merely present, so a
+   stray or malicious print cannot inflate or shrink what the gate
+   reports about a real arm's speed without a human deliberately
+   opting into test mode by name - the same opt-in shape
+   BINDER_GATE_POOL and BINDER_GATE_BUDGET_SECONDS already use, except
+   this lever defaults OFF rather than to a number, because an arm's own
+   claim about its own duration is exactly the one thing this gate must
+   not trust unless a human turned that trust on by name.
+   tests/gate-budget.test.mjs's own "SEAM OFF" scenario proves this both
+   ways the variable could fail to read as an explicit "1" - genuinely
+   absent, and present but reading something else - against a fixture
+   arm that lies outright (claims ~999 real seconds). */
+const TEST_DURATIONS_ARMED =
+  process.env.BINDER_GATE_TEST_DURATIONS_MS === "1";
+const DURATION_MARKER = /^__GATE_TEST_DURATION_MS__ (\d+)\r?$/m;
+
+/* The ms this arm's report() row and the "slowest" sort should use: the
+   REAL measured wall-clock time from runFile(), unless the seam is
+   armed AND this arm's own captured output carries the marker line -
+   see THE TEST-DURATION SEAM above. */
+function effectiveMs(result) {
+  if (!TEST_DURATIONS_ARMED) return result.ms;
+  const match = DURATION_MARKER.exec(result.output);
+  return match ? Number(match[1]) : result.ms;
+}
+
+/* Windows has no process GROUPS the way POSIX does, so `-pid` (the
+   POSIX kill-the-group trick, which needs `detached: true` at spawn
+   time to put the child in its own group) does nothing there - the one
+   portable primitive that kills a WHOLE descendant tree on Windows is
+   `taskkill /T`, walking the OS's own parent-child records rather than
+   anything this file tracked itself. `/F` forces it (SIGKILL has no
+   Windows analogue to ask nicely with); a `taskkill` failure (the
+   process already gone, most commonly - a race this function does not
+   need to win, only to not throw on) is swallowed rather than thrown,
+   because the caller's own `close` handler is what actually resolves
+   the arm's result either way. */
+const isWindows = process.platform === "win32";
+function killTree(child) {
+  if (isWindows) {
+    spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
+    return;
+  }
+  try { process.kill(-child.pid, "SIGKILL"); }
+  catch (error) { try { child.kill("SIGKILL"); } catch (inner) { /* already
+    gone - the same harmless race the Windows branch above swallows */ } }
+}
 
 const exists = async (path) => {
   try {
@@ -249,27 +485,68 @@ async function everyFile(dir) {
 }
 
 /* Start it, wait for it, and report what it did. The exit code is the
-   verdict; the output is the evidence and is never parsed. */
-function runFile(path) {
+   verdict; the output is captured whole as the evidence. runFile() ITSELF
+   never inspects it - but it is not "never parsed" the way this comment
+   used to claim (re-fire #2, finding F6: the sentence was already loose
+   before this slice and this slice's own seam made it plainly false).
+   Two callers elsewhere in this file DO parse it: verdictLine() (an
+   arm's own last printed line, for the "ok"/green summary) and
+   effectiveMs() (THE TEST-DURATION SEAM's marker line, further down).
+   Both read the `output` this function hands back; this function's own
+   job stops at capturing it whole and reporting the exit code.
+
+   `timeoutSeconds` is explicit per call, not read from a module-level
+   constant here, so PREFLIGHT (which passes `null` - see THE PER-ARM
+   TIMEOUT above) and an ARM (which passes ARM_TIMEOUT_SECONDS) can be
+   governed differently without a second copy of this function. `null`
+   arms no timer at all.
+
+   `detached: !isWindows` puts a POSIX child in its own process group, so
+   `killTree()`'s `-pid` can reach a subprocess THIS arm itself spawned
+   (a suite's own git or wrangler call) and not just the node process
+   this file started directly - the timeout's whole point is a hung
+   descendant, not only a hung top-level arm. Windows needs no such flag:
+   `taskkill /T` already walks the OS's own parent-child records. */
+function runFile(path, timeoutSeconds) {
   return new Promise((resolve) => {
     const started = Date.now();
     const child = spawn(process.execPath, [path], {
       cwd: ROOT,
       stdio: ["ignore", "pipe", "pipe"],
+      detached: !isWindows,
     });
     let output = "";
+    let timedOut = false;
     child.stdout.on("data", (chunk) => { output += chunk; });
     child.stderr.on("data", (chunk) => { output += chunk; });
-    child.on("error", (error) => resolve({
-      code: 1, output: "could not start it: " + error.message,
-      ms: Date.now() - started,
-    }));
-    child.on("close", (code, signal) => resolve({
-      // A signal is a death, not a pass. Without this an arm killed
-      // for running long arrives with code null and reads as zero.
-      code: code === null ? "signal " + signal : code,
-      output, ms: Date.now() - started,
-    }));
+    const timer = timeoutSeconds == null ? null : setTimeout(() => {
+      timedOut = true;
+      killTree(child);
+    }, timeoutSeconds * 1000);
+    child.on("error", (error) => {
+      if (timer) clearTimeout(timer);
+      resolve({
+        code: 1, output: "could not start it: " + error.message,
+        ms: Date.now() - started, timedOut: false,
+      });
+    });
+    child.on("close", (code, signal) => {
+      if (timer) clearTimeout(timer);
+      resolve({
+        // A signal is a death, not a pass. Without this an arm killed
+        // for running long arrives with code null and reads as zero.
+        // A TIMED-OUT arm is graded "timeout" specifically rather than
+        // folded into the signal case, because close() sees signal
+        // OR null depending on the platform's own kill path
+        // (taskkill's /F does not always deliver a signal Node
+        // observes) - `timedOut`, set synchronously the moment the
+        // timer fires, is the one fact that does not depend on the
+        // platform's own reporting of the kill.
+        code: timedOut ? "timeout" : (code === null ? "signal " + signal
+          : code),
+        output, ms: Date.now() - started, timedOut,
+      });
+    });
   });
 }
 
@@ -291,11 +568,15 @@ function spill(name, result) {
 }
 
 const problems = [];
+const gateStarted = Date.now();
 console.log("the 0.9 gate - " + rel(HERE) + "\n");
 
 /* Stage zero: the seam. */
 if (await exists(ROOT + PREFLIGHT)) {
-  const result = await runFile(ROOT + PREFLIGHT);
+  // `null` - see THE PER-ARM TIMEOUT's own "PREFLIGHT IS EXEMPT" note
+  // above: preflight is governed explicitly, and explicitly means no
+  // timer at all rather than silently inheriting ARM_TIMEOUT_SECONDS.
+  const result = await runFile(ROOT + PREFLIGHT, null);
   const verdict = verdictLine(result.output);
   /* VACUITY GUARD (review-0.9-m0-s7-2026-08-13, finding R2). Absence is
      hardened above into a red; a PRESENT-BUT-EMPTY (or otherwise
@@ -349,15 +630,37 @@ const strays = files.filter((path) =>
   !path.endsWith(ARM_SUFFIX) && !NOT_ARMS.has(rel(path)));
 
 console.log("");
-for (const path of arms) {
+/* Run concurrently, print in the same fixed order discovery already
+   sorted `arms` into. runPool's whole contract is that its returned
+   array is ordered by INPUT position regardless of finish order (see
+   gate-pool.mjs), so this loop reads exactly as it did one arm at a
+   time - only the `await runPool(...)` line above it is new. */
+const results = await runPool(
+  arms.map((path) => () => runFile(path, ARM_TIMEOUT_SECONDS)), POOL_SIZE);
+
+for (let index = 0; index < arms.length; index += 1) {
+  const path = arms[index];
+  const result = results[index];
   const name = rel(path);
-  const result = await runFile(path);
   const ok = result.code === 0;
-  report(name, ok, result.ms);
+  report(name, ok, effectiveMs(result));
   if (ok) console.log("    " + verdictLine(result.output));
   else {
     spill(name, result);
-    problems.push(name);
+    if (result.timedOut) {
+      console.log("\nTIMED OUT: " + name + " ran past its " +
+        ARM_TIMEOUT_SECONDS + "s per-arm timeout and its process tree " +
+        "was killed - this is a HANG guard, not a slowness ceiling (THE " +
+        "BUDGET above is the slowness ceiling): it exists to end a " +
+        "deadlock or a wedged subprocess, never to grade an arm that " +
+        "simply ran long. BINDER_ARM_TIMEOUT_SECONDS raises the figure, " +
+        "with a reason stated where it is set, for an arm known to need " +
+        "longer than this default assumes.");
+      problems.push(name + " (timed out after " + ARM_TIMEOUT_SECONDS +
+        "s)");
+    } else {
+      problems.push(name);
+    }
   }
 }
 
@@ -580,6 +883,53 @@ if (!(await exists(rosterPath))) {
         "discovery finds it, so the exclusion is a false sentence " +
         "about this gate. Delete whichever of the two lines is wrong.");
     }
+  }
+}
+
+/* THE PRINTED BUDGET (0.9-M3-S35, #460). Wall time is the whole gate's,
+   from the first line this file printed to here - preflight and the
+   roster checks included, not only the pooled arms - because a reader
+   deciding whether this run was slow does not care which stage the time
+   went into. The three slowest ARMS specifically (not preflight, which
+   is one seam rather than a roster of many) are what a reader chases
+   next when the total is a surprise. */
+const wallMs = Date.now() - gateStarted;
+const slowest = arms
+  .map((path, index) => ({ name: rel(path), ms: effectiveMs(results[index]) }))
+  .sort((a, b) => b.ms - a.ms)
+  .slice(0, 3);
+console.log("\nwall time    " + (wallMs / 1000).toFixed(1) +
+  "s (pool size " + POOL_SIZE + ")");
+console.log("slowest      " + (slowest.length
+  ? slowest.map((arm) => arm.name + " " + (arm.ms / 1000).toFixed(1) + "s")
+      .join(", ")
+  : "(no arms ran)"));
+
+/* THE BUDGET, ENFORCED OR ADVISORY (re-fire #2, F1/F5, Prime's ruling
+   2026-08-22). Same trigger, same numbers, two different endings: a real
+   run over budget is always worth printing, but it only fails the gate
+   when BINDER_GATE_ENFORCE_BUDGET reads exactly "1" - CI is the one
+   caller that sets it. Everywhere else (a bare `./run check`, a
+   builder's own terminal) a slow run is visible, never a red for a fact
+   that might be nothing but this one machine's own load right now. */
+if (wallMs > BUDGET_SECONDS * 1000) {
+  if (ENFORCE_BUDGET) {
+    problems.push("over budget");
+    console.log("\nOVER BUDGET: this run took " + (wallMs / 1000).toFixed(1) +
+      "s wall, over the " + BUDGET_SECONDS + "s budget. Slowness is a red " +
+      "here (BINDER_GATE_ENFORCE_BUDGET=1 is set), not a surprise left " +
+      "for the next reader to notice by eye in a scrolling log - " +
+      "BINDER_GATE_BUDGET_SECONDS raises the figure, with a reason " +
+      "stated where it is set, for a machine known to run slower than " +
+      "this default assumes.");
+  } else {
+    console.log("\nADVISORY OVER BUDGET: this run took " +
+      (wallMs / 1000).toFixed(1) + "s wall, over the " + BUDGET_SECONDS +
+      "s budget. Not enforced here - BINDER_GATE_ENFORCE_BUDGET=1 (set " +
+      "by CI) turns this same line into a red; printed anyway so a slow " +
+      "run is visible without failing a build over what might be this " +
+      "one machine's own load. BINDER_GATE_BUDGET_SECONDS still raises " +
+      "the figure in either mode.");
   }
 }
 
