@@ -537,6 +537,14 @@ main.with-rail {
 	background: transparent;
 	border: 0;
 	border-radius: 0;
+	/* No scrollbar; the fading right edge says there is more to swipe
+	   (owner, 2026-08-24). */
+	scrollbar-width: none;
+	-webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
+	mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
+}
+.fieldlist::-webkit-scrollbar {
+	display: none;
 }
 .fieldlist li {
 	flex: none;
@@ -854,6 +862,8 @@ main.with-rail {
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		padding: 8px;
+		-webkit-mask-image: none;
+		mask-image: none;
 	}
 	.fieldlist a {
 		display: block;
@@ -1018,4 +1028,8 @@ a.wordmark {
 .wordmark-sub {
 	color: var(--color-text-muted);
 	font-size: 0.7rem;
+}
+
+.charts-col .units {
+	margin-bottom: 0;
 }
