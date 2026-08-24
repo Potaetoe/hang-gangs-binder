@@ -117,8 +117,15 @@ everything mechanical; the selftest proves each one fires.
 
 ## Ops runbook
 
-- **Deploy:** `wrangler deploy` of the SvelteKit app. One environment
-  until launch needs more.
+- **Deploy:** `wrangler deploy` of the SvelteKit app.
+- **Releases (owner ruling 2026-08-24):** until launch, production IS
+  the test site - features deploy straight to the one URL and the
+  owner test-drives there, since no member is affected. AT LAUNCH this
+  flips to preview versions: feature work goes up with
+  `wrangler versions upload`, the owner drives the version's own
+  preview URL, and production moves only when Claude promotes after
+  the sign-off. A preview version shares production's database, so a
+  schema-changing feature gets flagged before its preview goes up.
 - **Secrets:** the bot token, the group chat ID, the identity-scramble
   secret, the directory-seal secret, the session secret. Set via
   `wrangler secret put`, never in files.
