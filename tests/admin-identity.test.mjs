@@ -363,10 +363,13 @@ function makeDb(seed) {
         .map((row) => ({ account_id: row.account_id,
           ciphertext: row.ciphertext })) };
     }
-    // "has this account ever signed in" - what POST /membership asks
-    // before it will write a row for a picked account id.
-    if (sql.startsWith("SELECT 1 AS found FROM directory")) {
-      return directory.has(args[0]) ? { found: 1 } : null;
+    // "does this account's own record open" - what POST /membership
+    // asks before it will write a row for a picked account id. It reads
+    // the ciphertext rather than testing for a row, so that it answers
+    // over exactly the set the picker listed (mandate 3).
+    if (sql.startsWith("SELECT ciphertext FROM directory")) {
+      const row = directory.get(args[0]);
+      return row ? { ciphertext: row.ciphertext } : null;
     }
 
     /* -------- submissions -------- */
@@ -464,7 +467,12 @@ async function call(target, env, method, path, options) {
   const text = await response.clone().text();
   let parsed = null;
   try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
-  return { status: response.status, body: parsed, text: text };
+  // headers too: a response's cache directives are part of its
+  // contract, and the security consult of 2026-08-24 turned one of them
+  // into a rule rather than a habit.
+  const got = {};
+  response.headers.forEach((value, key) => { got[key.toLowerCase()] = value; });
+  return { status: response.status, body: parsed, text: text, headers: got };
 }
 
 const bearer = (token) => ({ Authorization: "Bearer " + token });
@@ -1326,6 +1334,45 @@ const PUBLIC_NAMES = ["site.groupName", "site.welcomeText",
       JSON.stringify(["accountId", "displayName", "handle"])));
 }
 
+/*
+ * THE HARDENING MANDATES (security consult, 2026-08-24). Each of these
+ * is a property the route did not have when it first passed review, so
+ * each one is armed rather than trusted to the comment beside it.
+ */
+{
+  const db = makeDb();
+  const token = await adminSession(db);
+  await signIn(db, MEMBER_ID, "memberhandle", "member");
+  const { headers } = await call(worker, envFor(db), "GET",
+    "/admin-directory", { headers: bearer(token) });
+  check("the member list is never stored - `private` refuses a shared " +
+    "cache and `no-store` refuses the browser's own disk, on the first " +
+    "route here that answers with real people's handles",
+    String(headers["cache-control"] || "").includes("no-store") &&
+    String(headers["cache-control"] || "").includes("private"));
+}
+
+{
+  // A record this Worker cannot open is the shape a wrong or rotated
+  // STORE_SECRET takes, and an empty list would read to the page as an
+  // empty GROUP. The count is what tells the two apart.
+  const db = makeDb();
+  const token = await adminSession(db);
+  await signIn(db, MEMBER_ID, "memberhandle", "member");
+  for (const row of db.directory.values()) row.ciphertext = "not-a-seal";
+  const { status, body } = await call(worker, envFor(db), "GET",
+    "/admin-directory", { headers: bearer(token) });
+  check("a directory whose records will not open answers with an " +
+    "unreadable COUNT rather than an empty list - a deployment fault " +
+    "must not wear the costume of a group nobody has joined",
+    status === 200 && body && Array.isArray(body.members) &&
+    body.members.length === 0 &&
+    body.unreadable === db.directory.size && db.directory.size > 0);
+  check("...and the count is the whole of what a failed row reports - " +
+    "no id, no ciphertext, nothing out of the record itself",
+    JSON.stringify(body).indexOf("not-a-seal") === -1);
+}
+
 {
   const db = makeDb();
   const token = await adminSession(db);
@@ -1377,7 +1424,7 @@ const PUBLIC_NAMES = ["site.groupName", "site.welcomeText",
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 95;
+const EXPECTED = 98;
 console.log(failures
   ? `\nadmin-identity FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

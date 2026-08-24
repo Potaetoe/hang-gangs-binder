@@ -909,14 +909,23 @@
 
     
 
-    function drawDirectory(members) {
+    function drawDirectory(members, unreadable) {
       const select = $("member-account");
       select.textContent = "";
       const first = document.createElement("option");
       first.value = "";
+       
+       
+       
+       
+       
+       
+       
       first.textContent = members.length
         ? "Choose a member…"
-        : "Nobody has signed in yet";
+        : (unreadable
+          ? "The member list could not be read"
+          : "Nobody has signed in yet");
       select.appendChild(first);
       for (const member of members) {
         const option = document.createElement("option");
@@ -925,6 +934,13 @@
           ? "@" + member.handle + " — " + member.displayName
           : "@" + member.handle;
         select.appendChild(option);
+      }
+       
+       
+       
+      if (unreadable && members.length) {
+        sayRoles(unreadable + " member" + (unreadable === 1 ? "" : "s") +
+          " could not be read and are missing from this list.", "bad");
       }
     }
 
@@ -936,17 +952,13 @@
         });
         if (!response.ok) {
           if (sessionRefused(response, sayRoles)) return;
-          drawDirectory([]);
-          $("member-account").firstChild.textContent =
-            "The member list could not be read";
+          drawDirectory([], 1);
           return;
         }
         payload = await response.json();
       } catch (error) {
         detail(why(error));
-        drawDirectory([]);
-        $("member-account").firstChild.textContent =
-          "The member list could not be read";
+        drawDirectory([], 1);
         return;
       }
       const members = payload && Array.isArray(payload.members)
@@ -955,7 +967,9 @@
             typeof m.handle === "string" && m.handle;
         })
         : [];
-      drawDirectory(members);
+      const unreadable = payload && Number.isFinite(payload.unreadable)
+        ? payload.unreadable : 0;
+      drawDirectory(members, unreadable);
     }
 
     $("member-add").addEventListener("click", async function () {
