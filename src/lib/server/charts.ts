@@ -205,6 +205,15 @@ export function bucketWidth(field: Field, units: Units): number | null {
 	return null;
 }
 
+/** The histogram never draws more bars than this. The matched widths
+ * above hold for every real spread of twenty people; the cap exists
+ * because the bar count is derived from the range of the data, and one
+ * absurd stored value must not decide how much the page allocates and
+ * renders (fix pass 2026-08-25). Entry parsing caps what can be typed
+ * (stats.ts NUMBER_MAX); this holds even against a value that got in
+ * anyway. */
+const MAX_BUCKETS = 60;
+
 export function buckets(
 	values: number[],
 	width: number | null = null,
@@ -213,7 +222,9 @@ export function buckets(
 	if (!values.length) return null;
 	const min = Math.min(...values);
 	const max = Math.max(...values);
-	const step = width ?? (min === max ? 1 : niceStep((max - min) / target));
+	let step = width ?? (min === max ? 1 : niceStep((max - min) / target));
+	// Doubling keeps the steps round (20 lb, 40 lb, 80 lb...).
+	while ((max - min) / step >= MAX_BUCKETS) step *= 2;
 	const start = Math.floor(min / step) * step;
 	const count = Math.max(1, Math.floor((max - start) / step) + 1);
 	const counts = new Array(count).fill(0) as number[];

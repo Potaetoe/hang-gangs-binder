@@ -69,6 +69,15 @@ export type Identity = {
 	handle?: string;
 };
 
+/** A directory row exists but will not open: the DIRECTORY_SECRET is
+ * wrong, or the row was tampered with. Thrown, never swallowed. */
+export class IdentityUnreadableError extends Error {
+	constructor() {
+		super('A sealed identity record exists but cannot be opened.');
+		this.name = 'IdentityUnreadableError';
+	}
+}
+
 export async function identityOf(db: Db, secrets: Secrets, memberId: string): Promise<Identity> {
 	const row = (
 		await db.select().from(table.directory).where(eq(table.directory.memberId, memberId))
@@ -77,7 +86,13 @@ export async function identityOf(db: Db, secrets: Secrets, memberId: string): Pr
 	try {
 		return JSON.parse(await open(secrets.DIRECTORY_SECRET, row.sealed)) as Identity;
 	} catch {
-		return {};
+		// Loud on purpose (fix pass 2026-08-25). The quiet answer used
+		// to be {} - and every write here merges over what it read, so a
+		// wrong secret plus one display-name change would replace a
+		// member's sealed identity with almost nothing, permanently. A
+		// record that cannot be read must never be written over; the
+		// page erroring is the honest outcome.
+		throw new IdentityUnreadableError();
 	}
 }
 
@@ -106,12 +121,15 @@ export async function setDisplayName(db: Db, secrets: Secrets, memberId: string,
 /* ---------------------------------------------------------------- */
 /* Sessions                                                          */
 
-export async function createSession(db: Db, memberId: string, isAdmin: boolean) {
+/** A session says WHO, never what they may do (fix pass 2026-08-25).
+ * It used to carry an is_admin snapshot too, which meant two places
+ * could disagree about the same power - the member row is the only
+ * place authority lives now. */
+export async function createSession(db: Db, memberId: string) {
 	const token = randomToken();
 	await db.insert(table.sessions).values({
 		tokenHash: await sha256Hex(token),
 		memberId,
-		isAdmin,
 		expiresAt: sessionExpiry()
 	});
 	return token;
@@ -142,7 +160,10 @@ export async function sessionMember(db: Db, token: string | undefined) {
 	)[0];
 	return {
 		memberId: member.id,
-		isAdmin: row.isAdmin || member.isAdmin,
+		// Read fresh from the member row on every request, so a role
+		// change - either direction - holds from the next click, for
+		// every session the member has (fix pass 2026-08-25).
+		isAdmin: member.isAdmin,
 		mustChange: login?.mustChange ?? false
 	};
 }
@@ -281,7 +302,7 @@ export async function signInPassword(
 	)[0];
 	if (!member) return { ok: false, reason: 'wrong' };
 	if (member.status !== 'approved') return { ok: false, reason: 'pending' };
-	return { ok: true, token: await createSession(db, member.id, member.isAdmin) };
+	return { ok: true, token: await createSession(db, member.id) };
 }
 
 export type ChangePassword =
@@ -466,5 +487,5 @@ export async function signInTelegram(
 		displayName:
 			[payload.first_name, payload.last_name].filter(Boolean).join(' ') || existing.displayName
 	});
-	return { ok: true, token: await createSession(db, memberId, standing === 'admin') };
+	return { ok: true, token: await createSession(db, memberId) };
 }

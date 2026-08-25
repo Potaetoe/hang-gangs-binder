@@ -31,17 +31,24 @@ export function round(value: number, places: number): number {
 	return Math.round(value * factor) / factor;
 }
 
+/** No stat in this binder reaches a million of anything, so nothing
+ * above it is a value - it is a typo or an attack. The ceiling matters
+ * beyond politeness: the histogram sizes itself from the range of the
+ * stored values (charts.ts), so a cap on what can be typed is a cap on
+ * what a chart can be made to build (fix pass 2026-08-25). */
+export const NUMBER_MAX = 1_000_000;
+
 /** A positive number, or null. Strict on purpose: Number('') is 0 and
  * parseFloat('5kg') is 5, and both would sail through as a value
  * nobody meant. A comma decimal is accepted because half the world
  * types one. `allowZero` exists for the inch box - a person who is
  * exactly 6 ft 0 in types a zero and means it (owner's drive,
- * 2026-08-24). */
+ * 2026-08-24). Capped at NUMBER_MAX, so no caller can forget to. */
 export function parseNumber(text: string, allowZero = false): number | null {
 	const value = text.trim().replace(',', '.');
 	if (value === '' || !/^\d*\.?\d+$/.test(value)) return null;
 	const number = Number(value);
-	if (!Number.isFinite(number)) return null;
+	if (!Number.isFinite(number) || number > NUMBER_MAX) return null;
 	return number > 0 || (allowZero && number === 0) ? number : null;
 }
 
@@ -264,11 +271,17 @@ export function parseEntryForm(fields: Field[], form: FormData, units: Units): P
 			const feet = ftRaw ? parseNumber(ftRaw, true) : 0;
 			const inches = inRaw ? parseNumber(inRaw, true) : 0;
 			if (feet === null || inches === null) {
-				problems.push(`${field.name}: enter feet and inches as numbers.`);
+				problems.push(`${field.name}: enter feet and inches as numbers, below a million.`);
 				continue;
 			}
 			const total = feet * IN_PER_FT + inches;
 			if (total <= 0) continue;
+			// Each box is capped, but twelve inches to the foot means the
+			// TOTAL can still clear the ceiling. Same rule, same answer.
+			if (total > NUMBER_MAX) {
+				problems.push(`${field.name}: that is too large to be real.`);
+				continue;
+			}
 			values[field.id] = {
 				...fromInches(total),
 				entered: `${ftRaw || '0'} ft ${inRaw || '0'} in`,
@@ -281,7 +294,7 @@ export function parseEntryForm(fields: Field[], form: FormData, units: Units): P
 		if (!raw) continue;
 		const n = parseNumber(raw);
 		if (n === null) {
-			problems.push(`${field.name}: enter a number above zero.`);
+			problems.push(`${field.name}: enter a number above zero, below a million.`);
 			continue;
 		}
 		if (field.measure === 'length') {

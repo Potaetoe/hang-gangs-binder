@@ -180,13 +180,13 @@ export async function setAdminRole(
 			return { ok: false, reason: 'last-admin' };
 		}
 	}
+	// The member row is the only place authority lives (fix pass
+	// 2026-08-25): every session reads it fresh, so this one write is
+	// the whole change. There used to be a second write keeping a
+	// session-side copy honest - a copy someone would eventually
+	// forget.
 	await db.update(table.members).set({ isAdmin: makeAdmin }).where(eq(table.members.id, id));
 	await logAdmin(db, date, actorId, makeAdmin ? 'made an admin' : 'removed admin', id);
-	// Sessions snapshot the flag at sign-in; keep them honest.
-	await db
-		.update(table.sessions)
-		.set({ isAdmin: makeAdmin })
-		.where(eq(table.sessions.memberId, id));
 	return { ok: true };
 }
 

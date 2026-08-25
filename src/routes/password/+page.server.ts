@@ -3,6 +3,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import { changePassword, PASSWORD_MAX, PASSWORD_MIN } from '$lib/server/auth';
 import { sha256Hex } from '$lib/server/crypto';
+import { TOO_MANY_MESSAGE, tooManyAttempts } from '$lib/server/throttle';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.member) redirect(303, '/');
@@ -17,6 +18,14 @@ export const actions: Actions = {
 		const next = String(form.get('next') ?? '');
 		const token = cookies.get('session');
 		if (!token) redirect(303, '/');
+
+		// This form verifies a password, same as the sign-in door - so it
+		// holds to the same throttle (fix pass 2026-08-25). It used to be
+		// the one password check with no brake on guessing: a stolen
+		// session could grind at the current password full speed.
+		if (await tooManyAttempts(platform!.env, request, 'password')) {
+			return fail(429, { message: TOO_MANY_MESSAGE });
+		}
 
 		const result = await changePassword(
 			getDb(platform!.env.DB),

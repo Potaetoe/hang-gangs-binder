@@ -182,7 +182,9 @@ export const sessions = sqliteTable('sessions', {
 	// credential.
 	tokenHash: text('token_hash').primaryKey(),
 	memberId: text('member_id').notNull(),
-	// Snapshot at sign-in; the admin surface re-checks when it matters.
+	// Dead column (fix pass 2026-08-25): nothing writes or reads it any
+	// more - authority lives on the member row alone, read fresh every
+	// request. Kept only until a migration drops it.
 	isAdmin: integer('is_admin', { mode: 'boolean' }).notNull().default(false),
 	// Expiry has to be a real number to enforce, but it is rounded to a
 	// day boundary and there is no created_at beside it - this table
