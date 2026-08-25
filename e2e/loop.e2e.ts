@@ -131,6 +131,27 @@ test('a broken number is refused without losing the rest of the form', async ({ 
 	await expect(page.getByText('No entries yet')).toBeVisible();
 });
 
+test('a number too big to be real is refused, and the charts survive', async ({ page }) => {
+	const username = `giant${Date.now()}`;
+	await signInFreshMember(page, username);
+
+	// Twenty digits of weight. The ceiling matters twice: once for the
+	// member's own page, and once because the histogram sizes itself
+	// from the spread of stored values - one absurd number used to be
+	// able to break Group Stats for everyone (fix pass 2026-08-25).
+	await fillStable(page, 'Weight', '99999999999999999999');
+	await page.getByRole('button', { name: 'Save entry' }).click();
+	await expect(page.getByText(/weight: enter a number above zero, below a million/i)).toBeVisible();
+	await expect(page.getByText('No entries yet')).toBeVisible();
+
+	// A real weight saves, and the board still draws.
+	await fillStable(page, 'Weight', '205');
+	await page.getByRole('button', { name: 'Save entry' }).click();
+	await expect(page.locator('.entry-summary').first()).toBeVisible();
+	await page.locator('.rail').getByRole('link', { name: 'Group Stats' }).click();
+	await expect(page.locator('.tile').filter({ hasText: 'Weight' })).toBeVisible();
+});
+
 test('a cleared field keeps its last value on a new entry', async ({ page }) => {
 	const username = `keeper${Date.now()}`;
 	await signInFreshMember(page, username);
