@@ -115,6 +115,68 @@ test('a forged Telegram payload is refused', async ({ page }) => {
 	await expect(page.getByText(/could not be verified/i)).toBeVisible();
 });
 
+test('a Telegram sign-in link works once and is dead after that', async ({ page }) => {
+	// The signed payload rides in a URL, so a captured link used to be a
+	// working key for as long as its window lasted. It is spent on first
+	// use now (security pass, 2026-08-24).
+	const query = signedTelegramQuery({
+		id: '7000002',
+		first_name: 'Replay',
+		last_name: 'Target',
+		username: 'replay_target',
+		auth_date: String(Math.floor(Date.now() / 1000))
+	});
+
+	await page.goto(`/auth/telegram?${query}`);
+	await expect(page.getByRole('heading', { name: /hello, replay target/i })).toBeVisible();
+
+	// The same link again buys nothing - the payload is spent.
+	await page.goto(`/auth/telegram?${query}`);
+	await expect(page.getByText(/could not be verified/i)).toBeVisible();
+});
+
+test('a stale Telegram payload is refused even though it is signed', async ({ page }) => {
+	const query = signedTelegramQuery({
+		id: '7000003',
+		first_name: 'Stale',
+		auth_date: String(Math.floor(Date.now() / 1000) - 3600)
+	});
+	await page.goto(`/auth/telegram?${query}`);
+	await expect(page.getByText(/could not be verified/i)).toBeVisible();
+});
+
+test('every response carries the security headers', async ({ page }) => {
+	const response = await page.goto('/');
+	const headers = response!.headers();
+	expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
+	expect(headers['content-security-policy']).toContain('https://telegram.org');
+	expect(headers['x-content-type-options']).toBe('nosniff');
+	expect(headers['x-robots-tag']).toContain('noindex');
+	expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
+	expect(headers['strict-transport-security']).toContain('max-age=');
+});
+
+test('a short password is refused by the server, not just the browser', async ({
+	page,
+	request
+}) => {
+	// The box carries a minlength, but that is a courtesy - anyone can
+	// post past it. The refusal that counts is the server's.
+	await page.goto('/register');
+	const minlength = await page.getByLabel('Password').getAttribute('minlength');
+	expect(minlength).toBe('12');
+
+	const res = await request.post('/register?/register', {
+		headers: { Origin: new URL(page.url()).origin },
+		form: {
+			username: `shortpw${Date.now()}`,
+			password: 'sevench',
+			displayName: 'Short'
+		}
+	});
+	expect(await res.text()).toContain('at least 12 characters');
+});
+
 test('the password door waits behind its flap, closed by default', async ({ page }) => {
 	await page.goto('/');
 	await expect(page.getByText('With a password')).toBeVisible();

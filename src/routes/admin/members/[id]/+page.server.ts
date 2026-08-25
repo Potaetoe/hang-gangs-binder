@@ -10,7 +10,7 @@ import {
 	setAdminRole,
 	setTempPassphrase
 } from '$lib/server/admin';
-import { identityOf, type Secrets } from '$lib/server/auth';
+import { identityOf, PASSWORD_MAX, PASSWORD_MIN, type Secrets } from '$lib/server/auth';
 import { loadSettings } from '$lib/server/settings';
 import {
 	formatDate,
@@ -58,6 +58,7 @@ export const load: PageServerLoad = async ({ platform, params, cookies }) => {
 				.join(' + ')
 		},
 		hasPasswordDoor: logins.some((l) => l.kind === 'password'),
+		passwordMin: PASSWORD_MIN,
 		fieldNames: fields.map((f) => f.name),
 		entries: entries.map(({ entry, values }) => ({
 			dateLabel: formatDate(entry.date),
@@ -137,7 +138,7 @@ export const actions: Actions = {
 				message:
 					result.reason === 'no-password-door'
 						? 'This member has no password sign-in to reset.'
-						: 'A passphrase needs 8 to 128 characters.'
+						: `A passphrase needs ${PASSWORD_MIN} to ${PASSWORD_MAX} characters.`
 			});
 		}
 		return {

@@ -14,7 +14,10 @@ export const members = sqliteTable('members', {
 	// approval.
 	status: text('status', { enum: ['pending', 'approved'] }).notNull(),
 	isAdmin: integer('is_admin', { mode: 'boolean' }).notNull().default(false),
-	createdAt: integer('created_at').notNull()
+	// Day only, like every other member-linked timestamp here. A clock
+	// reading beside a member id is an activity log, and one that can be
+	// lined up against the group's chat (security pass, 2026-08-24).
+	createdAt: text('created_at').notNull()
 });
 
 export const logins = sqliteTable('logins', {
@@ -28,7 +31,19 @@ export const logins = sqliteTable('logins', {
 	// Set when an admin hands out a temporary passphrase: the next
 	// sign-in is walled off until the member picks their own password.
 	mustChange: integer('must_change', { mode: 'boolean' }).notNull().default(false),
-	createdAt: integer('created_at').notNull()
+	createdAt: text('created_at').notNull()
+});
+
+/**
+ * Telegram login payloads already spent. The widget's signed payload
+ * rides in a URL, so a captured link used to be a working key until
+ * its window closed; burning the hash on first use makes it good
+ * exactly once (security pass, 2026-08-24). Rows are swept as they
+ * expire - nothing here is linked to a member.
+ */
+export const usedLogins = sqliteTable('used_logins', {
+	hash: text('hash').primaryKey(),
+	expiresAt: integer('expires_at').notNull()
 });
 
 /**
@@ -66,7 +81,10 @@ export const directory = sqliteTable('directory', {
 	// handle? }. Opened only where a person must be shown to an admin
 	// or greeted by name - never queried.
 	sealed: text('sealed').notNull(),
-	updatedAt: integer('updated_at').notNull()
+	// Day only. This one sat ON the sealed row: the blob was encrypted,
+	// but its own metadata announced the second its owner last used the
+	// Telegram door (security pass, 2026-08-24).
+	updatedAt: text('updated_at').notNull()
 });
 
 /**
@@ -166,6 +184,9 @@ export const sessions = sqliteTable('sessions', {
 	memberId: text('member_id').notNull(),
 	// Snapshot at sign-in; the admin surface re-checks when it matters.
 	isAdmin: integer('is_admin', { mode: 'boolean' }).notNull().default(false),
-	createdAt: integer('created_at').notNull(),
+	// Expiry has to be a real number to enforce, but it is rounded to a
+	// day boundary and there is no created_at beside it - this table
+	// used to be a 30-day, second-resolution record of when each member
+	// signed in (security pass, 2026-08-24).
 	expiresAt: integer('expires_at').notNull()
 });

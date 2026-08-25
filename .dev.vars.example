@@ -1,9 +1,13 @@
 # Local development values - copy to .dev.vars (gitignored) and adjust.
 # Nothing here is a real secret; the e2e suite signs its Telegram
-# fixtures with this bot token and expects this allow-list id. CI
+# fixtures with this bot token and expects these allow-list ids. CI
 # copies this file as-is.
+#
+# 7000001 is the ordinary Telegram member; 7000002 belongs to the
+# replay test, which needs an identity of its own so it cannot race
+# the first one over a shared display name.
 ID_SECRET=local-id-secret
 DIRECTORY_SECRET=local-dir-seal
 TELEGRAM_BOT_TOKEN=local-test-bot-token
-TELEGRAM_ALLOW_IDS=7000001
+TELEGRAM_ALLOW_IDS=7000001,7000002,7000003
 TEST_HOOKS=1

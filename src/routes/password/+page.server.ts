@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
-import { changePassword } from '$lib/server/auth';
+import { changePassword, PASSWORD_MAX, PASSWORD_MIN } from '$lib/server/auth';
 import { sha256Hex } from '$lib/server/crypto';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -23,7 +23,8 @@ export const actions: Actions = {
 			locals.member.memberId,
 			current,
 			next,
-			await sha256Hex(token)
+			await sha256Hex(token),
+			platform!.env.TEST_HOOKS === '1'
 		);
 		if (!result.ok) {
 			return fail(400, {
@@ -31,8 +32,10 @@ export const actions: Actions = {
 					result.reason === 'wrong'
 						? 'The current password did not match.'
 						: result.reason === 'bad-password'
-							? 'A password needs 8 to 128 characters.'
-							: 'This account has no password sign-in.'
+							? `A password needs ${PASSWORD_MIN} to ${PASSWORD_MAX} characters.`
+							: result.reason === 'breached-password'
+								? 'That password turns up in known password leaks, so it is already being guessed. Pick another one.'
+								: 'This account has no password sign-in.'
 			});
 		}
 		redirect(303, '/home');

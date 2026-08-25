@@ -130,10 +130,13 @@ everything mechanical; the selftest proves each one fires.
   preview URL, and production moves only when Claude promotes after
   the sign-off. A preview version shares production's database, so a
   schema-changing feature gets flagged before its preview goes up.
-- **Secrets:** the bot token, the group chat ID, the bot username, the
-  identity-scramble secret, the directory-seal secret. Set via
-  `wrangler secret put`, never in files. (Sessions need no secret —
-  they are random tokens stored hashed in the database.)
+- **Secrets:** six of them — the bot token, the bot username, the group
+  chat ID, the admin allow-list of Telegram IDs (how a fork's first
+  admin is made), the identity-scramble secret, the directory-seal
+  secret. Set via `wrangler secret put`, never in files. (Sessions need
+  no secret — they are random tokens stored hashed in the database.)
+  Losing the directory-seal secret makes every stored identity
+  permanently unreadable; the stats survive, the names do not.
 - **Database:** D1, schema changes only through migration files applied
   with `wrangler d1 migrations apply` — before deploying code that
   needs them. The app refuses loudly (not quietly) when the schema is

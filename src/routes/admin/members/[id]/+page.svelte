@@ -42,7 +42,7 @@
 			<details class="flap button-flap">
 				<summary>Reset password</summary>
 				<form method="POST" action="?/passphrase">
-					<label for="passphrase">Temporary passphrase (8+ characters)</label>
+					<label for="passphrase">Temporary passphrase ({data.passwordMin}+ characters)</label>
 					<input id="passphrase" name="passphrase" autocomplete="off" />
 					<p class="muted">
 						Hand it to them yourself — Telegram, in person, anywhere but here. Their next sign-in

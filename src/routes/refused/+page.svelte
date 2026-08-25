@@ -21,6 +21,6 @@
 	<h1>Not signed in</h1>
 	<section class="card">
 		<p>{message}</p>
-		<a class="button" href={resolve('/')}>Back to the door</a>
+		<a class="button" href={resolve('/')}>Back to sign in</a>
 	</section>
 </main>

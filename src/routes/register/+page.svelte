@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { form, data }: { form: ActionData; data: PageData } = $props();
 </script>
 
 <svelte:head>
@@ -21,7 +21,7 @@
 				An admin has to approve your account before it works. Once they have, sign in with the
 				username and password you just chose.
 			</p>
-			<a class="button" href={resolve('/')}>Back to the door</a>
+			<a class="button" href={resolve('/')}>Back to sign in</a>
 		</section>
 	{:else}
 		<section class="card">
@@ -47,7 +47,7 @@
 					name="password"
 					type="password"
 					autocomplete="new-password"
-					minlength="8"
+					minlength={data.passwordMin}
 					required
 				/>
 				{#if form?.message}
@@ -55,7 +55,7 @@
 				{/if}
 				<button>Ask for the account</button>
 			</form>
-			<p class="muted"><a href={resolve('/')}>Back to the door</a></p>
+			<p class="muted"><a href={resolve('/')}>Back to sign in</a></p>
 		</section>
 	{/if}
 </main>
