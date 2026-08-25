@@ -69,6 +69,15 @@ export type Identity = {
 	handle?: string;
 };
 
+/** A directory row exists but will not open: the DIRECTORY_SECRET is
+ * wrong, or the row was tampered with. Thrown, never swallowed. */
+export class IdentityUnreadableError extends Error {
+	constructor() {
+		super('A sealed identity record exists but cannot be opened.');
+		this.name = 'IdentityUnreadableError';
+	}
+}
+
 export async function identityOf(db: Db, secrets: Secrets, memberId: string): Promise<Identity> {
 	const row = (
 		await db.select().from(table.directory).where(eq(table.directory.memberId, memberId))
@@ -77,7 +86,13 @@ export async function identityOf(db: Db, secrets: Secrets, memberId: string): Pr
 	try {
 		return JSON.parse(await open(secrets.DIRECTORY_SECRET, row.sealed)) as Identity;
 	} catch {
-		return {};
+		// Loud on purpose (fix pass 2026-08-25). The quiet answer used
+		// to be {} - and every write here merges over what it read, so a
+		// wrong secret plus one display-name change would replace a
+		// member's sealed identity with almost nothing, permanently. A
+		// record that cannot be read must never be written over; the
+		// page erroring is the honest outcome.
+		throw new IdentityUnreadableError();
 	}
 }
 
