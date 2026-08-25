@@ -106,12 +106,15 @@ export async function setDisplayName(db: Db, secrets: Secrets, memberId: string,
 /* ---------------------------------------------------------------- */
 /* Sessions                                                          */
 
-export async function createSession(db: Db, memberId: string, isAdmin: boolean) {
+/** A session says WHO, never what they may do (fix pass 2026-08-25).
+ * It used to carry an is_admin snapshot too, which meant two places
+ * could disagree about the same power - the member row is the only
+ * place authority lives now. */
+export async function createSession(db: Db, memberId: string) {
 	const token = randomToken();
 	await db.insert(table.sessions).values({
 		tokenHash: await sha256Hex(token),
 		memberId,
-		isAdmin,
 		expiresAt: sessionExpiry()
 	});
 	return token;
@@ -142,7 +145,10 @@ export async function sessionMember(db: Db, token: string | undefined) {
 	)[0];
 	return {
 		memberId: member.id,
-		isAdmin: row.isAdmin || member.isAdmin,
+		// Read fresh from the member row on every request, so a role
+		// change - either direction - holds from the next click, for
+		// every session the member has (fix pass 2026-08-25).
+		isAdmin: member.isAdmin,
 		mustChange: login?.mustChange ?? false
 	};
 }
@@ -281,7 +287,7 @@ export async function signInPassword(
 	)[0];
 	if (!member) return { ok: false, reason: 'wrong' };
 	if (member.status !== 'approved') return { ok: false, reason: 'pending' };
-	return { ok: true, token: await createSession(db, member.id, member.isAdmin) };
+	return { ok: true, token: await createSession(db, member.id) };
 }
 
 export type ChangePassword =
@@ -466,5 +472,5 @@ export async function signInTelegram(
 		displayName:
 			[payload.first_name, payload.last_name].filter(Boolean).join(' ') || existing.displayName
 	});
-	return { ok: true, token: await createSession(db, memberId, standing === 'admin') };
+	return { ok: true, token: await createSession(db, memberId) };
 }

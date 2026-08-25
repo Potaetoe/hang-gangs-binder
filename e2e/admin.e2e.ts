@@ -170,6 +170,48 @@ test('roles guard themselves', async ({ page }) => {
 	await expect(page.locator('.badge').filter({ hasText: 'admin' })).toBeVisible();
 });
 
+test('a removed admin loses the keys on the next click', async ({ browser }) => {
+	const stamp = Date.now();
+	const senior = `senior${stamp}`;
+	const deputy = `deputy${stamp}`;
+	// Two browsers, the way it happens in life: the deputy is signed in
+	// somewhere when the senior takes the role away.
+	const seniorContext = await browser.newContext();
+	const deputyContext = await browser.newContext();
+	const seniorPage = await seniorContext.newPage();
+	const deputyPage = await deputyContext.newPage();
+
+	await register(seniorPage, senior);
+	await makeAdmin(seniorPage, senior);
+	await register(deputyPage, deputy);
+	await makeAdmin(deputyPage, deputy);
+	await signIn(seniorPage, senior);
+	await signIn(deputyPage, deputy);
+
+	// The deputy's session opens the admin surface fine...
+	await deputyPage.goto('/admin/members');
+	await expect(deputyPage.locator('.admin-table')).toBeVisible();
+
+	// ...until the senior removes the role.
+	await seniorPage.goto('/admin/members');
+	await seniorPage
+		.locator('.admin-table tbody tr')
+		.filter({ hasText: deputy })
+		.getByRole('link', { name: 'Open' })
+		.click();
+	await seniorPage.getByRole('button', { name: 'Remove admin' }).click();
+	await expect(seniorPage.getByRole('button', { name: 'Make admin' })).toBeVisible();
+
+	// The deputy's SAME session is shut out on the very next click - no
+	// new sign-in needed for the change to hold (fix pass 2026-08-25).
+	await deputyPage.goto('/admin/members');
+	await expect(deputyPage).toHaveURL(/\/home$/);
+	await expect(deputyPage.locator('.rail').getByRole('link', { name: 'Admin' })).not.toBeVisible();
+
+	await seniorContext.close();
+	await deputyContext.close();
+});
+
 test('a member paints their own device', async ({ page }) => {
 	const stamp = Date.now();
 	const painter = `painter${stamp}`;
