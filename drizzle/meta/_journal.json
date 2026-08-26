@@ -64,6 +64,13 @@
       "when": 1787754176289,
       "tag": "0008_socials",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787757200385,
+      "tag": "0009_calculated-fields",
+      "breakpoints": true
     }
   ]
 }

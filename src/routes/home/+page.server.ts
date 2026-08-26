@@ -4,13 +4,14 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '$lib/server/db';
 import * as table from '$lib/server/db/schema';
 import { identityOf, type Secrets } from '$lib/server/auth';
+import { computeCalculated } from '$lib/server/calc';
 import {
 	carryForward,
-	computeBmi,
 	createEntry,
 	formatDate,
 	formatValue,
 	formFieldViews,
+	historyFor,
 	latestValues,
 	formUnits,
 	loadFields,
@@ -188,7 +189,7 @@ export const actions: Actions = {
 			});
 		}
 
-		computeBmi(fields, values);
+		computeCalculated(fields, values, await historyFor(db, locals.member.memberId));
 		await createEntry(db, locals.member.memberId, today((await loadSettings(db)).timezone), values);
 		// The confirmation shows in the units just typed in; the script
 		// strips ?u=, so the next load is the default again.

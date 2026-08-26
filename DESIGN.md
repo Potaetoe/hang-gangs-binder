@@ -173,9 +173,30 @@ decisions.
    member's links from the admin member page, logged; the departed
    purge sweeps socials with everything else.
 
-**Later** (named so they are not forgotten): admin-defined calculated
-fields (BMI is the only computed field in 1.0, wired in code; the
-door stays open).
+7. **Calculated fields** (owner rulings, 2026-08-26) — admins define
+   computed numbers in the form builder, as a field kind beside the
+   others. A guided builder, never a typed expression: a starting
+   value, then a chain of steps worked left to right, each step an
+   operation (add, subtract, multiply, divide, power, min, max)
+   against a field, a typed constant, the member's FIRST entry's
+   value of a field, or their PREVIOUS entry's value. Inputs are
+   typed number fields only — a calculated field never feeds another.
+   The admin picks the units mode per field: "follows the units
+   toggle" (computed once per system — right for gains and
+   differences) or "one number for everyone, from metric" (right for
+   BMI-style ratios); and picks 0, 1, or 2 decimals (default 1). A
+   live preview shows the recipe's answer before it goes on the form.
+   Values compute at save, forward only — no backfill, and editing a
+   formula leaves old values standing: history is what it said. An
+   entry missing any input gets a blank, never a zero; so does
+   division by zero or a result past the number ceiling. Members meet
+   it everywhere a number lives — the quiet worked-out-from note on
+   the form (inputs named, math private), the entries table, trends,
+   and the full charts treatment. **BMI migrates into this system**
+   as its first field: still essential, still un-retirable, and its
+   formula is locked — renameable, never rewritable.
+
+**Later**: (nothing — the 1.0 list is built).
 
 ## Stack
 

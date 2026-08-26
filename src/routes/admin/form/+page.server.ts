@@ -6,7 +6,7 @@ import { fieldOptions } from '$lib/server/stats';
 import { loadSettings } from '$lib/server/settings';
 import { today } from '$lib/server/stats';
 
-const KINDS: FieldKind[] = ['choice', 'multi', 'mass', 'length', 'plain'];
+const KINDS: FieldKind[] = ['choice', 'multi', 'mass', 'length', 'plain', 'calculated'];
 
 export const load: PageServerLoad = async ({ platform }) => {
 	const db = getDb(platform!.env.DB);
@@ -18,8 +18,8 @@ export const load: PageServerLoad = async ({ platform }) => {
 			kindLabel:
 				f.type === 'choice'
 					? `${f.multiple ? 'pick several' : 'choices'} (${fieldOptions(f).length})`
-					: f.computed === 'bmi'
-						? 'computed'
+					: f.formula !== null
+						? 'calculated'
 						: f.measure === 'mass'
 							? 'weight'
 							: f.measure === 'length'

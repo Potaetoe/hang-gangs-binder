@@ -2,13 +2,14 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import { loadSettings } from '$lib/server/settings';
+import { computeCalculated } from '$lib/server/calc';
 import {
-	computeBmi,
 	deleteEntry,
 	editEntry,
 	formatDate,
 	formFieldViews,
 	formUnits,
+	historyFor,
 	loadFields,
 	memberEntry,
 	memberUnits,
@@ -60,7 +61,11 @@ export const actions: Actions = {
 		}
 		if (problems.length) return fail(400, { problems, raw: rawEcho(form) });
 
-		computeBmi(fields, values);
+		// Time references stay honest on a correction: first and
+		// previous are read as of the entry being edited, not today.
+		const edited = await memberEntry(db, locals.member.memberId, params.id);
+		if (!edited) error(404, 'Not found');
+		computeCalculated(fields, values, await historyFor(db, locals.member.memberId, edited.entry));
 		const ok = await editEntry(
 			db,
 			locals.member.memberId,

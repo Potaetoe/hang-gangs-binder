@@ -1602,6 +1602,37 @@ a.wordmark {
 	pointer-events: none;
 }
 
+/* The recipe builder (calculated fields): one row per step - the
+   operation, what it reads, and the typed-number box beside it. */
+.calc-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-bottom: 0.5rem;
+}
+.calc-row select {
+	flex: 2;
+	min-width: 0;
+	width: auto;
+	margin-bottom: 0;
+}
+.calc-row select.calc-op {
+	flex: 0 0 5.5rem;
+}
+.calc-row input {
+	flex: 1;
+	min-width: 0;
+	margin-bottom: 0;
+}
+.calc-word {
+	flex: 0 0 5.5rem;
+	font-size: 0.9rem;
+	color: var(--color-text-muted);
+}
+.calc-form .admin-actions {
+	margin-top: 0.75rem;
+}
+
 /* The form builder's small controls. */
 .move-form {
 	display: inline-flex;

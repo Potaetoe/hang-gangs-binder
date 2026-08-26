@@ -86,7 +86,7 @@
 				<span class="suffix">in</span>
 			</div>
 		{:else if f.kind === 'computed'}
-			<p class="muted computed">{f.name} is worked out from height and weight.</p>
+			<p class="muted computed">{f.name} is worked out from {f.computedFrom ?? 'other fields'}.</p>
 		{:else}
 			<label for={'f-' + f.id}>{f.name}</label>
 			<div class="row">
