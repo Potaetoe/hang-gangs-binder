@@ -570,28 +570,28 @@ a.cal-day.has-event.today {
 	border-color: var(--color-text);
 }
 
-/* The month's events under the grid: a row of compact cards, three
-   at a time (owner ruling 2026-08-26). The phone swipes the row; the
-   desktop grid puts the three side by side (media query below). */
+/* The month's events under the grid: wide rows, three at a time
+   (owner ruling 2026-08-26, reshaped on the drive) - each event gets
+   the fold's full width, the words left and the gallery at the side. */
 .events-empty {
 	margin: 1rem 0 0;
 }
 .events-row {
 	display: flex;
+	flex-direction: column;
 	gap: 0.75rem;
 	margin-top: 1rem;
-	overflow-x: auto;
-	scrollbar-width: none;
-	-webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
-	mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
-}
-.events-row::-webkit-scrollbar {
-	display: none;
 }
 .event {
-	flex: 0 0 15rem;
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 0.9rem;
 	margin-block: 0;
 	background: var(--color-bg);
+}
+.event-body {
+	min-width: 0;
 }
 .event-date {
 	margin: 0;
@@ -647,8 +647,15 @@ span.cal-arrow.off {
 	border-radius: 0.5rem;
 	border: 1px solid var(--color-border);
 }
-/* In the events row the thumbs shrink to fit the card, and the
-   overflow folds into a "+N more" tile that opens the preview. */
+/* In an event row the thumbs shrink and stack two to a line at the
+   row's side; the overflow folds into a "+N more" tile that opens
+   the preview. */
+.event .gallery {
+	flex: none;
+	margin-top: 0;
+	justify-content: flex-end;
+	max-width: calc(2 * 3.6rem + 0.5rem);
+}
 .event .gallery img {
 	width: 3.6rem;
 	height: 3.6rem;
@@ -1161,17 +1168,6 @@ span.lightbox-step.off {
 	}
 	.fold-events {
 		grid-area: events;
-	}
-	/* The events row stops swiping and folds three across. */
-	.events-row {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		overflow: visible;
-		-webkit-mask-image: none;
-		mask-image: none;
-	}
-	.event {
-		flex: none;
 	}
 	.fold-entry {
 		grid-area: entry;

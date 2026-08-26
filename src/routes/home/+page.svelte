@@ -96,19 +96,22 @@
 				{#if !data.events.length}
 					<p class="muted events-empty">Nothing on the calendar this month.</p>
 				{:else}
-					<!-- The month's events, three across (owner ruling
-					     2026-08-26); the pager pages the rest. -->
+					<!-- The month's events: wide rows, three at a time (owner
+					     ruling 2026-08-26) - the words on the left, the
+					     gallery at the row's side; the pager pages the rest. -->
 					<div class="events-row">
 						{#each data.events as event (event.id)}
 							<article class="event card" id={'ev-' + event.id}>
-								<p class="muted event-date">{event.dateLabel}</p>
-								<h3 class="event-title">{event.title}</h3>
-								{#if event.place}
-									<p class="event-place">{event.place}</p>
-								{/if}
-								{#if event.notes}
-									<p class="event-notes">{event.notes}</p>
-								{/if}
+								<div class="event-body">
+									<p class="muted event-date">{event.dateLabel}</p>
+									<h3 class="event-title">{event.title}</h3>
+									{#if event.place}
+										<p class="event-place">{event.place}</p>
+									{/if}
+									{#if event.notes}
+										<p class="event-notes">{event.notes}</p>
+									{/if}
+								</div>
 								{#if event.imageIds.length}
 									<EventGallery
 										imageIds={event.imageIds}
