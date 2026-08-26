@@ -293,6 +293,49 @@ test('the home page is a door for the signed-out', async ({ page }) => {
 	await expect(page.getByRole('heading', { name: 'Hang Gang' })).toBeVisible();
 });
 
+test('repeated misses put an account on a slow clock, and the right password wipes it', async ({
+	page,
+	request
+}) => {
+	// The global backoff (security review finding 9, owner ruling
+	// 2026-08-26): three misses are free, the fourth starts a clock -
+	// 10 seconds, doubling, capped. Kept in the database, so it holds
+	// across every edge, unlike the per-edge limiter around it. It is
+	// backoff, never lockout: the member's own success wipes the slate.
+	const username = `backoff${Date.now()}`;
+	await page.goto('/register');
+	await fillStable(page, 'Username', username);
+	await fillStable(page, 'Password', 'a-decent-password');
+	await page.getByRole('button', { name: /ask for the account/i }).click();
+	expect((await request.post(`/test/approve?username=${username}`)).ok()).toBeTruthy();
+
+	// Four misses: all answered with the unrevealing message, the
+	// fourth quietly starting the clock.
+	for (let i = 0; i < 4; i += 1) {
+		await page.goto('/');
+		await openPasswordFlap(page);
+		await fillStable(page, 'Username', username);
+		await fillStable(page, 'Password', 'wrong-every-time');
+		await page.getByRole('button', { name: 'Sign in' }).click();
+		await expect(page.getByText(/did not match/i)).toBeVisible();
+	}
+
+	// While the clock runs, even the RIGHT password waits - and the
+	// refusal wears the throttle's words, silent about who exists.
+	await fillStable(page, 'Username', username);
+	await fillStable(page, 'Password', 'a-decent-password');
+	await page.getByRole('button', { name: 'Sign in' }).click();
+	await expect(page.getByText(/too many tries/i)).toBeVisible();
+
+	// The first step is 10 seconds. Waited out, the right password
+	// works, and the slate is wiped.
+	await page.waitForTimeout(11_000);
+	await fillStable(page, 'Username', username);
+	await fillStable(page, 'Password', 'a-decent-password');
+	await page.getByRole('button', { name: 'Sign in' }).click();
+	await expect(page.getByRole('heading', { name: /hello/i })).toBeVisible();
+});
+
 test('a fourth sign-in quietly drops the oldest session', async ({
 	page,
 	request,
