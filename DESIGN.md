@@ -52,12 +52,17 @@ never hands over the mapping.
   activity log, and an activity log can be lined up against the group's
   chat. Sessions keep a real expiry because they must enforce one, but
   it is rounded to a day and nothing records when a session began.
-- The app writes no member data to logs — there is not one logging call
-  in it. One caveat, stated plainly: Telegram's sign-in widget returns
-  its answer as a redirect, so a member's Telegram name passes through
-  a URL, and a hosting platform may record URLs. Nothing else about
-  them travels that way, and the payload is now spent on first use, so
-  a captured link is not a key.
+- The app writes no member data to logs. It carries exactly ONE
+  logging call (owner OK 2026-08-26, after an outage produced 500s
+  and left nothing to read): when the server hits an UNEXPECTED
+  error, it records the route's shape and the error text — never a
+  URL, a member id, or a name. Workers Logs stores those crash lines
+  and nothing else; the platform's per-request logs, which would
+  carry URLs, stay off. One caveat, stated plainly: Telegram's
+  sign-in widget returns its answer as a redirect, so a member's
+  Telegram name passes through a URL, and a hosting platform may
+  record URLs. Nothing else about them travels that way, and the
+  payload is now spent on first use, so a captured link is not a key.
 - No floor (owner ruling 2026-08-24, replacing the old N-member floor):
   charts show whatever matches the filters, however few members that
   is. In a small group a narrow filter can point at one person's

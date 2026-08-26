@@ -10,6 +10,19 @@
 	},
 	"workers_dev": true,
 	"preview_urls": true,
+	// Crash lines ONLY (owner OK 2026-08-26, after an outage left no
+	// trace to read). Invocation logs stay OFF on purpose: they would
+	// store request URLs, and the Telegram sign-in carries a member's
+	// name in one. With them off, the only thing Workers Logs ever
+	// stores is what the app itself logs - and the app logs exactly
+	// one thing: an unexpected server error's route and message
+	// (hooks.server.ts handleError).
+	"observability": {
+		"logs": {
+			"enabled": true,
+			"invocation_logs": false
+		}
+	},
 	// Brute-force defence for the sign-in and register forms. The
 	// dashboard's rate-limiting rules are scoped to a DOMAIN, and this
 	// site answers on workers.dev, which is not one we own - so the

@@ -150,6 +150,11 @@ everything mechanical; the selftest proves each one fires.
   with `wrangler d1 migrations apply` — before deploying code that
   needs them. The app refuses loudly (not quietly) when the schema is
   behind.
+- **Crash lines:** when a page dies unexpectedly, the route and error
+  text land in Workers Logs (dashboard → the worker → Logs). That is
+  the ONLY thing ever logged - invocation logs are off by design
+  (wrangler.jsonc), because they would store URLs. Locally,
+  /test/boom fires the path on demand.
 - **Take-down:** delete the worker; the database survives unless the
   owner orders otherwise.
 
