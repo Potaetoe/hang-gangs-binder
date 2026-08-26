@@ -234,10 +234,12 @@ call the door onto the phone rail for one sitting with the phone-only
 Mobile Admin Mode switch in Settings (owner rulings 2026-08-26): a
 session cookie, gone when the browser closes, and the admin pages
 come as the squeeze they are. The page never
-rubber-bands (owner ruling 2026-08-26): on the phone the document
-itself cannot scroll - the page wrapper is the one scroller, because
-iOS ignores gentler hints and bounces the document, rail and all - and
-a scrolling card keeps its own momentum. The binder installs as a
+rubber-bands and the rail never floats (owner rulings 2026-08-26,
+after two iPhone drives): on the phone the page is a one-screen app
+shell - nothing sits position-fixed, the main column is the one
+scroller, and the rail rests in flow on the bottom edge - because iOS
+ignores gentler hints, bounces the document, and floats fixed bars in
+the installed app. A scrolling card keeps its own momentum. The binder installs as a
 home-screen app (owner ruling 2026-08-26): a manifest carrying the
 fork's own name and default palette, real icons, no service worker -
 the pages stay no-JavaScript. Layout and detail are free to

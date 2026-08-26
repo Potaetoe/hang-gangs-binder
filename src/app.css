@@ -100,18 +100,20 @@ body {
 }
 
 /* The wrapper app.html puts around every page. Invisible by default;
-   the phone's scroll lock below turns it into the one scroller. */
+   the phone's app shell below gives it a shape. */
 .page {
 	display: contents;
 }
 
-/* The scroll lock (owner ruling 2026-08-26, after an iPhone drive):
-   iOS bounces the whole document and drags the fixed rail with it,
-   and it ignores overscroll-behavior on the page. So on the phone
-   the document simply cannot scroll - the page wrapper is the one
-   scroller, the rail hangs on the viewport, and there is no page
-   edge left to rubber-band. A scrolling card inside keeps its own
-   momentum. Desktop keeps document scroll and its sticky top bar. */
+/* The app shell (owner rulings 2026-08-26, after two iPhone drives):
+   iOS bounces the whole document, ignores overscroll-behavior on it,
+   and floats position:fixed bars - the installed app showed the rail
+   hovering above the bottom edge. So on the phone NOTHING is fixed
+   and the document cannot scroll: the page is a flex column exactly
+   one screen tall - a status-bar scrim, the scrolling main, and the
+   rail resting in flow on the bottom edge. A scrolling card inside
+   keeps its own momentum. Desktop keeps document scroll and its
+   sticky top bar. */
 @media (max-width: 899.98px) {
 	html:has(main.with-rail),
 	body:has(main.with-rail) {
@@ -119,11 +121,35 @@ body {
 		overflow: hidden;
 	}
 	.page:has(main.with-rail) {
-		display: block;
+		display: flex;
+		flex-direction: column;
 		height: 100%;
 		height: 100dvh;
+		overflow: hidden;
+	}
+	/* Standalone on an iPhone the page runs under the clock; this
+	   pane keeps the status bar on solid ground. Zero-height
+	   anywhere without a notch inset. */
+	.page:has(main.with-rail)::before {
+		content: '';
+		flex: none;
+		height: env(safe-area-inset-top);
+		background: var(--color-bg);
+	}
+	.page:has(main.with-rail) > main.with-rail {
+		flex: 1;
+		min-height: 0;
 		overflow-y: auto;
 		overscroll-behavior: contain;
+		/* Full width, so a touch anywhere scrolls; the padding draws
+		   the same centered column the max-width used to. */
+		width: 100%;
+		max-width: none;
+		padding-inline: max(1rem, calc(50% - 12rem));
+	}
+	.page:has(main.with-rail) > .rail {
+		position: static;
+		order: 1;
 	}
 }
 
@@ -558,12 +584,9 @@ select {
 	width: 22px;
 	height: 22px;
 }
-main.with-rail {
-	/* Room for the fixed rail below - and, standalone on an iPhone
-	   where the page runs under the clock, the status bar above. */
-	padding-top: calc(1.5rem + env(safe-area-inset-top));
-	padding-bottom: 6rem;
-}
+/* The rail sits in flow on the phone and sticks to the top on the
+   desktop - no clearance padding needed on either; the scrim in the
+   app shell handles the iPhone's status bar. */
 
 /* ------------------------------------------------------------------ */
 /* The calendar card (DESIGN.md feature 5): month grid, event list.   */
