@@ -1,10 +1,11 @@
-import { redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import * as table from '$lib/server/db/schema';
 import { identityOf, setDisplayName, type Secrets } from '$lib/server/auth';
 import { PALETTES } from '$lib/server/settings';
+import { parseSocialsForm, setSocials, socialsOf, type SocialLinks } from '$lib/server/socials';
 
 /** The member's own settings (owner ruling 2026-08-24): device-level
  * choices, stored in cookies like the units toggle - the admin's
@@ -28,10 +29,13 @@ export const load: PageServerLoad = async ({ locals, platform, cookies }) => {
 		platform!.env as unknown as Secrets,
 		locals.member.memberId
 	);
+	const mySocials: SocialLinks =
+		(await socialsOf(db, platform!.env as unknown as Secrets, locals.member.memberId)) ?? {};
 	return {
 		myName: identity.displayName || identity.handle || identity.username || '',
 		myTheme: cookies.get('theme') ?? '',
 		myUnits: cookies.get('units') === 'metric' ? 'metric' : 'imperial',
+		mySocials,
 		themeChoices: ['', ...Object.keys(PALETTES)],
 		hasPasswordDoor: Boolean(passwordLogin)
 	};
@@ -67,6 +71,19 @@ export const actions: Actions = {
 			cookies.delete('theme', { path: '/' });
 		}
 		redirect(303, '/settings');
+	},
+
+	socials: async ({ request, locals, platform }) => {
+		if (!locals.member) redirect(303, '/');
+		const parsed = parseSocialsForm(await request.formData());
+		if (!parsed.ok) return fail(400, { socialsProblems: parsed.problems });
+		await setSocials(
+			getDb(platform!.env.DB),
+			platform!.env as unknown as Secrets,
+			locals.member.memberId,
+			parsed.links
+		);
+		return { socialsSaved: true };
 	},
 
 	units: async ({ request, locals, cookies }) => {

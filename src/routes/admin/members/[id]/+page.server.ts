@@ -6,11 +6,13 @@ import * as table from '$lib/server/db/schema';
 import {
 	approveMember,
 	denyMember,
+	logAdmin,
 	purgeMember,
 	setAdminRole,
 	setTempPassphrase
 } from '$lib/server/admin';
 import { identityOf, PASSWORD_MAX, PASSWORD_MIN, type Secrets } from '$lib/server/auth';
+import { clearSocials, hasSocials } from '$lib/server/socials';
 import { loadSettings } from '$lib/server/settings';
 import {
 	formatDate,
@@ -55,6 +57,7 @@ export const load: PageServerLoad = async ({ platform, params, cookies }) => {
 				.join(' + ')
 		},
 		hasPasswordDoor: logins.some((l) => l.kind === 'password'),
+		hasSocials: await hasSocials(db, params.id),
 		passwordMin: PASSWORD_MIN,
 		fieldNames: fields.map((f) => f.name),
 		entries: entries.map(({ entry, values }) => ({
@@ -83,6 +86,16 @@ export const actions: Actions = {
 		const db = getDb(platform!.env.DB);
 		const settings = await loadSettings(db);
 		await approveMember(db, today(settings.timezone), actor.memberId, params.id);
+		redirect(303, `/admin/members/${params.id}`);
+	},
+
+	clearsocials: async ({ locals, platform, params }) => {
+		const actor = guard(locals);
+		const db = getDb(platform!.env.DB);
+		const settings = await loadSettings(db);
+		// The moderation lever (owner ruling 2026-08-26).
+		await clearSocials(db, params.id);
+		await logAdmin(db, today(settings.timezone), actor.memberId, 'cleared the socials', params.id);
 		redirect(303, `/admin/members/${params.id}`);
 	},
 

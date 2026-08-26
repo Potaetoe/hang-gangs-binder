@@ -32,6 +32,7 @@ import {
 	validMonth
 } from '$lib/server/events';
 import { loadSettings } from '$lib/server/settings';
+import { hasSocials } from '$lib/server/socials';
 import type {
 	CalendarView,
 	EntryTableView,
@@ -142,10 +143,16 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 			).length
 		: 0;
 
+	// The socials nudge (owner ruling 2026-08-26): shows until the
+	// member lists a link or waves it away; the wave lives in a device
+	// cookie, like theme and units.
+	const socialsNudge = cookies.get('socials_nudge') !== 'off' && !(await hasSocials(db, memberId));
+
 	return {
 		name: identity.displayName || identity.handle || identity.username || 'member',
 		isAdmin: locals.member.isAdmin,
 		pendingCount,
+		socialsNudge,
 		units,
 		formFields: formFieldViews(fields, latest, units),
 		trends,
@@ -186,5 +193,18 @@ export const actions: Actions = {
 		// The confirmation shows in the units just typed in; the script
 		// strips ?u=, so the next load is the default again.
 		redirect(303, `/home?u=${units}`);
+	},
+
+	nudgeoff: async ({ cookies, locals }) => {
+		if (!locals.member) redirect(303, '/');
+		// Waved away on this device (owner ruling 2026-08-26).
+		cookies.set('socials_nudge', 'off', {
+			path: '/',
+			httpOnly: true,
+			sameSite: 'lax',
+			secure: true,
+			maxAge: 400 * 86_400
+		});
+		redirect(303, '/home');
 	}
 };

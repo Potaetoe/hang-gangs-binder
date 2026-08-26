@@ -52,6 +52,18 @@
 				</form>
 			</details>
 		{/if}
+		{#if data.hasSocials}
+			<details class="flap button-flap">
+				<summary>Clear their socials</summary>
+				<form method="POST" action="?/clearsocials">
+					<p class="muted">
+						Their links leave the Socials page. They can add fresh ones any time; the change log
+						keeps the line.
+					</p>
+					<button>Yes, clear them</button>
+				</form>
+			</details>
+		{/if}
 		<details class="flap button-flap">
 			<summary>Remove this member for good</summary>
 			<form method="POST" action="?/purge">

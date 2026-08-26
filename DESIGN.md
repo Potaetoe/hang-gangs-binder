@@ -157,9 +157,25 @@ decisions.
    page scrolls inside it, headers pinned. The admin's date field is
    the browser's own date box: calendar flyout and typing both work.
 
-**Later** (named so they are not forgotten): a socials-links page,
-admin-defined calculated fields (BMI is the only computed field in
-1.0, wired in code; the door stays open).
+6. **Socials** (owner rulings, 2026-08-26) — its own rail page. The
+   group's official links sit up top (a short label+link list the
+   admins keep in site Settings, logged like any setting); below, a
+   roster of every approved member who has listed links — a name,
+   then small letter badges for X, Tumblr, Feabie, FetLife, and one
+   labelled Other. Links open in a new tab. Handles for X and Tumblr
+   (the binder builds the URL); whole https links for the rest,
+   domain-checked. **Links are sealed exactly like names** — a leaked
+   database shows none of it, and every sealed payload is padded into
+   one fixed bucket so even link counts leak nothing. Members edit in
+   their Settings; the Socials page nudges the linkless toward it,
+   and Home nudges too, waved away with an X (a device cookie).
+   Members without links stay off the roster. Admins can clear a
+   member's links from the admin member page, logged; the departed
+   purge sweeps socials with everything else.
+
+**Later** (named so they are not forgotten): admin-defined calculated
+fields (BMI is the only computed field in 1.0, wired in code; the
+door stays open).
 
 ## Stack
 

@@ -46,6 +46,28 @@
 			{/each}
 		</select>
 
+		<p class="official-title">
+			Group links on the Socials page — the group chat, a Discord, whatever the group runs. Blank
+			rows stay off the page.
+		</p>
+		{#each [...Array(data.officialSlots).keys()] as i (i)}
+			<div class="row">
+				<input
+					name={`official_label_${i + 1}`}
+					aria-label={`Group link ${i + 1} name`}
+					placeholder="Name"
+					maxlength="24"
+					value={data.officialLinks[i]?.label ?? ''}
+				/>
+				<input
+					name={`official_url_${i + 1}`}
+					aria-label={`Group link ${i + 1} address`}
+					placeholder="https://…"
+					value={data.officialLinks[i]?.url ?? ''}
+				/>
+			</div>
+		{/each}
+
 		<button>Save settings</button>
 	</form>
 </section>

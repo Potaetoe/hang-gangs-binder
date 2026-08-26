@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 
-	let { active }: { active: 'home' | 'charts' | 'admin' | 'settings' } = $props();
+	let { active }: { active: 'home' | 'charts' | 'socials' | 'admin' | 'settings' } = $props();
 	const isAdmin = $derived(Boolean(page.data.isAdmin));
 	const siteName = $derived(String(page.data.siteName ?? 'Hang Gang'));
 </script>
@@ -54,6 +54,25 @@
 			<path d="M21 19v-8"></path>
 		</svg>
 		<span>Group Stats</span>
+	</a>
+	<a
+		href={resolve('/socials')}
+		class:on={active === 'socials'}
+		aria-current={active === 'socials' ? 'page' : undefined}
+	>
+		<svg
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.8"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-hidden="true"
+		>
+			<path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2"></path>
+			<path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"></path>
+		</svg>
+		<span>Socials</span>
 	</a>
 	<a
 		href={resolve('/settings')}
