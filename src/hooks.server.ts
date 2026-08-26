@@ -65,9 +65,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 	// A signed-in page is one member's data and belongs in no shared
 	// cache, ever - not a proxy's, not a future CDN rule's. Static
-	// assets are fingerprinted and left alone.
+	// assets are fingerprinted and left alone. Event images are the one
+	// signed-in exception: group data under a random immutable id, so
+	// the member's own browser may keep them - still `private`, so no
+	// shared cache ever holds a byte.
 	if (event.locals.member && !event.url.pathname.startsWith('/_app/')) {
-		response.headers.set('Cache-Control', 'private, no-store');
+		response.headers.set(
+			'Cache-Control',
+			event.url.pathname.startsWith('/events/image/')
+				? 'private, max-age=31536000, immutable'
+				: 'private, no-store'
+		);
 	}
 	return response;
 };

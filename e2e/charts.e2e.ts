@@ -45,7 +45,7 @@ async function logEntry(
 	await page.getByLabel('Gender').selectOption(entry.gender);
 	await page.getByLabel('Country').selectOption(entry.country);
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(page.locator('.entry-summary').first()).toBeVisible();
+	await expect(page.locator('.entries-table tbody tr').first()).toBeVisible();
 }
 
 async function signOut(page: Page) {

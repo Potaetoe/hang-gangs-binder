@@ -364,7 +364,8 @@ select {
 	font-size: 0.9rem;
 }
 
-/* History: a dated row of numbers, the edit link at its side. */
+/* Card-row lists (the member roster, a field's options): a name and
+   its small print, an action at the row's side. */
 .history {
 	list-style: none;
 	margin: 0;
@@ -385,6 +386,12 @@ select {
 	font-family: var(--font-mono);
 	font-size: 0.85rem;
 	overflow-wrap: anywhere;
+}
+
+/* The entries table: one column per field, the edit link at the row's
+   end. Cells hold their line; a wide row scrolls inside its card. */
+.entries-table td {
+	white-space: nowrap;
 }
 .pager {
 	display: flex;
@@ -467,15 +474,140 @@ main.with-rail {
 	padding-bottom: 6rem;
 }
 
-/* Your page: one column on the phone, the form beside its results on
-   desktop (the media query below). */
-.home-layout {
+/* ------------------------------------------------------------------ */
+/* The calendar card (DESIGN.md feature 5): month grid, event list.   */
+
+.cal-head {
 	display: flex;
-	flex-direction: column;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	margin-bottom: 0.5rem;
 }
-.home-rest {
+.cal-label {
+	margin: 0;
+	font-family: var(--font-display);
+	font-weight: 600;
+	font-size: 1.05rem;
+}
+.cal-arrow {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2.25rem;
+	min-height: 2.25rem;
+	border: 1px solid var(--color-border-strong);
+	border-radius: 999px;
+	color: var(--color-text-muted);
+	text-decoration: none;
+}
+.cal-table {
+	width: 100%;
+	border-collapse: collapse;
+	table-layout: fixed;
+}
+.cal-table th {
+	font-size: 0.65rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--color-text-muted);
+	padding-bottom: 0.35rem;
+	text-align: center;
+}
+.cal-table td {
+	padding: 1px;
+	text-align: center;
+}
+.cal-day {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	min-height: 2.2rem;
+	border-radius: 0.55rem;
+	border: 1px solid transparent;
+	font-family: var(--font-mono);
+	font-size: 0.85rem;
+	color: var(--color-text-muted);
+}
+.cal-day.today {
+	border-color: var(--color-border-strong);
+	color: var(--color-text);
+}
+a.cal-day.has-event {
+	background: var(--color-accent);
+	border-color: var(--color-accent);
+	color: var(--color-on-accent);
+	font-weight: 600;
+	text-decoration: none;
+}
+a.cal-day.has-event.today {
+	border-color: var(--color-text);
+}
+
+/* The month's events under the grid (beside it on desktop). */
+.cal-events {
 	display: flex;
 	flex-direction: column;
+	gap: 1rem;
+	margin-top: 1rem;
+}
+.cal-events > .muted {
+	margin: 0;
+}
+.event {
+	border-top: 1px solid var(--color-border);
+	padding-top: 0.75rem;
+}
+.event:first-child {
+	border-top: 0;
+	padding-top: 0;
+}
+.event-date {
+	margin: 0;
+	font-size: 0.8rem;
+}
+.event-title {
+	margin: 0.1rem 0 0.25rem;
+	font-size: 1.15rem;
+}
+.event-place {
+	margin: 0 0 0.25rem;
+	font-weight: 600;
+	font-size: 0.9rem;
+}
+.event-notes {
+	margin: 0;
+	font-size: 0.95rem;
+	white-space: pre-line;
+}
+.gallery {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-top: 0.6rem;
+}
+.gallery img {
+	display: block;
+	width: 6rem;
+	height: 6rem;
+	object-fit: cover;
+	border-radius: 0.5rem;
+	border: 1px solid var(--color-border);
+}
+.gallery-slot {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+.gallery-slot form {
+	margin: 0;
+}
+button.gallery-remove {
+	min-height: 1.9rem;
+	padding: 0.1rem 0.55rem;
+	font-size: 0.8rem;
 }
 
 /* ------------------------------------------------------------------ */
@@ -855,19 +987,21 @@ main.with-rail {
 	main.with-rail {
 		padding-bottom: 3rem;
 	}
-	/* Your page on desktop: the entry form keeps its phone width on
-	   the left; trends and history breathe on the right. */
-	.home-layout {
+	/* Your page on desktop reads top to bottom - trends, calendar,
+	   form, entries (owner ruling 2026-08-26). The calendar card puts
+	   its grid and its event list side by side; the entry form keeps
+	   its phone width rather than stretching across the page. */
+	.cal-body {
 		display: grid;
-		grid-template-columns: 27rem minmax(0, 1fr);
-		gap: 1.5rem;
+		grid-template-columns: minmax(18rem, 23rem) minmax(0, 1fr);
+		gap: 1.75rem;
 		align-items: start;
 	}
-	.home-entry {
-		margin-block: var(--space) 0;
+	.cal-events {
+		margin-top: 0;
 	}
-	.home-rest section:first-child h2 {
-		margin-top: var(--space);
+	.home-entry {
+		max-width: 27rem;
 	}
 	/* The top bar already wears the brand - the in-page eyebrow would
 	   say it twice (owner, 2026-08-24). The phone rail carries no

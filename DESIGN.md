@@ -119,9 +119,23 @@ decisions.
 4. **Combined filters** — multi-filter charts (landed with the core
    loop's charts; floorless by the ruling above).
 
-**Later** (named so they are not forgotten): a calendar/events page, a
-socials-links page, admin-defined calculated fields (BMI is the only
-computed field in 1.0, wired in code; the door stays open).
+5. **Calendar and events** (owner rulings, 2026-08-26) — the group's
+   events live on the home page, not a separate page. An event is a
+   title and a day (required), a place, notes, and a gallery of
+   images (all optional). No time of day, no end date — the chat
+   handles logistics. Images are stored in the database with a size
+   cap per image, so a fork still needs nothing beyond D1 — the cap
+   is the price of keeping the fork one database. Admins manage
+   events in their own admin section: add, edit, delete, every action
+   in the change log. The home page shows, in this order on every
+   screen size: trends, the calendar card (a month grid with event
+   days marked and that month's events listed under it, flipping
+   months back and forward), the entry form, and the member's entries
+   as a real table — one column per active field.
+
+**Later** (named so they are not forgotten): a socials-links page,
+admin-defined calculated fields (BMI is the only computed field in
+1.0, wired in code; the door stays open).
 
 ## Stack
 

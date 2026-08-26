@@ -20,8 +20,15 @@ import {
 	today,
 	type Units
 } from '$lib/server/stats';
+import {
+	calendarGrid,
+	imageIdsByEvent,
+	monthEvents,
+	monthOf,
+	validMonth
+} from '$lib/server/events';
 import { loadSettings } from '$lib/server/settings';
-import type { HistoryRow, TrendView } from '$lib/views';
+import type { CalendarView, EntryTableView, EventView, TrendView } from '$lib/views';
 
 const PAGE_SIZE = 10;
 
@@ -50,20 +57,48 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 	const identity = await identityOf(db, env as unknown as Secrets, memberId);
 	const fields = await loadFields(db);
 	const latest = await latestValues(db, memberId);
+	const todayIso = today((await loadSettings(db)).timezone);
+
+	// The calendar card's month: today's unless the member flipped it.
+	const calParam = url.searchParams.get('cal') ?? '';
+	const month = validMonth(calParam) ? calParam : monthOf(todayIso);
+	const eventRows = await monthEvents(db, month);
+	const imageIds = await imageIdsByEvent(
+		db,
+		eventRows.map((e) => e.id)
+	);
+	const grid = calendarGrid(month, todayIso, eventRows);
+	const calendar: CalendarView = {
+		label: grid.label,
+		prev: grid.prev,
+		next: grid.next,
+		weekdays: grid.weekdays,
+		weeks: grid.weeks
+	};
+	const events: EventView[] = eventRows.map((e) => ({
+		id: e.id,
+		dateLabel: formatDate(e.date),
+		title: e.title,
+		place: e.place,
+		notes: e.notes,
+		imageIds: imageIds[e.id] ?? []
+	}));
 
 	const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
 	const { entries, hasOlder } = await memberHistory(db, memberId, page, PAGE_SIZE);
-	const history: HistoryRow[] = entries.map(({ entry, values }) => ({
-		id: entry.id,
-		dateLabel: formatDate(entry.date),
-		summary: fields
-			.map((field) => {
+	// The entries as a real table (owner ruling 2026-08-26): one column
+	// per active field, so a row reads like the form that made it.
+	const entryTable: EntryTableView = {
+		columns: fields.map((f) => f.name),
+		rows: entries.map(({ entry, values }) => ({
+			id: entry.id,
+			dateLabel: formatDate(entry.date),
+			cells: fields.map((field) => {
 				const value = values.find((v) => v.fieldId === field.id);
 				return value ? formatValue(field, value, units) : '';
 			})
-			.filter(Boolean)
-			.join(' · ')
-	}));
+		}))
+	};
 
 	const trends: TrendView[] = (await memberTrends(db, fields, memberId, units)).map((t) => ({
 		name: t.field.name,
@@ -87,10 +122,13 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 		isAdmin: locals.member.isAdmin,
 		pendingCount,
 		units,
-		todayLabel: formatDate(today((await loadSettings(db)).timezone)),
+		todayLabel: formatDate(todayIso),
 		formFields: formFieldViews(fields, latest, units),
 		trends,
-		history,
+		calendar,
+		events,
+		month,
+		entryTable,
 		page,
 		hasOlder
 	};

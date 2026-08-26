@@ -1,4 +1,4 @@
-import { index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { blob, index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 /**
  * The privacy model (DESIGN.md): rows are keyed by opaque member ids
@@ -175,6 +175,53 @@ export const memberAudit = sqliteTable(
 		before: text('before').notNull()
 	},
 	(t) => [index('member_audit_member').on(t.memberId)]
+);
+
+/**
+ * Group events (DESIGN.md feature 5, owner rulings 2026-08-26):
+ * admin-authored, no member linkage anywhere - an event names a day
+ * the group meets, never who was there. The date is the event's own
+ * day, not an activity timestamp.
+ */
+export const events = sqliteTable(
+	'events',
+	{
+		id: text('id').primaryKey(),
+		date: text('date').notNull(),
+		title: text('title').notNull(),
+		place: text('place'),
+		notes: text('notes')
+	},
+	(t) => [index('events_date').on(t.date)]
+);
+
+/** An event's gallery, one row per image; the bytes live in chunks. */
+export const eventImages = sqliteTable(
+	'event_images',
+	{
+		id: text('id').primaryKey(),
+		eventId: text('event_id').notNull(),
+		position: integer('position').notNull(),
+		mime: text('mime').notNull(),
+		size: integer('size').notNull()
+	},
+	(t) => [index('event_images_event').on(t.eventId)]
+);
+
+/**
+ * Image bytes, split into fixed-size chunks so no single row or bound
+ * parameter ever nears a D1 limit, whatever that limit turns out to
+ * be. Read and written through the raw D1 binding (events.ts) - the
+ * query builder never touches the bytes.
+ */
+export const eventImageChunks = sqliteTable(
+	'event_image_chunks',
+	{
+		imageId: text('image_id').notNull(),
+		seq: integer('seq').notNull(),
+		bytes: blob('bytes').notNull()
+	},
+	(t) => [primaryKey({ columns: [t.imageId, t.seq] })]
 );
 
 export const sessions = sqliteTable('sessions', {

@@ -23,7 +23,30 @@ export type FormFieldView = {
 
 export type TrendView = { name: string; poly: string; latest: string };
 
-export type HistoryRow = { id: string; dateLabel: string; summary: string };
+/** The entries table: one column per active field, one row per entry. */
+export type EntryTableView = {
+	columns: string[];
+	rows: { id: string; dateLabel: string; cells: string[] }[];
+};
+
+/** One event on the calendar card, gallery included. */
+export type EventView = {
+	id: string;
+	dateLabel: string;
+	title: string;
+	place: string | null;
+	notes: string | null;
+	imageIds: string[];
+};
+
+/** The month grid, painted as-is; null cells pad the edges. */
+export type CalendarView = {
+	label: string;
+	prev: string;
+	next: string;
+	weekdays: string[];
+	weeks: ({ day: number; eventId: string | null; eventCount: number; today: boolean } | null)[][];
+};
 
 /** A tile on the charts board: numbers carry a sparkline, choices
  * carry count bars. */
