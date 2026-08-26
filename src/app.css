@@ -927,6 +927,12 @@ span.lightbox-step.off {
 	margin: 0;
 	font-family: var(--font-mono);
 	font-size: 0.95rem;
+	/* Choice tiles name their leaders with counts (owner ruling
+	   2026-08-26); a long list clamps to the tile instead of
+	   wrapping it out of shape. */
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 .tile-delta {
 	color: var(--color-accent);

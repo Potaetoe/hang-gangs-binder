@@ -70,7 +70,10 @@ export const load: PageServerLoad = async ({ platform, params }) => {
 			(f) => f.type === 'number' && !isCalculated(f) && f.status === 'active'
 		);
 		calc = {
-			locked: field.computed === 'bmi',
+			// 'bmi' is locked for good; 'values' is the owner's 2026-08-26
+			// ruling - a recipe freezes the moment its field holds a
+			// stored value, so one field's history is one formula.
+			locked: field.computed === 'bmi' ? 'bmi' : used ? 'values' : null,
 			recipe: formula ? describeFormula(formula, fields) : null,
 			units: formula?.units ?? 'both',
 			decimals: formula?.decimals ?? 1,

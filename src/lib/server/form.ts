@@ -22,7 +22,7 @@ import * as table from './db/schema';
 import { runBatch, type Writes } from './db';
 import { logAdminQuery } from './admin';
 import { choicePicks, fieldOptions, type Field } from './stats';
-import { isCalculated, parseFormula, type Formula, type Operand } from './calc';
+import { describeFormula, isCalculated, parseFormula, type Formula, type Operand } from './calc';
 import { randomToken } from './crypto';
 
 type Db = DrizzleD1Database<typeof import('./db/schema')>;
@@ -84,7 +84,12 @@ export async function addField(
 /**
  * Writes a calculated field's recipe (owner rulings 2026-08-26).
  * Inputs must be typed number fields - never another calculated one,
- * never a choice - and BMI's recipe is locked for good.
+ * never a choice. BMI's recipe is locked for good, and every OTHER
+ * recipe locks the moment its field holds a stored value (owner
+ * ruling 2026-08-26, replacing the editable-formula ruling): every
+ * number in a field's history must come from ONE formula, so changing
+ * the math means retiring the field and building a new one. While a
+ * recipe is still unlocked, every change logs old recipe -> new.
  */
 export async function saveFormula(
 	db: Db,
@@ -98,6 +103,20 @@ export async function saveFormula(
 	if (field.computed === 'bmi') {
 		return { ok: false, reason: "BMI's recipe is fixed - it cannot be rewritten." };
 	}
+	const used = (
+		await db
+			.select({ fieldId: table.entryValues.fieldId })
+			.from(table.entryValues)
+			.where(eq(table.entryValues.fieldId, id))
+			.limit(1)
+	)[0];
+	if (used) {
+		return {
+			ok: false,
+			reason:
+				'This recipe has collected values, so it is locked - retire the field and build a new one to change the math.'
+		};
+	}
 	const fields = await allFields(db);
 	const operands: Operand[] = [formula.start, ...formula.steps.map((s) => s.value)];
 	for (const operand of operands) {
@@ -107,12 +126,16 @@ export async function saveFormula(
 			return { ok: false, reason: 'A recipe reads typed number fields only.' };
 		}
 	}
+	const before = parseFormula(field);
+	const detail = before
+		? `${describeFormula(before, fields)} → ${describeFormula(formula, fields)}`
+		: `set to: ${describeFormula(formula, fields)}`;
 	await runBatch(db, [
 		db
 			.update(table.fields)
 			.set({ formula: JSON.stringify(formula) })
 			.where(eq(table.fields.id, id)),
-		logAdminQuery(db, date, actorId, `changed the recipe of "${field.name}"`)
+		logAdminQuery(db, date, actorId, `changed the recipe of "${field.name}"`, null, detail)
 	]);
 	return { ok: true };
 }
