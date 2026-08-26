@@ -13,6 +13,7 @@
 import { and, asc, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import * as table from './db/schema';
+import { runBatch } from './db';
 import { randomToken } from './crypto';
 
 type Db = DrizzleD1Database<typeof import('./db/schema')>;
@@ -200,20 +201,27 @@ export async function monthEvents(db: Db, month: string): Promise<EventRow[]> {
 		.orderBy(asc(table.events.date), asc(table.events.time), asc(sql`rowid`));
 }
 
-/** The whole event leaves at once: bytes, gallery rows, the row. */
-export async function deleteEvent(db: Db, d1: D1Database, id: string): Promise<boolean> {
+/** The whole event leaves at once - bytes, gallery rows, the row, in
+ * ONE atomic batch (hardening pass, 2026-08-26). Chunks go by
+ * subquery so a full gallery cannot near D1's bound-parameter cap. */
+export async function deleteEvent(db: Db, id: string): Promise<boolean> {
 	const found = await eventById(db, id);
 	if (!found) return false;
-	const images = await db
-		.select({ id: table.eventImages.id })
-		.from(table.eventImages)
-		.where(eq(table.eventImages.eventId, id));
-	if (images.length) {
-		const ids = images.map((i) => i.id);
-		await db.delete(table.eventImageChunks).where(inArray(table.eventImageChunks.imageId, ids));
-		await db.delete(table.eventImages).where(eq(table.eventImages.eventId, id));
-	}
-	await db.delete(table.events).where(eq(table.events.id, id));
+	await runBatch(db, [
+		db
+			.delete(table.eventImageChunks)
+			.where(
+				inArray(
+					table.eventImageChunks.imageId,
+					db
+						.select({ id: table.eventImages.id })
+						.from(table.eventImages)
+						.where(eq(table.eventImages.eventId, id))
+				)
+			),
+		db.delete(table.eventImages).where(eq(table.eventImages.eventId, id)),
+		db.delete(table.events).where(eq(table.events.id, id))
+	]);
 	return true;
 }
 
@@ -291,10 +299,12 @@ export async function addEventImage(
 }
 
 export async function deleteEventImage(db: Db, eventId: string, imageId: string): Promise<void> {
-	await db.delete(table.eventImageChunks).where(eq(table.eventImageChunks.imageId, imageId));
-	await db
-		.delete(table.eventImages)
-		.where(and(eq(table.eventImages.id, imageId), eq(table.eventImages.eventId, eventId)));
+	await runBatch(db, [
+		db.delete(table.eventImageChunks).where(eq(table.eventImageChunks.imageId, imageId)),
+		db
+			.delete(table.eventImages)
+			.where(and(eq(table.eventImages.id, imageId), eq(table.eventImages.eventId, eventId)))
+	]);
 }
 
 /** Whatever shape D1 hands blob bytes back in, out comes a

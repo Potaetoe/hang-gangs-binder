@@ -252,3 +252,9 @@ Clone the repo. Follow the README: create a Cloudflare account, a D1
 database, a Telegram bot; set the secrets; deploy. A few hours for a
 technical-ish admin is acceptable. Every fork is its own island — no
 shared infrastructure, no phoning home.
+
+The product boundary (owner ruling 2026-08-26): until launch, this IS
+the Hang Gang's site, which others may copy — the fork story above,
+nothing more. A generalized community kit (non-Telegram bootstrap,
+configurable starting fields and branding, tagged releases) is a
+SEPARATE branch that starts after launch, not before.

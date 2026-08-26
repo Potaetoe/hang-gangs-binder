@@ -1,4 +1,13 @@
-import { blob, index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import {
+	blob,
+	index,
+	integer,
+	primaryKey,
+	real,
+	sqliteTable,
+	text,
+	uniqueIndex
+} from 'drizzle-orm/sqlite-core';
 
 /**
  * The privacy model (DESIGN.md): rows are keyed by opaque member ids
@@ -24,7 +33,9 @@ export const logins = sqliteTable('logins', {
 	// HMAC of "telegram:<numeric id>" or "password:<username>" under
 	// ID_SECRET - the only way a person is found, and one-way.
 	lookupHash: text('lookup_hash').primaryKey(),
-	memberId: text('member_id').notNull(),
+	memberId: text('member_id')
+		.notNull()
+		.references(() => members.id),
 	kind: text('kind', { enum: ['telegram', 'password'] }).notNull(),
 	// PBKDF2 output for password logins, null for Telegram ones.
 	passwordHash: text('password_hash'),
@@ -76,7 +87,9 @@ export const adminLog = sqliteTable(
 );
 
 export const directory = sqliteTable('directory', {
-	memberId: text('member_id').primaryKey(),
+	memberId: text('member_id')
+		.primaryKey()
+		.references(() => members.id),
 	// AES-GCM sealed JSON: { username?, displayName?, telegramId?,
 	// handle? }. Opened only where a person must be shown to an admin
 	// or greeted by name - never queried.
@@ -129,7 +142,9 @@ export const entries = sqliteTable(
 	'entries',
 	{
 		id: text('id').primaryKey(),
-		memberId: text('member_id').notNull(),
+		memberId: text('member_id')
+			.notNull()
+			.references(() => members.id),
 		// Date only, never clock time (owner ruling 2026-08-24): a stored
 		// timestamp would let a leaked copy match rows to chat activity.
 		date: text('date').notNull(),
@@ -138,14 +153,24 @@ export const entries = sqliteTable(
 		// relative to whom.
 		seq: integer('seq').notNull()
 	},
-	(t) => [index('entries_member_date').on(t.memberId, t.date, t.seq)]
+	(t) => [
+		index('entries_member_date').on(t.memberId, t.date, t.seq),
+		// seq is the ordering contract, so it is UNIQUE per member
+		// (hardening pass, 2026-08-26): two saves racing over one slot
+		// now error instead of both landing.
+		uniqueIndex('entries_member_seq').on(t.memberId, t.seq)
+	]
 );
 
 export const entryValues = sqliteTable(
 	'entry_values',
 	{
-		entryId: text('entry_id').notNull(),
-		fieldId: text('field_id').notNull(),
+		entryId: text('entry_id')
+			.notNull()
+			.references(() => entries.id),
+		fieldId: text('field_id')
+			.notNull()
+			.references(() => fields.id),
 		// Numbers carry both systems (owner ruling: charts read either
 		// without converting). Unitless numbers store the same value in
 		// both columns.
@@ -172,9 +197,13 @@ export const memberAudit = sqliteTable(
 	'member_audit',
 	{
 		id: text('id').primaryKey(),
-		memberId: text('member_id').notNull(),
+		memberId: text('member_id')
+			.notNull()
+			.references(() => members.id),
 		date: text('date').notNull(),
 		action: text('action', { enum: ['edit', 'delete'] }).notNull(),
+		// Deliberately NOT a foreign key: the before-image outlives a
+		// deleted entry - that is its whole job.
 		entryId: text('entry_id').notNull(),
 		entryDate: text('entry_date').notNull(),
 		// JSON snapshot of the entry's values before the change.
@@ -213,7 +242,9 @@ export const eventImages = sqliteTable(
 	'event_images',
 	{
 		id: text('id').primaryKey(),
-		eventId: text('event_id').notNull(),
+		eventId: text('event_id')
+			.notNull()
+			.references(() => events.id),
 		position: integer('position').notNull(),
 		mime: text('mime').notNull(),
 		size: integer('size').notNull()
@@ -230,7 +261,9 @@ export const eventImages = sqliteTable(
 export const eventImageChunks = sqliteTable(
 	'event_image_chunks',
 	{
-		imageId: text('image_id').notNull(),
+		imageId: text('image_id')
+			.notNull()
+			.references(() => eventImages.id),
 		seq: integer('seq').notNull(),
 		bytes: blob('bytes').notNull()
 	},
@@ -246,7 +279,9 @@ export const eventImageChunks = sqliteTable(
  * of someone's links leaks nothing.
  */
 export const socials = sqliteTable('socials', {
-	memberId: text('member_id').primaryKey(),
+	memberId: text('member_id')
+		.primaryKey()
+		.references(() => members.id),
 	sealed: text('sealed').notNull(),
 	// Day only, like every member-linked timestamp.
 	updatedAt: text('updated_at').notNull()
@@ -256,11 +291,12 @@ export const sessions = sqliteTable('sessions', {
 	// SHA-256 of the cookie token: a leaked table holds no usable
 	// credential.
 	tokenHash: text('token_hash').primaryKey(),
-	memberId: text('member_id').notNull(),
-	// Dead column (fix pass 2026-08-25): nothing writes or reads it any
-	// more - authority lives on the member row alone, read fresh every
-	// request. Kept only until a migration drops it.
-	isAdmin: integer('is_admin', { mode: 'boolean' }).notNull().default(false),
+	memberId: text('member_id')
+		.notNull()
+		.references(() => members.id),
+	// The dead is_admin snapshot column left here (fix pass 2026-08-25)
+	// was dropped by the hardening migration, 2026-08-26 - authority
+	// lives on the member row alone, read fresh every request.
 	// Expiry has to be a real number to enforce, but it is rounded to a
 	// day boundary and there is no created_at beside it - this table
 	// used to be a 30-day, second-resolution record of when each member

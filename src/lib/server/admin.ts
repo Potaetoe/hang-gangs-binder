@@ -11,13 +11,36 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import * as table from './db/schema';
-import { identityOf, PASSWORD_MAX, PASSWORD_MIN, type Identity, type Secrets } from './auth';
+import { runBatch } from './db';
+import { allIdentities, PASSWORD_MAX, PASSWORD_MIN, type Identity, type Secrets } from './auth';
 import { hashPassword, randomToken } from './crypto';
 
 type Db = DrizzleD1Database<typeof import('./db/schema')>;
 
 /* ---------------------------------------------------------------- */
 /* The change log                                                    */
+
+/** The log line as an unexecuted statement, so an action and its line
+ * can land in ONE batch - an action that happened without its line,
+ * or a line without its action, is a record that lies (hardening
+ * pass, 2026-08-26). */
+export function logAdminQuery(
+	db: Db,
+	date: string,
+	actorId: string,
+	action: string,
+	subjectId: string | null = null,
+	detail: string | null = null
+) {
+	return db.insert(table.adminLog).values({
+		id: randomToken(16),
+		date,
+		actorId,
+		action,
+		subjectId,
+		detail
+	});
+}
 
 export async function logAdmin(
 	db: Db,
@@ -27,14 +50,7 @@ export async function logAdmin(
 	subjectId: string | null = null,
 	detail: string | null = null
 ) {
-	await db.insert(table.adminLog).values({
-		id: randomToken(16),
-		date,
-		actorId,
-		action,
-		subjectId,
-		detail
-	});
+	await logAdminQuery(db, date, actorId, action, subjectId, detail);
 }
 
 const displayName = (identity: Identity): string =>
@@ -56,25 +72,21 @@ export async function readLog(db: Db, secrets: Secrets, limit = 100): Promise<Lo
 		// same-day lines in the order they happened, newest first.
 		.orderBy(desc(table.adminLog.date), desc(sql`rowid`))
 		.limit(limit);
-	const names = new Map<string, string>();
-	const nameOf = async (id: string | null): Promise<string | null> => {
+	// One directory read for the whole page, not one per line
+	// (hardening pass, 2026-08-26).
+	const identities = await allIdentities(db, secrets);
+	const nameOf = (id: string | null): string | null => {
 		if (!id) return null;
-		if (!names.has(id)) {
-			names.set(id, displayName(await identityOf(db, secrets, id)) || 'a departed member');
-		}
-		return names.get(id)!;
+		const identity = identities.get(id);
+		return (identity && displayName(identity)) || 'a departed member';
 	};
-	const out: LogLine[] = [];
-	for (const row of rows) {
-		out.push({
-			date: row.date,
-			actor: (await nameOf(row.actorId)) ?? 'unknown',
-			action: row.action,
-			subject: await nameOf(row.subjectId),
-			detail: row.detail
-		});
-	}
-	return out;
+	return rows.map((row) => ({
+		date: row.date,
+		actor: nameOf(row.actorId) ?? 'unknown',
+		action: row.action,
+		subject: nameOf(row.subjectId),
+		detail: row.detail
+	}));
 }
 
 /* ---------------------------------------------------------------- */
@@ -113,9 +125,12 @@ export async function memberRoster(db: Db, secrets: Secrets): Promise<MemberRow[
 		doorsOf.set(login.memberId, list);
 	}
 
+	// The whole directory in one query - this page used to make one
+	// round trip per member (hardening pass, 2026-08-26).
+	const identities = await allIdentities(db, secrets);
 	const rows: MemberRow[] = [];
 	for (const member of members) {
-		const identity = await identityOf(db, secrets, member.id);
+		const identity = identities.get(member.id) ?? {};
 		rows.push({
 			id: member.id,
 			name: displayName(identity) || '(no name on file)',
@@ -141,8 +156,10 @@ export async function memberRoster(db: Db, secrets: Secrets): Promise<MemberRow[
 /* Actions - each one logs                                           */
 
 export async function approveMember(db: Db, date: string, actorId: string, id: string) {
-	await db.update(table.members).set({ status: 'approved' }).where(eq(table.members.id, id));
-	await logAdmin(db, date, actorId, 'approved the account', id);
+	await runBatch(db, [
+		db.update(table.members).set({ status: 'approved' }).where(eq(table.members.id, id)),
+		logAdminQuery(db, date, actorId, 'approved the account', id)
+	]);
 }
 
 /** Deny deletes the registration entirely (owner ruling): the
@@ -155,10 +172,12 @@ export async function denyMember(
 ): Promise<boolean> {
 	const member = (await db.select().from(table.members).where(eq(table.members.id, id)))[0];
 	if (!member || member.status !== 'pending') return false;
-	await db.delete(table.logins).where(eq(table.logins.memberId, id));
-	await db.delete(table.directory).where(eq(table.directory.memberId, id));
-	await db.delete(table.members).where(eq(table.members.id, id));
-	await logAdmin(db, date, actorId, 'denied a registration', null, null);
+	await runBatch(db, [
+		db.delete(table.logins).where(eq(table.logins.memberId, id)),
+		db.delete(table.directory).where(eq(table.directory.memberId, id)),
+		db.delete(table.members).where(eq(table.members.id, id)),
+		logAdminQuery(db, date, actorId, 'denied a registration', null, null)
+	]);
 	return true;
 }
 
@@ -185,8 +204,10 @@ export async function setAdminRole(
 	// the whole change. There used to be a second write keeping a
 	// session-side copy honest - a copy someone would eventually
 	// forget.
-	await db.update(table.members).set({ isAdmin: makeAdmin }).where(eq(table.members.id, id));
-	await logAdmin(db, date, actorId, makeAdmin ? 'made an admin' : 'removed admin', id);
+	await runBatch(db, [
+		db.update(table.members).set({ isAdmin: makeAdmin }).where(eq(table.members.id, id)),
+		logAdminQuery(db, date, actorId, makeAdmin ? 'made an admin' : 'removed admin', id)
+	]);
 	return { ok: true };
 }
 
@@ -215,43 +236,58 @@ export async function setTempPassphrase(
 			.where(and(eq(table.logins.memberId, id), eq(table.logins.kind, 'password')))
 	)[0];
 	if (!login) return { ok: false, reason: 'no-password-door' };
-	await db
-		.update(table.logins)
-		.set({ passwordHash: await hashPassword(passphrase), mustChange: true })
-		.where(eq(table.logins.lookupHash, login.lookupHash));
-	// A stolen-session reset should also sign the old sessions out.
-	await db.delete(table.sessions).where(eq(table.sessions.memberId, id));
-	await logAdmin(db, date, actorId, 'set a temporary passphrase', id);
+	const passwordHash = await hashPassword(passphrase);
+	await runBatch(db, [
+		db
+			.update(table.logins)
+			.set({ passwordHash, mustChange: true })
+			.where(eq(table.logins.lookupHash, login.lookupHash)),
+		// A stolen-session reset should also sign the old sessions out.
+		db.delete(table.sessions).where(eq(table.sessions.memberId, id)),
+		logAdminQuery(db, date, actorId, 'set a temporary passphrase', id)
+	]);
 	return { ok: true };
 }
 
 /** Departed cleanup (owner ruling: full purge). Everything the member
- * ever was leaves the database; the log line survives, unlinkable. */
+ * ever was leaves the database in ONE atomic batch - it used to be
+ * eight separate writes, and a failure in the middle left half a
+ * person behind (hardening pass, 2026-08-26). The log line survives,
+ * unlinkable. Values go by subquery, not by a bound id list: a long
+ * history would blow D1's per-query parameter cap. */
 export async function purgeMember(db: Db, date: string, actorId: string, id: string) {
-	const entryIds = (
-		await db
-			.select({ id: table.entries.id })
-			.from(table.entries)
-			.where(eq(table.entries.memberId, id))
-	).map((e) => e.id);
-	if (entryIds.length) {
-		await db.delete(table.entryValues).where(inArray(table.entryValues.entryId, entryIds));
-	}
-	await db.delete(table.entries).where(eq(table.entries.memberId, id));
-	await db.delete(table.memberAudit).where(eq(table.memberAudit.memberId, id));
-	await db.delete(table.sessions).where(eq(table.sessions.memberId, id));
-	await db.delete(table.logins).where(eq(table.logins.memberId, id));
-	await db.delete(table.socials).where(eq(table.socials.memberId, id));
-	await db.delete(table.directory).where(eq(table.directory.memberId, id));
-	await db.delete(table.members).where(eq(table.members.id, id));
-	await logAdmin(
-		db,
-		date,
-		actorId,
-		'removed a departed member',
-		null,
-		`${entryIds.length} entries erased`
-	);
+	const [{ entryCount }] = await db
+		.select({ entryCount: sql<number>`count(*)` })
+		.from(table.entries)
+		.where(eq(table.entries.memberId, id));
+	await runBatch(db, [
+		db
+			.delete(table.entryValues)
+			.where(
+				inArray(
+					table.entryValues.entryId,
+					db
+						.select({ id: table.entries.id })
+						.from(table.entries)
+						.where(eq(table.entries.memberId, id))
+				)
+			),
+		db.delete(table.entries).where(eq(table.entries.memberId, id)),
+		db.delete(table.memberAudit).where(eq(table.memberAudit.memberId, id)),
+		db.delete(table.sessions).where(eq(table.sessions.memberId, id)),
+		db.delete(table.logins).where(eq(table.logins.memberId, id)),
+		db.delete(table.socials).where(eq(table.socials.memberId, id)),
+		db.delete(table.directory).where(eq(table.directory.memberId, id)),
+		db.delete(table.members).where(eq(table.members.id, id)),
+		logAdminQuery(
+			db,
+			date,
+			actorId,
+			'removed a departed member',
+			null,
+			`${entryCount} entries erased`
+		)
+	]);
 }
 
 /* ---------------------------------------------------------------- */
@@ -275,22 +311,17 @@ export async function readCorrections(
 		.from(table.memberAudit)
 		.orderBy(desc(table.memberAudit.date), desc(sql`rowid`))
 		.limit(limit);
-	const names = new Map<string, string>();
-	const out: CorrectionLine[] = [];
-	for (const row of rows) {
-		if (!names.has(row.memberId)) {
-			names.set(
-				row.memberId,
-				displayName(await identityOf(db, secrets, row.memberId)) || 'a departed member'
-			);
-		}
-		out.push({
+	// One directory read, like the roster and the log (hardening pass,
+	// 2026-08-26).
+	const identities = await allIdentities(db, secrets);
+	return rows.map((row) => {
+		const identity = identities.get(row.memberId);
+		return {
 			date: row.date,
-			member: names.get(row.memberId)!,
+			member: (identity && displayName(identity)) || 'a departed member',
 			action: row.action,
 			entryDate: row.entryDate,
 			before: row.before
-		});
-	}
-	return out;
+		};
+	});
 }

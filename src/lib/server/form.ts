@@ -19,7 +19,8 @@
 import { and, asc, eq } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import * as table from './db/schema';
-import { logAdmin } from './admin';
+import { runBatch, type Writes } from './db';
+import { logAdminQuery } from './admin';
 import { choicePicks, fieldOptions, type Field } from './stats';
 import { isCalculated, parseFormula, type Formula, type Operand } from './calc';
 import { randomToken } from './crypto';
@@ -62,19 +63,21 @@ export async function addField(
 	const fields = await allFields(db);
 	const position = Math.max(0, ...fields.map((f) => f.position)) + 1;
 	const id = randomToken(6);
-	await db.insert(table.fields).values({
-		id,
-		name,
-		type: isChoice ? 'choice' : 'number',
-		measure: isChoice || isCalc ? null : kind,
-		computed: null,
-		formula: isCalc ? '{}' : null,
-		options: isChoice ? '[]' : null,
-		multiple: kind === 'multi',
-		position,
-		status: isChoice || isCalc ? 'retired' : 'active'
-	});
-	await logAdmin(db, date, actorId, `added the field "${name}"`);
+	await runBatch(db, [
+		db.insert(table.fields).values({
+			id,
+			name,
+			type: isChoice ? 'choice' : 'number',
+			measure: isChoice || isCalc ? null : kind,
+			computed: null,
+			formula: isCalc ? '{}' : null,
+			options: isChoice ? '[]' : null,
+			multiple: kind === 'multi',
+			position,
+			status: isChoice || isCalc ? 'retired' : 'active'
+		}),
+		logAdminQuery(db, date, actorId, `added the field "${name}"`)
+	]);
 	return { ok: true, id };
 }
 
@@ -104,11 +107,13 @@ export async function saveFormula(
 			return { ok: false, reason: 'A recipe reads typed number fields only.' };
 		}
 	}
-	await db
-		.update(table.fields)
-		.set({ formula: JSON.stringify(formula) })
-		.where(eq(table.fields.id, id));
-	await logAdmin(db, date, actorId, `changed the recipe of "${field.name}"`);
+	await runBatch(db, [
+		db
+			.update(table.fields)
+			.set({ formula: JSON.stringify(formula) })
+			.where(eq(table.fields.id, id)),
+		logAdminQuery(db, date, actorId, `changed the recipe of "${field.name}"`)
+	]);
 	return { ok: true };
 }
 
@@ -125,8 +130,10 @@ export async function renameField(
 	if (!name) return { ok: false, reason: 'A field needs a name.' };
 	const field = await fieldById(db, id);
 	if (!field) return { ok: false, reason: 'No such field.' };
-	await db.update(table.fields).set({ name }).where(eq(table.fields.id, id));
-	await logAdmin(db, date, actorId, `renamed the field "${field.name}" to "${name}"`);
+	await runBatch(db, [
+		db.update(table.fields).set({ name }).where(eq(table.fields.id, id)),
+		logAdminQuery(db, date, actorId, `renamed the field "${field.name}" to "${name}"`)
+	]);
 	return { ok: true };
 }
 
@@ -143,8 +150,10 @@ export async function makeMultiple(
 	const field = await fieldById(db, id);
 	if (!field || field.type !== 'choice') return { ok: false, reason: 'No such choice field.' };
 	if (field.multiple) return { ok: false, reason: 'Members already pick several here.' };
-	await db.update(table.fields).set({ multiple: true }).where(eq(table.fields.id, id));
-	await logAdmin(db, date, actorId, `let members pick several on "${field.name}"`);
+	await runBatch(db, [
+		db.update(table.fields).set({ multiple: true }).where(eq(table.fields.id, id)),
+		logAdminQuery(db, date, actorId, `let members pick several on "${field.name}"`)
+	]);
 	return { ok: true };
 }
 
@@ -163,9 +172,13 @@ export async function moveField(
 	const other = fields[direction === 'up' ? index - 1 : index + 1];
 	if (!other) return { ok: true };
 	const a = fields[index];
-	await db.update(table.fields).set({ position: other.position }).where(eq(table.fields.id, a.id));
-	await db.update(table.fields).set({ position: a.position }).where(eq(table.fields.id, other.id));
-	await logAdmin(db, date, actorId, `moved the field "${a.name}" ${direction}`);
+	// One batch: half a swap is two fields on one position (hardening
+	// pass, 2026-08-26).
+	await runBatch(db, [
+		db.update(table.fields).set({ position: other.position }).where(eq(table.fields.id, a.id)),
+		db.update(table.fields).set({ position: a.position }).where(eq(table.fields.id, other.id)),
+		logAdminQuery(db, date, actorId, `moved the field "${a.name}" ${direction}`)
+	]);
 	return { ok: true };
 }
 
@@ -180,8 +193,10 @@ export async function retireField(
 	}
 	const field = await fieldById(db, id);
 	if (!field) return { ok: false, reason: 'No such field.' };
-	await db.update(table.fields).set({ status: 'retired' }).where(eq(table.fields.id, id));
-	await logAdmin(db, date, actorId, `retired the field "${field.name}"`);
+	await runBatch(db, [
+		db.update(table.fields).set({ status: 'retired' }).where(eq(table.fields.id, id)),
+		logAdminQuery(db, date, actorId, `retired the field "${field.name}"`)
+	]);
 	return { ok: true };
 }
 
@@ -205,8 +220,10 @@ export async function reviveField(
 			reason: 'A calculated field needs a working recipe before it goes on the form.'
 		};
 	}
-	await db.update(table.fields).set({ status: 'active' }).where(eq(table.fields.id, id));
-	await logAdmin(db, date, actorId, `put the field "${field.name}" on the form`);
+	await runBatch(db, [
+		db.update(table.fields).set({ status: 'active' }).where(eq(table.fields.id, id)),
+		logAdminQuery(db, date, actorId, `put the field "${field.name}" on the form`)
+	]);
 	return { ok: true };
 }
 
@@ -233,16 +250,20 @@ export async function deleteField(
 	if (used) {
 		return { ok: false, reason: 'This field has collected values - retire it instead.' };
 	}
-	await db.delete(table.fields).where(eq(table.fields.id, id));
-	await logAdmin(db, date, actorId, `deleted the unused field "${field.name}"`);
+	await runBatch(db, [
+		db.delete(table.fields).where(eq(table.fields.id, id)),
+		logAdminQuery(db, date, actorId, `deleted the unused field "${field.name}"`)
+	]);
 	return { ok: true };
 }
 
 /* ---------------------------------------------------------------- */
 /* Options                                                           */
 
-async function writeOptions(db: Db, id: string, options: string[]) {
-	await db
+/** The option-list update as an unexecuted statement, for batching
+ * with whatever else the action changes. */
+function optionsQuery(db: Db, id: string, options: string[]) {
+	return db
 		.update(table.fields)
 		.set({ options: JSON.stringify(options) })
 		.where(eq(table.fields.id, id));
@@ -263,8 +284,10 @@ export async function addOption(
 	if (!field || field.type !== 'choice') return { ok: false, reason: 'No such choice field.' };
 	const options = fieldOptions(field);
 	if (options.includes(option)) return { ok: false, reason: 'That option already exists.' };
-	await writeOptions(db, id, [...options, option]);
-	await logAdmin(db, date, actorId, `added the option "${option}" to "${field.name}"`);
+	await runBatch(db, [
+		optionsQuery(db, id, [...options, option]),
+		logAdminQuery(db, date, actorId, `added the option "${option}" to "${field.name}"`)
+	]);
 	return { ok: true };
 }
 
@@ -285,36 +308,46 @@ export async function renameOption(
 	const options = fieldOptions(field);
 	if (!options.includes(fromOption)) return { ok: false, reason: 'No such option.' };
 	if (options.includes(to)) return { ok: false, reason: 'That option already exists.' };
-	await writeOptions(
-		db,
-		id,
-		options.map((o) => (o === fromOption ? to : o))
-	);
-	// Plain single-pick rows rewrite in one stroke; the SQL equality
-	// cannot see inside a pick-several row's JSON list, so those rows
-	// rewrite one by one. A switched field carries both shapes.
-	await db
-		.update(table.entryValues)
-		.set({ choice: to })
-		.where(and(eq(table.entryValues.fieldId, id), eq(table.entryValues.choice, fromOption)));
+	// The option list, every stored answer and the log line move as ONE
+	// batch (hardening pass, 2026-08-26): a rename that dies halfway
+	// used to leave history split between two spellings.
+	const statements: Writes = [
+		optionsQuery(
+			db,
+			id,
+			options.map((o) => (o === fromOption ? to : o))
+		),
+		// Plain single-pick rows rewrite in one stroke; the SQL equality
+		// cannot see inside a pick-several row's JSON list, so those rows
+		// rewrite one by one. A switched field carries both shapes.
+		db
+			.update(table.entryValues)
+			.set({ choice: to })
+			.where(and(eq(table.entryValues.fieldId, id), eq(table.entryValues.choice, fromOption)))
+	];
 	if (field.multiple) {
 		const rows = await db.select().from(table.entryValues).where(eq(table.entryValues.fieldId, id));
 		for (const row of rows) {
 			if (!(row.choice ?? '').startsWith('[')) continue;
 			const picks = choicePicks(row);
 			if (!picks.includes(fromOption)) continue;
-			await db
-				.update(table.entryValues)
-				.set({ choice: JSON.stringify(picks.map((p) => (p === fromOption ? to : p))) })
-				.where(and(eq(table.entryValues.entryId, row.entryId), eq(table.entryValues.fieldId, id)));
+			statements.push(
+				db
+					.update(table.entryValues)
+					.set({ choice: JSON.stringify(picks.map((p) => (p === fromOption ? to : p))) })
+					.where(and(eq(table.entryValues.entryId, row.entryId), eq(table.entryValues.fieldId, id)))
+			);
 		}
 	}
-	await logAdmin(
-		db,
-		date,
-		actorId,
-		`renamed the option "${fromOption}" to "${to}" on "${field.name}"`
+	statements.push(
+		logAdminQuery(
+			db,
+			date,
+			actorId,
+			`renamed the option "${fromOption}" to "${to}" on "${field.name}"`
+		)
 	);
+	await runBatch(db, statements);
 	return { ok: true };
 }
 
@@ -331,11 +364,13 @@ export async function removeOption(
 	if (!field || field.type !== 'choice') return { ok: false, reason: 'No such choice field.' };
 	const options = fieldOptions(field);
 	if (!options.includes(option)) return { ok: false, reason: 'No such option.' };
-	await writeOptions(
-		db,
-		id,
-		options.filter((o) => o !== option)
-	);
-	await logAdmin(db, date, actorId, `removed the option "${option}" from "${field.name}"`);
+	await runBatch(db, [
+		optionsQuery(
+			db,
+			id,
+			options.filter((o) => o !== option)
+		),
+		logAdminQuery(db, date, actorId, `removed the option "${option}" from "${field.name}"`)
+	]);
 	return { ok: true };
 }
