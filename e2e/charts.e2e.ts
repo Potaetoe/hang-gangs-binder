@@ -128,9 +128,13 @@ test('the rail is a bottom bar on the phone and wears the brand on desktop', asy
 	await expect(page.locator('.rail-brand-name')).toBeVisible();
 	await expect(page.locator('.rail-brand-name')).toHaveText('Hang Gang');
 
-	// Phone: the brand hides, the links remain as the bottom rail.
+	// Phone: the brand hides and the rail slims to four stops (owner
+	// ruling 2026-08-26) - Sign out moves into Settings there.
 	await page.setViewportSize({ width: 375, height: 812 });
 	await page.reload();
 	await expect(page.locator('.rail-brand-name')).not.toBeVisible();
 	await expect(page.locator('.rail').getByRole('link', { name: 'Group Stats' })).toBeVisible();
+	await expect(page.locator('.rail').getByRole('button', { name: 'Sign out' })).not.toBeVisible();
+	await page.locator('.rail').getByRole('link', { name: 'Settings' }).click();
+	await expect(page.getByRole('button', { name: 'Sign out on this device' })).toBeVisible();
 });

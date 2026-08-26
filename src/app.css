@@ -94,6 +94,9 @@ body {
 	font-size: 16px;
 	line-height: 1.5;
 	min-height: 100svh;
+	/* No rubber-band bounce (owner drive on an iPhone, 2026-08-26):
+	   the elastic overscroll dragged the fixed rail off the edge. */
+	overscroll-behavior-y: none;
 }
 
 main {
@@ -467,6 +470,15 @@ select {
 	display: flex;
 	border-top: 1px solid var(--color-border);
 	background: var(--color-surface);
+	/* The iPhone's home-indicator strip gets its own room. */
+	padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Four stops on the phone (owner ruling 2026-08-26): Sign out lives
+   in Settings there, and admin work is desktop work. The desktop top
+   bar has the room and keeps both. */
+.rail .rail-wide {
+	display: none;
 }
 .rail .rail-brand {
 	display: none;
@@ -1106,6 +1118,12 @@ span.lightbox-step.off {
 		gap: 1.75rem;
 		padding: 0.4rem 2.5rem;
 	}
+	.rail a.rail-wide {
+		display: flex;
+	}
+	.rail form.rail-wide {
+		display: flex;
+	}
 	.rail .rail-brand {
 		display: block;
 		flex: none;
@@ -1351,6 +1369,9 @@ button.quiet {
 .table-scroll {
 	overflow-x: auto;
 	padding: 0.5rem 1rem;
+	/* A card's leftover scroll momentum stays in the card - it never
+	   spills into scrolling the page (the iPhone endless-scroll feel). */
+	overscroll-behavior: contain;
 }
 .admin-table {
 	width: 100%;

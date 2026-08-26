@@ -146,5 +146,14 @@
 				<a class="button" href={resolve('/password')}>Change password</a>
 			</section>
 		{/if}
+
+		<!-- The phone rail runs four stops (owner ruling 2026-08-26);
+		     signing out lives here instead. -->
+		<section class="setting">
+			<h2>Sign out</h2>
+			<form method="POST" action={resolve('/signout')}>
+				<button class="quiet">Sign out on this device</button>
+			</form>
+		</section>
 	</div>
 </main>

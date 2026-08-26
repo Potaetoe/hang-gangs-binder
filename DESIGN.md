@@ -226,7 +226,11 @@ desktop only (owner ruling 2026-08-24). A page never restates the
 rail (owner ruling 2026-08-26): the highlighted rail item says where
 you are, so titles like "Admin" are screen-reader-only — a visible
 title must say something the rail does not, like "Hello, Marcus" or
-a field's name. Layout and detail are free to
+a field's name. The phone rail runs four stops — Home, Group Stats,
+Socials, Settings (owner ruling 2026-08-26, after an iPhone drive):
+Sign out lives in Settings there, and the Admin door is desktop's
+alone, matching the desktop-only admin ruling. The page never
+rubber-bands, and a scrolling card keeps its own momentum. Layout and detail are free to
 improve as pages are rebuilt as components. The rebuild changes the
 machinery, not the face.
 

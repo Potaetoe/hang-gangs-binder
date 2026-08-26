@@ -98,6 +98,7 @@
 	{#if isAdmin}
 		<a
 			href={resolve('/admin')}
+			class="rail-wide"
 			class:on={active === 'admin'}
 			aria-current={active === 'admin' ? 'page' : undefined}
 		>
@@ -116,7 +117,7 @@
 			<span>Admin</span>
 		</a>
 	{/if}
-	<form method="POST" action={resolve('/signout')} class="rail-out">
+	<form method="POST" action={resolve('/signout')} class="rail-out rail-wide">
 		<button>
 			<svg
 				viewBox="0 0 24 24"
