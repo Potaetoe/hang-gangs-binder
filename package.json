@@ -27,7 +27,7 @@
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
 		"db:studio": "drizzle-kit studio",
-		"db:apply:local": "wrangler d1 migrations apply binder-db --local",
+		"db:apply:local": "wrangler d1 migrations apply DB --local",
 		"db:wipe:local": "node -e \"fs.rmSync('.wrangler/state',{recursive:true,force:true})\""
 	},
 	"devDependencies": {
