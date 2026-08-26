@@ -4,6 +4,11 @@
 // and gallery - with no code change anywhere.
 import { expect, test, type Page } from '@playwright/test';
 
+// A London clock, so the timed-event checks PROVE the conversion ran:
+// 7 PM Central is past midnight there, and the fallback label (7:00
+// PM CDT) cannot be mistaken for the converted one.
+test.use({ timezoneId: 'Europe/London' });
+
 async function fillStable(page: Page, label: string | RegExp, value: string) {
 	await expect(async () => {
 		await page.getByLabel(label).fill(value);
@@ -97,11 +102,13 @@ test('an event an admin adds reaches every member home, gallery included', async
 	await expect(event).toContainText('Bring a chair.');
 
 	// The time rides as an instant: 7 PM Central on May 15 2031 is
-	// midnight UTC on the 16th. The page script shows it in the
-	// viewer's own clock; the epoch is the truth it converts from.
+	// midnight UTC on the 16th - 1 AM in this browser's London clock,
+	// a day past the event's own date, so the script shows the date
+	// too. Seeing May 16 proves the conversion actually ran.
 	const timeSpan = event.locator('[data-epoch]');
 	await expect(timeSpan).toHaveAttribute('data-epoch', String(Date.UTC(2031, 4, 16)));
-	await expect(timeSpan).toHaveText(/\d{1,2}:\d{2}/);
+	await expect(timeSpan).toContainText('May 16');
+	await expect(timeSpan).toContainText('1:00');
 	// Three thumbnails; the fourth folds into the "+1 more" tile.
 	await expect(event.locator('.gallery img')).toHaveCount(3);
 	await expect(event.locator('.gallery-more')).toHaveText('+1 more');
