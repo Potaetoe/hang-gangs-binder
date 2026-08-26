@@ -29,10 +29,17 @@ export type EntryTableView = {
 	rows: { id: string; dateLabel: string; cells: string[] }[];
 };
 
-/** One event on the calendar card, gallery included. */
+/** One event on the calendar card, gallery included. `timeLabel` is
+ * the event's own wall time with its zone (the no-script fallback);
+ * `epoch` lets the page show it in the viewer's clock instead. Both
+ * null for an all-day event. */
 export type EventView = {
 	id: string;
+	/** ISO day, for the local-clock script's day comparison. */
+	date: string;
 	dateLabel: string;
+	timeLabel: string | null;
+	epoch: number | null;
 	title: string;
 	place: string | null;
 	notes: string | null;

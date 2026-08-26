@@ -28,6 +28,7 @@
 <svelte:head>
 	<title>Home — {data.siteName} Binder</title>
 	<script src="/units-view.js" defer></script>
+	<script src="/event-times.js" defer></script>
 </svelte:head>
 
 <Nav active="home" />
@@ -108,7 +109,12 @@
 						{#each data.events as event (event.id)}
 							<article class="event card" id={'ev-' + event.id}>
 								<div class="event-body">
-									<p class="muted event-date">{event.dateLabel}</p>
+									<p class="muted event-date">
+										{event.dateLabel}{#if event.timeLabel}
+											&middot; <span data-epoch={event.epoch} data-date={event.date}
+												>{event.timeLabel}</span
+											>{/if}
+									</p>
 									<h3 class="event-title">{event.title}</h3>
 									{#if event.place}
 										<p class="event-place">{event.place}</p>

@@ -12,7 +12,7 @@ import {
 	pickedFiles,
 	updateEvent
 } from '$lib/server/events';
-import { loadSettings } from '$lib/server/settings';
+import { loadSettings, TIMEZONE_CHOICES } from '$lib/server/settings';
 import { today } from '$lib/server/stats';
 
 export const load: PageServerLoad = async ({ params, platform, url }) => {
@@ -21,16 +21,21 @@ export const load: PageServerLoad = async ({ params, platform, url }) => {
 	if (!event) error(404, 'No such event');
 	const images = await eventImageList(db, event.id);
 	const skipped = Math.max(0, Number(url.searchParams.get('skipped')) || 0);
+	const settings = await loadSettings(db);
 	return {
 		event: {
 			id: event.id,
 			date: event.date,
+			time: event.time ?? '',
+			tz: event.tz ?? '',
 			title: event.title,
 			place: event.place ?? '',
 			notes: event.notes ?? ''
 		},
 		images: images.map((i) => ({ id: i.id })),
-		skipped
+		skipped,
+		timezoneChoices: TIMEZONE_CHOICES,
+		siteTz: settings.timezone
 	};
 };
 

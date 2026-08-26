@@ -25,6 +25,7 @@
 				<thead>
 					<tr>
 						<th>Date</th>
+						<th>Time</th>
 						<th>Event</th>
 						<th>Place</th>
 						<th>Images</th>
@@ -35,6 +36,7 @@
 					{#each data.events as event (event.id)}
 						<tr>
 							<td>{event.dateLabel}</td>
+							<td>{event.timeLabel}</td>
 							<td>{event.title}</td>
 							<td>{event.place || '—'}</td>
 							<td>{event.imageCount || '—'}</td>
@@ -55,6 +57,16 @@
 			<input id="event-title" name="title" autocomplete="off" maxlength="80" />
 			<label for="event-date">The day</label>
 			<input id="event-date" name="date" type="date" />
+			<label for="event-time">Time (optional — blank means all day)</label>
+			<div class="row">
+				<input id="event-time" name="time" type="time" />
+				<select name="tz" aria-label="The timezone the time is in">
+					{#each data.timezoneChoices as zone (zone.id)}
+						<option value={zone.id} selected={zone.id === data.siteTz}>{zone.name}</option>
+					{/each}
+				</select>
+			</div>
+			<p class="muted">The time is in the zone you pick here; members see it in their own clock.</p>
 			<label for="event-place">Where (optional)</label>
 			<input id="event-place" name="place" autocomplete="off" maxlength="120" />
 			<label for="event-notes">Notes (optional)</label>

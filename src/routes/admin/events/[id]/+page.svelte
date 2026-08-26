@@ -36,6 +36,18 @@
 		/>
 		<label for="event-date">The day</label>
 		<input id="event-date" name="date" type="date" value={data.event.date} />
+		<label for="event-time">Time (optional — blank means all day)</label>
+		<div class="row">
+			<input id="event-time" name="time" type="time" value={data.event.time} />
+			<select name="tz" aria-label="The timezone the time is in">
+				{#each data.timezoneChoices as zone (zone.id)}
+					<option value={zone.id} selected={zone.id === (data.event.tz || data.siteTz)}
+						>{zone.name}</option
+					>
+				{/each}
+			</select>
+		</div>
+		<p class="muted">The time is in the zone you pick here; members see it in their own clock.</p>
 		<label for="event-place">Where (optional)</label>
 		<input
 			id="event-place"

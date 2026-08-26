@@ -41,6 +41,16 @@ export const EVENTS_PER_PAGE = 3;
 
 const DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_SHAPE = /^\d{4}-\d{2}$/;
+const TIME_SHAPE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+export function validTimezone(tz: string): boolean {
+	try {
+		new Intl.DateTimeFormat('en-US', { timeZone: tz });
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 /** A string that is really a calendar day: right shape, and the date
  * round-trips (2026-02-31 does not). */
@@ -53,28 +63,102 @@ export function validDay(date: string): boolean {
 
 export type EventFields = {
 	date: string;
+	time: string | null;
+	tz: string | null;
 	title: string;
 	place: string | null;
 	notes: string | null;
 };
 
-/** Reads the shared title/date/place/notes inputs; every fault at
- * once, like the entry form. */
+/** Reads the shared title/date/time/place/notes inputs; every fault
+ * at once, like the entry form. Time is optional (owner ruling
+ * 2026-08-26: an event without one is all-day); a time must bring
+ * its zone - nothing is assumed. */
 export function parseEventFields(
 	form: FormData
 ): { ok: true; fields: EventFields } | { ok: false; problems: string[] } {
 	const problems: string[] = [];
 	const title = String(form.get('title') ?? '').trim();
 	const date = String(form.get('date') ?? '').trim();
+	const time = String(form.get('time') ?? '').trim();
+	const tz = String(form.get('tz') ?? '').trim();
 	const place = String(form.get('place') ?? '').trim();
 	const notes = String(form.get('notes') ?? '').trim();
 	if (!title) problems.push('An event needs a title.');
 	if (title.length > TITLE_MAX) problems.push(`The title tops out at ${TITLE_MAX} characters.`);
 	if (!validDay(date)) problems.push('Pick a real day for it.');
+	if (time && !TIME_SHAPE.test(time)) problems.push('The time reads as hours:minutes.');
+	if (time && !validTimezone(tz)) problems.push('A time needs its timezone.');
 	if (place.length > PLACE_MAX) problems.push(`The place tops out at ${PLACE_MAX} characters.`);
 	if (notes.length > NOTES_MAX) problems.push(`The notes top out at ${NOTES_MAX} characters.`);
 	if (problems.length) return { ok: false, problems };
-	return { ok: true, fields: { date, title, place: place || null, notes: notes || null } };
+	return {
+		ok: true,
+		fields: {
+			date,
+			time: time || null,
+			tz: time ? tz : null,
+			title,
+			place: place || null,
+			notes: notes || null
+		}
+	};
+}
+
+/* ---------------------------------------------------------------- */
+/* Time, honestly zoned                                              */
+
+/**
+ * The instant an event starts: its wall time in its own zone turned
+ * into epoch milliseconds. Two Intl passes absorb the zone offset,
+ * DST included - Workers ship full timezone data.
+ */
+export function eventEpoch(date: string, time: string, tz: string): number | null {
+	try {
+		const [y, mo, d] = date.split('-').map(Number);
+		const [h, mi] = time.split(':').map(Number);
+		const wall = Date.UTC(y, mo - 1, d, h, mi);
+		let guess = wall;
+		for (let pass = 0; pass < 2; pass++) {
+			const parts = Object.fromEntries(
+				new Intl.DateTimeFormat('en-US', {
+					timeZone: tz,
+					year: 'numeric',
+					month: '2-digit',
+					day: '2-digit',
+					hour: '2-digit',
+					minute: '2-digit',
+					hourCycle: 'h23'
+				})
+					.formatToParts(new Date(guess))
+					.map((p) => [p.type, p.value])
+			);
+			const seen = Date.UTC(
+				Number(parts.year),
+				Number(parts.month) - 1,
+				Number(parts.day),
+				Number(parts.hour),
+				Number(parts.minute)
+			);
+			guess += wall - seen;
+		}
+		return guess;
+	} catch {
+		return null;
+	}
+}
+
+/** The event's own wall time with its zone named - what the admin
+ * page shows, and the no-script fallback members see. */
+export function eventTimeLabel(date: string, time: string, tz: string): string {
+	const epoch = eventEpoch(date, time, tz);
+	if (epoch == null) return time;
+	return new Intl.DateTimeFormat('en-US', {
+		timeZone: tz,
+		hour: 'numeric',
+		minute: '2-digit',
+		timeZoneName: 'short'
+	}).format(new Date(epoch));
 }
 
 /* ---------------------------------------------------------------- */
@@ -105,13 +189,15 @@ export async function allEvents(db: Db): Promise<EventRow[]> {
 		.orderBy(desc(table.events.date), desc(sql`rowid`));
 }
 
-/** One month's events, oldest first - the calendar card. */
+/** One month's events, oldest first - the calendar card. Within a
+ * day the all-day events lead (SQLite sorts their null time first),
+ * then the timed ones in order. */
 export async function monthEvents(db: Db, month: string): Promise<EventRow[]> {
 	return db
 		.select()
 		.from(table.events)
 		.where(like(table.events.date, `${month}-%`))
-		.orderBy(asc(table.events.date), asc(sql`rowid`));
+		.orderBy(asc(table.events.date), asc(table.events.time), asc(sql`rowid`));
 }
 
 /** The whole event leaves at once: bytes, gallery rows, the row. */

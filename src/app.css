@@ -258,7 +258,8 @@ select {
 	border-radius: var(--radius);
 }
 
-/* A number and the unit it belongs to; must never wrap apart. */
+/* A number and the unit it belongs to; must never wrap apart. Also
+   holds a time beside its timezone on the admin event forms. */
 .row {
 	display: flex;
 	align-items: center;
@@ -267,6 +268,11 @@ select {
 .row input {
 	flex: 1;
 	min-width: 0;
+}
+.row select {
+	flex: 1.6;
+	min-width: 0;
+	width: auto;
 }
 .suffix {
 	flex: none;

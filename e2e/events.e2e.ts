@@ -61,6 +61,9 @@ test('an event an admin adds reaches every member home, gallery included', async
 	await page.goto('/admin/events');
 	await fillStable(page, /what is happening/i, title);
 	await fillStable(page, 'The day', '2031-05-15');
+	// 7 PM in the preselected site zone (US Central) - the admin picks
+	// the zone, nothing is assumed (owner ruling 2026-08-26).
+	await fillStable(page, /^time/i, '19:00');
 	await fillStable(page, /where/i, 'The park');
 	await fillStable(page, /notes/i, 'Bring a chair.');
 	await page
@@ -74,11 +77,12 @@ test('an event an admin adds reaches every member home, gallery included', async
 	await expect(page.getByRole('heading', { name: title })).toBeVisible();
 	await expect(page.locator('.gallery img')).toHaveCount(4);
 
-	// The list page carries the new row.
+	// The list page carries the new row, time in ITS zone (CDT in May).
 	await page.goto('/admin/events');
 	const row = page.locator('.admin-table tbody tr').filter({ hasText: title });
 	await expect(row).toBeVisible();
 	await expect(row).toContainText('The park');
+	await expect(row).toContainText('7:00 PM CDT');
 	await signOut(page);
 
 	// No code changed. The member's calendar knows the day, the list
@@ -91,6 +95,13 @@ test('an event an admin adds reaches every member home, gallery included', async
 	await expect(event).toBeVisible();
 	await expect(event).toContainText('The park');
 	await expect(event).toContainText('Bring a chair.');
+
+	// The time rides as an instant: 7 PM Central on May 15 2031 is
+	// midnight UTC on the 16th. The page script shows it in the
+	// viewer's own clock; the epoch is the truth it converts from.
+	const timeSpan = event.locator('[data-epoch]');
+	await expect(timeSpan).toHaveAttribute('data-epoch', String(Date.UTC(2031, 4, 16)));
+	await expect(timeSpan).toHaveText(/\d{1,2}:\d{2}/);
 	// Three thumbnails; the fourth folds into the "+1 more" tile.
 	await expect(event.locator('.gallery img')).toHaveCount(3);
 	await expect(event.locator('.gallery-more')).toHaveText('+1 more');

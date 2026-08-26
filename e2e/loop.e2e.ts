@@ -219,6 +219,9 @@ test('the settings units default survives a page toggle', async ({ page }) => {
 	// the rule of law (owner ruling 2026-08-26).
 	await page.getByRole('link', { name: /imperial/i }).click();
 	await expect(page.getByLabel(/height, feet/i)).toBeVisible();
+	// The page script strips ?u= after render; wait for that before
+	// reloading, or the reload can race it and keep the parameter.
+	await expect(page).not.toHaveURL(/u=imperial/);
 	await page.reload();
 	await expect(page.getByText('cm', { exact: true })).toBeVisible();
 

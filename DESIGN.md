@@ -126,9 +126,14 @@ decisions.
 
 5. **Calendar and events** (owner rulings, 2026-08-26) — the group's
    events live on the home page, not a separate page. An event is a
-   title and a day (required), a place, notes, and a gallery of
-   images (all optional). No time of day, no end date — the chat
-   handles logistics. Images are stored in the database with a size
+   title and a day (required), a start time, a place, notes, and a
+   gallery of images (all optional). A time always brings its own
+   timezone, picked by the admin — never assumed; the admin pages
+   show the time in that zone, while members see it converted to
+   their own clock (a page script converts; the no-script fallback
+   names the zone). An event without a time is all-day — which is
+   what every event from before times existed reads as. No end
+   date — the chat handles logistics. Images are stored in the database with a size
    cap per image, so a fork still needs nothing beyond D1 — the cap
    is the price of keeping the fork one database. Admins manage
    events in their own admin section: add, edit, delete, every action

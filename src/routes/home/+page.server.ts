@@ -23,7 +23,9 @@ import {
 } from '$lib/server/stats';
 import {
 	calendarGrid,
+	eventEpoch,
 	EVENTS_PER_PAGE,
+	eventTimeLabel,
 	imageIdsByEvent,
 	monthEvents,
 	monthOf,
@@ -97,7 +99,10 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 	);
 	const events: EventView[] = pageRows.map((e) => ({
 		id: e.id,
+		date: e.date,
 		dateLabel: formatDate(e.date),
+		timeLabel: e.time && e.tz ? eventTimeLabel(e.date, e.time, e.tz) : null,
+		epoch: e.time && e.tz ? eventEpoch(e.date, e.time, e.tz) : null,
 		title: e.title,
 		place: e.place,
 		notes: e.notes,

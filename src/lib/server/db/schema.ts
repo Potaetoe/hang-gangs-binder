@@ -188,6 +188,13 @@ export const events = sqliteTable(
 	{
 		id: text('id').primaryKey(),
 		date: text('date').notNull(),
+		// Optional start time (HH:MM) with its EXPLICIT zone (owner
+		// rulings 2026-08-26): the admin picks both, nothing is assumed.
+		// Null time = an all-day event, which is also what every event
+		// from before times existed reads as. Members see the time in
+		// their own clock - the page converts, the row never does.
+		time: text('time'),
+		tz: text('tz'),
 		title: text('title').notNull(),
 		place: text('place'),
 		notes: text('notes')

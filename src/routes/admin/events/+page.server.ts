@@ -6,11 +6,12 @@ import {
 	addEventImage,
 	allEvents,
 	createEvent,
+	eventTimeLabel,
 	imageIdsByEvent,
 	parseEventFields,
 	pickedFiles
 } from '$lib/server/events';
-import { loadSettings } from '$lib/server/settings';
+import { loadSettings, TIMEZONE_CHOICES } from '$lib/server/settings';
 import { formatDate, today } from '$lib/server/stats';
 
 export const load: PageServerLoad = async ({ platform }) => {
@@ -20,14 +21,20 @@ export const load: PageServerLoad = async ({ platform }) => {
 		db,
 		events.map((e) => e.id)
 	);
+	const settings = await loadSettings(db);
 	return {
 		events: events.map((e) => ({
 			id: e.id,
 			dateLabel: formatDate(e.date),
+			// The admin page names the zone the time was entered in -
+			// never anyone else's (owner ruling 2026-08-26).
+			timeLabel: e.time && e.tz ? eventTimeLabel(e.date, e.time, e.tz) : 'all day',
 			title: e.title,
 			place: e.place ?? '',
 			imageCount: (imageIds[e.id] ?? []).length
-		}))
+		})),
+		timezoneChoices: TIMEZONE_CHOICES,
+		siteTz: settings.timezone
 	};
 };
 
