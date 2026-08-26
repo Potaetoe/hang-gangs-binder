@@ -1077,7 +1077,9 @@ span.lightbox-step.off {
 	}
 	.home-folds {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		/* Weighted, not equal thirds (owner correction on the drive):
+		   the entries table earns the most width, the form the least. */
+		grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr) minmax(0, 1.5fr);
 		grid-template-rows: auto 1fr;
 		grid-template-areas:
 			'events entry trends'

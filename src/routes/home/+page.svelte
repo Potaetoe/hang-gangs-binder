@@ -36,30 +36,9 @@
 
 	<!-- The tri-fold (owner ruling 2026-08-26): three desktop columns -
 	     the calendar, the form, trends over the entries. The phone reads
-	     the same pieces top to bottom in the ruled order. -->
+	     this DOM top to bottom: events, form, trends, entries (owner
+	     correction on the drive). -->
 	<div class="home-folds">
-		{#if data.trends.length}
-			<section class="fold-trends">
-				<h2>Trends</h2>
-				<div class="trends">
-					{#each data.trends as trend (trend.name)}
-						<div class="trend card">
-							<p class="trend-name">{trend.name}</p>
-							<svg
-								viewBox="0 0 200 44"
-								preserveAspectRatio="none"
-								role="img"
-								aria-label={trend.name + ' trend'}
-							>
-								<polyline points={trend.poly} />
-							</svg>
-							<p class="trend-latest">{trend.latest}</p>
-						</div>
-					{/each}
-				</div>
-			</section>
-		{/if}
-
 		<section class="fold-events">
 			<h2>Events</h2>
 			<div class="card cal-card">
@@ -168,6 +147,28 @@
 				/>
 			</div>
 		</section>
+
+		{#if data.trends.length}
+			<section class="fold-trends">
+				<h2>Trends</h2>
+				<div class="trends">
+					{#each data.trends as trend (trend.name)}
+						<div class="trend card">
+							<p class="trend-name">{trend.name}</p>
+							<svg
+								viewBox="0 0 200 44"
+								preserveAspectRatio="none"
+								role="img"
+								aria-label={trend.name + ' trend'}
+							>
+								<polyline points={trend.poly} />
+							</svg>
+							<p class="trend-latest">{trend.latest}</p>
+						</div>
+					{/each}
+				</div>
+			</section>
+		{/if}
 
 		<section class="fold-entries">
 			<h2>Your entries</h2>
