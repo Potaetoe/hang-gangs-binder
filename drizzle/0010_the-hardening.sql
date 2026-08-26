@@ -1,8 +1,13 @@
--- Hand-adjusted for D1 (hardening pass, 2026-08-26): D1 refuses
--- PRAGMA foreign_keys, and its own tool for rebuild migrations is
--- defer_foreign_keys - checks wait until this migration's transaction
--- commits, by which point every table is consistent again.
-PRAGMA defer_foreign_keys = on;--> statement-breakpoint
+-- The hardening migration (2026-08-26), hand-ordered. Remote D1 runs
+-- these statements as individual commits, not one deferred
+-- transaction - the first draft leaned on PRAGMA defer_foreign_keys,
+-- passed locally (one transaction), and was rolled back by production
+-- (per-statement commits met a mid-migration violation). So this
+-- version needs no deferral at all: tables rebuild PARENT FIRST, and
+-- at every single statement boundary every foreign key that exists
+-- holds. Old tables carry no foreign keys, so dropping a parent
+-- breaks nothing behind it; each __new_* table's rows are copied only
+-- after its own parents already stand.
 CREATE TABLE `__new_entries` (
 	`id` text PRIMARY KEY NOT NULL,
 	`member_id` text NOT NULL,
@@ -16,16 +21,6 @@ DROP TABLE `entries`;--> statement-breakpoint
 ALTER TABLE `__new_entries` RENAME TO `entries`;--> statement-breakpoint
 CREATE INDEX `entries_member_date` ON `entries` (`member_id`,`date`,`seq`);--> statement-breakpoint
 CREATE UNIQUE INDEX `entries_member_seq` ON `entries` (`member_id`,`seq`);--> statement-breakpoint
-CREATE TABLE `__new_directory` (
-	`member_id` text PRIMARY KEY NOT NULL,
-	`sealed` text NOT NULL,
-	`updated_at` text NOT NULL,
-	FOREIGN KEY (`member_id`) REFERENCES `members`(`id`) ON UPDATE no action ON DELETE no action
-);
---> statement-breakpoint
-INSERT INTO `__new_directory`("member_id", "sealed", "updated_at") SELECT "member_id", "sealed", "updated_at" FROM `directory`;--> statement-breakpoint
-DROP TABLE `directory`;--> statement-breakpoint
-ALTER TABLE `__new_directory` RENAME TO `directory`;--> statement-breakpoint
 CREATE TABLE `__new_entry_values` (
 	`entry_id` text NOT NULL,
 	`field_id` text NOT NULL,
@@ -42,30 +37,16 @@ INSERT INTO `__new_entry_values`("entry_id", "field_id", "metric", "imperial", "
 DROP TABLE `entry_values`;--> statement-breakpoint
 ALTER TABLE `__new_entry_values` RENAME TO `entry_values`;--> statement-breakpoint
 CREATE INDEX `entry_values_field` ON `entry_values` (`field_id`);--> statement-breakpoint
-CREATE TABLE `__new_event_image_chunks` (
-	`image_id` text NOT NULL,
-	`seq` integer NOT NULL,
-	`bytes` blob NOT NULL,
-	PRIMARY KEY(`image_id`, `seq`),
-	FOREIGN KEY (`image_id`) REFERENCES `event_images`(`id`) ON UPDATE no action ON DELETE no action
+CREATE TABLE `__new_directory` (
+	`member_id` text PRIMARY KEY NOT NULL,
+	`sealed` text NOT NULL,
+	`updated_at` text NOT NULL,
+	FOREIGN KEY (`member_id`) REFERENCES `members`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
-INSERT INTO `__new_event_image_chunks`("image_id", "seq", "bytes") SELECT "image_id", "seq", "bytes" FROM `event_image_chunks`;--> statement-breakpoint
-DROP TABLE `event_image_chunks`;--> statement-breakpoint
-ALTER TABLE `__new_event_image_chunks` RENAME TO `event_image_chunks`;--> statement-breakpoint
-CREATE TABLE `__new_event_images` (
-	`id` text PRIMARY KEY NOT NULL,
-	`event_id` text NOT NULL,
-	`position` integer NOT NULL,
-	`mime` text NOT NULL,
-	`size` integer NOT NULL,
-	FOREIGN KEY (`event_id`) REFERENCES `events`(`id`) ON UPDATE no action ON DELETE no action
-);
---> statement-breakpoint
-INSERT INTO `__new_event_images`("id", "event_id", "position", "mime", "size") SELECT "id", "event_id", "position", "mime", "size" FROM `event_images`;--> statement-breakpoint
-DROP TABLE `event_images`;--> statement-breakpoint
-ALTER TABLE `__new_event_images` RENAME TO `event_images`;--> statement-breakpoint
-CREATE INDEX `event_images_event` ON `event_images` (`event_id`);--> statement-breakpoint
+INSERT INTO `__new_directory`("member_id", "sealed", "updated_at") SELECT "member_id", "sealed", "updated_at" FROM `directory`;--> statement-breakpoint
+DROP TABLE `directory`;--> statement-breakpoint
+ALTER TABLE `__new_directory` RENAME TO `directory`;--> statement-breakpoint
 CREATE TABLE `__new_logins` (
 	`lookup_hash` text PRIMARY KEY NOT NULL,
 	`member_id` text NOT NULL,
@@ -113,4 +94,28 @@ CREATE TABLE `__new_socials` (
 --> statement-breakpoint
 INSERT INTO `__new_socials`("member_id", "sealed", "updated_at") SELECT "member_id", "sealed", "updated_at" FROM `socials`;--> statement-breakpoint
 DROP TABLE `socials`;--> statement-breakpoint
-ALTER TABLE `__new_socials` RENAME TO `socials`;
+ALTER TABLE `__new_socials` RENAME TO `socials`;--> statement-breakpoint
+CREATE TABLE `__new_event_images` (
+	`id` text PRIMARY KEY NOT NULL,
+	`event_id` text NOT NULL,
+	`position` integer NOT NULL,
+	`mime` text NOT NULL,
+	`size` integer NOT NULL,
+	FOREIGN KEY (`event_id`) REFERENCES `events`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+INSERT INTO `__new_event_images`("id", "event_id", "position", "mime", "size") SELECT "id", "event_id", "position", "mime", "size" FROM `event_images`;--> statement-breakpoint
+DROP TABLE `event_images`;--> statement-breakpoint
+ALTER TABLE `__new_event_images` RENAME TO `event_images`;--> statement-breakpoint
+CREATE INDEX `event_images_event` ON `event_images` (`event_id`);--> statement-breakpoint
+CREATE TABLE `__new_event_image_chunks` (
+	`image_id` text NOT NULL,
+	`seq` integer NOT NULL,
+	`bytes` blob NOT NULL,
+	PRIMARY KEY(`image_id`, `seq`),
+	FOREIGN KEY (`image_id`) REFERENCES `event_images`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+INSERT INTO `__new_event_image_chunks`("image_id", "seq", "bytes") SELECT "image_id", "seq", "bytes" FROM `event_image_chunks`;--> statement-breakpoint
+DROP TABLE `event_image_chunks`;--> statement-breakpoint
+ALTER TABLE `__new_event_image_chunks` RENAME TO `event_image_chunks`;
