@@ -189,6 +189,50 @@ test('retiring a recipe input warns, blanks the number, and return restores it',
 	await expect(entryRow(page, ['60'])).toBeVisible();
 });
 
+test('a recipe locks the moment its field holds a value', async ({ page }) => {
+	const stamp = Date.now();
+	const boss = `freezer${stamp}`;
+	const doubled = `Double ${stamp}`;
+	await register(page, boss);
+	expect((await page.request.post(`/test/admin?username=${boss}`)).ok()).toBeTruthy();
+
+	// Build: Weight, then rewrite to Weight × 2 - a recipe with no
+	// values yet is still the admin's to shape.
+	await signIn(page, boss);
+	await addCalculatedField(page, doubled);
+	await page.getByLabel(/what the recipe starts from/i).selectOption({ label: 'Weight' });
+	await page.getByRole('button', { name: 'Save the recipe' }).click();
+	await expect(page.getByText(/Now: Weight/)).toBeVisible();
+	await page.getByLabel('Step 1 operation').selectOption({ label: '×' });
+	await page.getByLabel('Step 1 reads').selectOption({ label: 'a number you type' });
+	await fillStable(page, 'Step 1 typed number', '2');
+	await page.getByRole('button', { name: 'Save the recipe' }).click();
+	await expect(page.getByText('Now: Weight × 2')).toBeVisible();
+	await page.getByRole('button', { name: 'Put it on the form' }).click();
+
+	// The change log kept the rewrite, old → new (owner ruling
+	// 2026-08-26).
+	await page.goto('/admin/log');
+	await expect(page.getByText('Weight → Weight × 2').first()).toBeVisible();
+
+	// One value lands.
+	await page.goto('/home');
+	await fillStable(page, 'Weight', '150');
+	await page.getByRole('button', { name: 'Save entry' }).click();
+	await expect(entryRow(page, ['150 lb', '300'])).toBeVisible();
+
+	// And the recipe is locked: the builder is gone, the reason named,
+	// the way out (retire, rebuild) spelled out.
+	await page.goto('/admin/form');
+	await page
+		.locator('.admin-table tbody tr')
+		.filter({ hasText: doubled })
+		.getByRole('link', { name: 'Open' })
+		.click();
+	await expect(page.getByText(/The recipe is locked/)).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Save the recipe' })).not.toBeVisible();
+});
+
 test('a one-number recipe with constants ignores the units toggle', async ({ page }) => {
 	const stamp = Date.now();
 	const boss = `targeter${stamp}`;

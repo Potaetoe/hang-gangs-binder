@@ -198,9 +198,13 @@ decisions.
    differences) or "one number for everyone, from metric" (right for
    BMI-style ratios); and picks 0, 1, or 2 decimals (default 1). A
    live preview shows the recipe's answer before it goes on the form.
-   Values compute at save, forward only — no backfill, and editing a
-   formula leaves old values standing: history is what it said. An
-   entry missing any input gets a blank, never a zero; so does
+   Values compute at save, forward only — no backfill. A recipe LOCKS
+   the moment its field holds a stored value (owner ruling 2026-08-26,
+   replacing the same-day editable-formula ruling): one field's
+   history keeps to one formula, so changing the math means retiring
+   the field and building a new one. While a recipe is still
+   unlocked, every change writes old recipe → new to the change log.
+   An entry missing any input gets a blank, never a zero; so does
    division by zero or a result past the number ceiling. Members meet
    it everywhere a number lives — the quiet worked-out-from note on
    the form (inputs named, math private), the entries table, trends,

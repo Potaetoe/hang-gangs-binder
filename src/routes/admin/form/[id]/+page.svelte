@@ -50,9 +50,14 @@
 	{#if data.calc}
 		<div class="card">
 			<h3>The recipe</h3>
-			{#if data.calc.locked}
+			{#if data.calc.locked === 'bmi'}
 				<p class="muted">
 					BMI's recipe is fixed: {data.calc.recipe}. It can be renamed, never rewritten.
+				</p>
+			{:else if data.calc.locked === 'values'}
+				<p class="muted">
+					The recipe is locked: {data.calc.recipe}. It has collected values, and one field's history
+					keeps to one formula — to change the math, retire this field and build a new one.
 				</p>
 			{:else}
 				{#if data.calc.recipe}

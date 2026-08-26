@@ -383,20 +383,25 @@ export function boardTiles(
 			for (const row of rows) {
 				for (const pick of choicePicks(row)) counts.set(pick, (counts.get(pick) ?? 0) + 1);
 			}
-			const sorted = [...counts.values()].sort((a, b) => b - a);
+			const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
 			const top = sorted.slice(0, 4);
-			const max = top[0] ?? 0;
+			const max = top[0]?.[1] ?? 0;
 			tiles.push({
 				id: field.id,
 				name: field.name,
 				poly: null,
-				bars: top.map((c) => Math.max(8, Math.round((c / max) * 100))),
+				bars: top.map(([, c]) => Math.max(8, Math.round((c / max) * 100))),
+				// The leaders BY NAME with their counts (owner ruling
+				// 2026-08-26) - it used to show bare counts, which said
+				// nothing without a click. The page clamps the line; the
+				// focused view carries the full list.
 				headline:
 					sorted.length === 0
 						? '—'
-						: sorted.length <= 3
-							? sorted.join(' · ')
-							: `${sorted.length} answers`,
+						: sorted
+								.slice(0, 3)
+								.map(([label, c]) => `${label} ${c}`)
+								.join(' · '),
 				delta: null
 			});
 		}
