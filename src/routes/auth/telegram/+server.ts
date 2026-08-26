@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
-import { signInTelegram, type Secrets } from '$lib/server/auth';
+import { SESSION_COOKIE, signInTelegram, type Secrets } from '$lib/server/auth';
 
 /** The login widget lands here (data-auth-url) with the signed fields
  * in the query string. */
@@ -14,7 +14,7 @@ export async function GET({ url, cookies, platform }: RequestEvent) {
 	if (!result.ok) {
 		redirect(303, `/refused?why=${result.reason}`);
 	}
-	cookies.set('session', result.token, {
+	cookies.set(SESSION_COOKIE, result.token, {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax',

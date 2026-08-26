@@ -116,7 +116,7 @@ test('the admin sees everything, and the passphrase walls the member off', async
 
 	// A temporary passphrase, typed by the admin.
 	await page.getByText('Reset password', { exact: true }).click();
-	await fillStable(page, /temporary passphrase/i, 'temp-pass-123');
+	await fillStable(page, /temporary passphrase/i, 'temp-pass-12345');
 	await page.getByRole('button', { name: 'Set passphrase' }).click();
 	await expect(page.getByText(/hand it over out of band/i)).toBeVisible();
 	await signOut(page);
@@ -124,13 +124,13 @@ test('the admin sees everything, and the passphrase walls the member off', async
 	// The old password is dead; the temporary one leads to a wall.
 	await signIn(page, pat);
 	await expect(page.getByText(/did not match/i)).toBeVisible();
-	await signIn(page, pat, 'temp-pass-123');
+	await signIn(page, pat, 'temp-pass-12345');
 	await expect(page.getByRole('heading', { name: 'New password' })).toBeVisible();
 	await page.goto('/home');
 	await expect(page.getByRole('heading', { name: 'New password' })).toBeVisible();
 
 	// Picking a real password opens the site back up.
-	await fillStable(page, /temporary passphrase/i, 'temp-pass-123');
+	await fillStable(page, /temporary passphrase/i, 'temp-pass-12345');
 	await fillStable(page, 'New password', 'my-own-password-1');
 	await page.getByRole('button', { name: 'Save password' }).click();
 	await expect(page.getByRole('heading', { name: new RegExp(`hello, ${pat}`, 'i') })).toBeVisible();
@@ -314,6 +314,27 @@ test('settings shape the site', async ({ page }) => {
 	await page.getByLabel('Theme').selectOption('auto');
 	await page.getByRole('button', { name: 'Save settings' }).click();
 	await expect(page.getByText('Saved.')).toBeVisible();
+});
+
+test('the group links come from admin settings, and the Socials page carries them', async ({
+	page
+}) => {
+	// Moved here from socials.e2e.ts (2026-08-26): saving admin
+	// settings writes the WHOLE settings form, so a save in another
+	// file running in parallel wiped the group links this test had just
+	// set - the same shared-singleton care as the site name above.
+	// Tests in one file run in order; every settings writer lives here.
+	const boss = `linkboss${Date.now()}`;
+	await register(page, boss);
+	await makeAdmin(page, boss);
+	await signIn(page, boss);
+	await page.goto('/admin/settings');
+	await fillStable(page, 'Group link 1 name', 'The group chat');
+	await fillStable(page, 'Group link 1 address', 'https://t.me/example');
+	await page.getByRole('button', { name: 'Save settings' }).click();
+	await expect(page.getByText('Saved.')).toBeVisible();
+	await page.locator('.rail').getByRole('link', { name: 'Socials' }).click();
+	await expect(page.getByRole('link', { name: 'The group chat' })).toBeVisible();
 });
 
 test('an admin calls the Admin door onto the phone rail for one sitting', async ({ page }) => {

@@ -51,7 +51,13 @@ never hands over the mapping.
   directory row itself. A clock reading beside a member ID would be an
   activity log, and an activity log can be lined up against the group's
   chat. Sessions keep a real expiry because they must enforce one, but
-  it is rounded to a day and nothing records when a session began.
+  it is rounded to a day and nothing records when a session began. A
+  session also dies after 7 unused days (owner ruling 2026-08-26,
+  weighing the security review's idle-timeout finding against this
+  rule): using it slides that idle expiry forward, recorded only as a
+  day boundary — "alive as of day X" is the finest thing the sessions
+  table may say about a member's visits, and a member holds at most 3
+  live sessions.
 - The app writes no member data to logs. It carries exactly ONE
   logging call (owner OK 2026-08-26, after an outage produced 500s
   and left nothing to read): when the server hits an UNEXPECTED

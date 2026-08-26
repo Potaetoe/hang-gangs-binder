@@ -1,6 +1,6 @@
 import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
-import { sessionMember } from '$lib/server/auth';
+import { SESSION_COOKIE, sessionMember } from '$lib/server/auth';
 
 /**
  * The ONE logging call in the app (owner OK 2026-08-26, after an
@@ -76,7 +76,7 @@ const SECURITY_HEADERS: Record<string, string> = {
 export const handle: Handle = async ({ event, resolve }) => {
 	const env = event.platform?.env;
 	event.locals.member = env
-		? await sessionMember(getDb(env.DB), event.cookies.get('session'))
+		? await sessionMember(getDb(env.DB), event.cookies.get(SESSION_COOKIE))
 		: null;
 	// A temporary passphrase walls the whole site off until the member
 	// picks their own password (owner ruling 2026-08-24).

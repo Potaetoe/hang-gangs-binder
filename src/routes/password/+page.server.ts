@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
-import { changePassword, PASSWORD_MAX, PASSWORD_MIN } from '$lib/server/auth';
+import { changePassword, PASSWORD_MAX, PASSWORD_MIN, SESSION_COOKIE } from '$lib/server/auth';
 import { sha256Hex } from '$lib/server/crypto';
 import { TOO_MANY_MESSAGE, tooManyAttempts } from '$lib/server/throttle';
 
@@ -16,7 +16,7 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const current = String(form.get('current') ?? '');
 		const next = String(form.get('next') ?? '');
-		const token = cookies.get('session');
+		const token = cookies.get(SESSION_COOKIE);
 		if (!token) redirect(303, '/');
 
 		// This form verifies a password, same as the sign-in door - so it

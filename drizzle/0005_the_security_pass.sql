@@ -10,12 +10,18 @@
 -- `sessions` keeps a real expiry because it has to enforce one, but
 -- loses `created_at` entirely and gets its remaining timestamp rounded
 -- up to a day boundary.
+--
+-- Rewritten 2026-08-26 (migration-guard): the foreign-keys OFF/ON
+-- pragma pair that drizzle-kit generated around the first rebuild was
+-- dead weight - no table in this schema carried a FOREIGN KEY until
+-- 0010 - and remote D1 refuses that pragma outright, so it would have
+-- broken every fresh fork's remote apply. Removing it changes nothing
+-- on any database.
 CREATE TABLE `used_logins` (
 	`hash` text PRIMARY KEY NOT NULL,
 	`expires_at` integer NOT NULL
 );
 --> statement-breakpoint
-PRAGMA foreign_keys=OFF;--> statement-breakpoint
 CREATE TABLE `__new_directory` (
 	`member_id` text PRIMARY KEY NOT NULL,
 	`sealed` text NOT NULL,
@@ -25,7 +31,6 @@ CREATE TABLE `__new_directory` (
 INSERT INTO `__new_directory`("member_id", "sealed", "updated_at") SELECT "member_id", "sealed", date("updated_at", 'unixepoch') FROM `directory`;--> statement-breakpoint
 DROP TABLE `directory`;--> statement-breakpoint
 ALTER TABLE `__new_directory` RENAME TO `directory`;--> statement-breakpoint
-PRAGMA foreign_keys=ON;--> statement-breakpoint
 CREATE TABLE `__new_logins` (
 	`lookup_hash` text PRIMARY KEY NOT NULL,
 	`member_id` text NOT NULL,

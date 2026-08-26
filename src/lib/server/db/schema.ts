@@ -301,5 +301,10 @@ export const sessions = sqliteTable('sessions', {
 	// day boundary and there is no created_at beside it - this table
 	// used to be a 30-day, second-resolution record of when each member
 	// signed in (security pass, 2026-08-24).
-	expiresAt: integer('expires_at').notNull()
+	expiresAt: integer('expires_at').notNull(),
+	// The idle clock (owner ruling 2026-08-26, security review finding
+	// 5): a session unused for 7 days dies. Slid forward as it is used,
+	// but only ever to a day boundary - "alive as of day X" is the
+	// finest thing this table may record about a member's visits.
+	idleExpiresAt: integer('idle_expires_at').notNull().default(0)
 });

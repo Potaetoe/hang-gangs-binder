@@ -35,13 +35,24 @@ def migration_files():
     return sorted(glob.glob(os.path.join(directory, "*.sql")))
 
 
+def strip_sql_comments(sql):
+    """The rule is about STATEMENTS. A migration's -- commentary may
+    name a pragma while explaining why it is absent (0010 does exactly
+    that), and that must not read as using one - the guard denied its
+    own good example on 2026-08-26, which is this function's
+    birthday."""
+    sql = re.sub(r"--[^\n]*", "", sql)
+    sql = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
+    return sql
+
+
 payload = read_input()
 command = strip_quoted(command_of(payload))
 if re.search(r"\bd1\s+migrations\s+apply\b.*--remote", command):
     for path in migration_files():
         try:
             with open(path, encoding="utf-8") as f:
-                sql = f.read()
+                sql = strip_sql_comments(f.read())
         except OSError:
             continue
         name = os.path.basename(path)

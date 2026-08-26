@@ -121,9 +121,12 @@ test('bad links are refused all at once, and clearing leaves the roster', async 
 	await expect(page.locator('.socials-roster li').filter({ hasText: fumbler })).not.toBeVisible();
 });
 
-test('the group links come from admin settings, and the admin lever clears a member', async ({
-	page
-}) => {
+test('the admin lever clears a member', async ({ page }) => {
+	// The group-links half of this walk moved to admin.e2e.ts
+	// (2026-08-26): saving admin settings writes the WHOLE settings
+	// form, so two FILES saving in parallel lose each other's fields -
+	// the same shared-singleton care as the site name over there. This
+	// file keeps the half that never touches settings.
 	const stamp = Date.now();
 	const boss = `linkboss${stamp}`;
 	const target = `target${stamp}`;
@@ -140,15 +143,9 @@ test('the group links come from admin settings, and the admin lever clears a mem
 	await expect(page.getByText('Saved.')).toBeVisible();
 	await signOut(page);
 
-	// The admin sets a group link; the Socials page carries it up top.
+	// The admin finds them on the roster.
 	await signIn(page, boss);
-	await page.goto('/admin/settings');
-	await fillStable(page, 'Group link 1 name', 'The group chat');
-	await fillStable(page, 'Group link 1 address', 'https://t.me/example');
-	await page.getByRole('button', { name: 'Save settings' }).click();
-	await expect(page.getByText('Saved.')).toBeVisible();
 	await page.locator('.rail').getByRole('link', { name: 'Socials' }).click();
-	await expect(page.getByRole('link', { name: 'The group chat' })).toBeVisible();
 	await expect(page.locator('.socials-roster li').filter({ hasText: target })).toBeVisible();
 
 	// The moderation lever: the links go, the log keeps the line.

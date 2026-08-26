@@ -212,6 +212,15 @@ with tempfile.TemporaryDirectory() as tmp:
           "migration_guard.py",
           bash("npx wrangler d1 migrations apply binder-db --local"),
           False, env_mig2)
+    with open(os.path.join(mig2, "0002_pragma.sql"), "w") as f:
+        f.write("-- the first draft leaned on PRAGMA defer_foreign_keys\n"
+                "-- and PRAGMA foreign_keys is refused by remote D1\n"
+                "DROP TABLE x;\n")
+    check("a pragma named only in a COMMENT is not a pragma - the "
+          "guard denied its own good example (2026-08-26)",
+          "migration_guard.py",
+          bash("npx wrangler d1 migrations apply binder-db --remote"),
+          False, env_mig2)
     check("unrelated commands pass", "migration_guard.py",
           bash("npx wrangler deploy"), False, env_mig2)
 

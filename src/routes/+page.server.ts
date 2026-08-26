@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
-import { signInPassword, type Secrets } from '$lib/server/auth';
+import { SESSION_COOKIE, signInPassword, type Secrets } from '$lib/server/auth';
 import { TOO_MANY_MESSAGE, tooManyAttempts } from '$lib/server/throttle';
 
 export const load: PageServerLoad = async ({ locals, platform }) => {
@@ -42,7 +42,7 @@ export const actions: Actions = {
 						: 'That username and password did not match.'
 			});
 		}
-		cookies.set('session', result.token, {
+		cookies.set(SESSION_COOKIE, result.token, {
 			path: '/',
 			httpOnly: true,
 			sameSite: 'lax',

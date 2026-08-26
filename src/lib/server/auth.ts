@@ -4,7 +4,7 @@
  * nothing reads globals, so tests drive it the same way routes do.
  */
 
-import { and, eq, lt, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, ne, or, sql } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import * as table from './db/schema';
 import {
@@ -42,6 +42,12 @@ const isTestEnv = (secrets: Secrets) => secrets.TEST_HOOKS === '1';
 
 const now = () => Math.floor(Date.now() / 1000);
 const SESSION_DAYS = 30;
+/** A session unused this long dies (owner ruling 2026-08-26, security
+ * review finding 5): the idle cutoff the STIG wants, at the day
+ * granularity the privacy rule allows. */
+const IDLE_DAYS = 7;
+/** Live sessions one member may hold (finding 6; owner picked 3). */
+const SESSION_CAP = 3;
 const DAY = 86_400;
 
 /**
@@ -54,10 +60,12 @@ const DAY = 86_400;
  */
 const todayUtc = () => new Date().toISOString().slice(0, 10);
 
-/** Midnight tonight, plus the session's life. Sessions need a real
- * expiry to enforce, but rounding to the day keeps the row from
- * recording the minute somebody signed in. */
-const sessionExpiry = () => (Math.floor(now() / DAY) + 1 + SESSION_DAYS) * DAY;
+/** Midnight tonight, plus the given life. Sessions need real expiries
+ * to enforce, but rounding to the day keeps the rows from recording
+ * the minute somebody signed in or last visited. */
+const dayBoundary = (days: number) => (Math.floor(now() / DAY) + 1 + days) * DAY;
+const sessionExpiry = () => dayBoundary(SESSION_DAYS);
+const idleExpiry = () => dayBoundary(IDLE_DAYS);
 
 /* ---------------------------------------------------------------- */
 /* Identity records                                                  */
@@ -147,6 +155,12 @@ export async function setDisplayName(db: Db, secrets: Secrets, memberId: string,
 /* ---------------------------------------------------------------- */
 /* Sessions                                                          */
 
+/** The cookie's name. The __Host- prefix makes the browser itself
+ * refuse the cookie unless it is Secure, path "/", and Domain-free -
+ * the shape it already had, now enforced client-side too (security
+ * review finding 8, 2026-08-26). Renaming signed everyone out once. */
+export const SESSION_COOKIE = '__Host-session';
+
 /** A session says WHO, never what they may do (fix pass 2026-08-25).
  * It used to carry an is_admin snapshot too, which meant two places
  * could disagree about the same power - the member row is the only
@@ -156,8 +170,22 @@ export async function createSession(db: Db, memberId: string) {
 	await db.insert(table.sessions).values({
 		tokenHash: await sha256Hex(token),
 		memberId,
-		expiresAt: sessionExpiry()
+		expiresAt: sessionExpiry(),
+		idleExpiresAt: idleExpiry()
 	});
+	// At most SESSION_CAP live sessions per member (finding 6): past the
+	// cap, the oldest go. "Oldest" is read from the day-rounded expiry
+	// with rowid as the tie-break - there is deliberately no created_at
+	// to sort by, and one is not being added for this.
+	const rows = await db
+		.select({ tokenHash: table.sessions.tokenHash })
+		.from(table.sessions)
+		.where(eq(table.sessions.memberId, memberId))
+		.orderBy(desc(table.sessions.expiresAt), desc(sql`rowid`));
+	const excess = rows.slice(SESSION_CAP).map((r) => r.tokenHash);
+	if (excess.length > 0) {
+		await db.delete(table.sessions).where(inArray(table.sessions.tokenHash, excess));
+	}
 	return token;
 }
 
@@ -166,16 +194,29 @@ export async function sessionMember(db: Db, token: string | undefined) {
 	const hash = await sha256Hex(token);
 	const row = (await db.select().from(table.sessions).where(eq(table.sessions.tokenHash, hash)))[0];
 	if (!row) return null;
-	if (row.expiresAt < now()) {
-		// Sweep it rather than just refusing it: a dead session row is
-		// still a member id sitting in the database for no reason.
-		await db.delete(table.sessions).where(lt(table.sessions.expiresAt, now()));
+	if (row.expiresAt < now() || row.idleExpiresAt < now()) {
+		// Sweep them rather than just refusing this one: a dead session
+		// row is still a member id sitting in the database for no reason.
+		await db
+			.delete(table.sessions)
+			.where(or(lt(table.sessions.expiresAt, now()), lt(table.sessions.idleExpiresAt, now())));
 		return null;
 	}
 	const member = (
 		await db.select().from(table.members).where(eq(table.members.id, row.memberId))
 	)[0];
 	if (!member || member.status !== 'approved') return null;
+	// Using a session slides its idle expiry forward - recorded only as
+	// a day boundary, "alive as of day X", never a clock reading (the
+	// owner's 2026-08-26 ruling on finding 5, and the most the privacy
+	// rule permits). The write happens at most once per UTC day.
+	const slid = idleExpiry();
+	if (row.idleExpiresAt < slid) {
+		await db
+			.update(table.sessions)
+			.set({ idleExpiresAt: slid })
+			.where(eq(table.sessions.tokenHash, hash));
+	}
 	// A temporary passphrase walls the whole site off behind the
 	// password-change page (owner ruling 2026-08-24).
 	const login = (
@@ -208,7 +249,11 @@ export type RegisterResult =
 
 const USERNAME = /^[a-z0-9_]{3,32}$/;
 
-export const PASSWORD_MIN = 12;
+// 15 per the ASD STIG's CAT I floor, V-222536 (owner OK 2026-08-26; it
+// was 12). Existing passwords keep working - only new ones are held to
+// it. Admin temporary passphrases share this constant on purpose: a
+// temporary passphrase signs somebody in, so it is a working credential.
+export const PASSWORD_MIN = 15;
 export const PASSWORD_MAX = 128;
 
 /**
