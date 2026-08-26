@@ -170,8 +170,10 @@
 		{/if}
 
 		<!-- The phone rail runs four stops (owner ruling 2026-08-26);
-		     signing out lives here instead. -->
-		<section class="setting">
+		     signing out lives here instead - and ONLY here on the
+		     phone: the desktop rail has its own button (owner's
+		     drive, 2026-08-26). -->
+		<section class="setting phone-only">
 			<h2>Sign out</h2>
 			<form method="POST" action={resolve('/signout')}>
 				<button class="quiet">Sign out on this device</button>

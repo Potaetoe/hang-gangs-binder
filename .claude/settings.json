@@ -38,7 +38,8 @@
 				"hooks": [
 					{ "type": "command", "command": "py -3 hooks/git_guard.py" },
 					{ "type": "command", "command": "py -3 hooks/merge_gate.py" },
-					{ "type": "command", "command": "py -3 hooks/deploy_gate.py" }
+					{ "type": "command", "command": "py -3 hooks/deploy_gate.py" },
+					{ "type": "command", "command": "py -3 hooks/migration_guard.py" }
 				]
 			},
 			{

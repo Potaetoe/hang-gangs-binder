@@ -133,6 +133,34 @@ with tempfile.TemporaryDirectory() as tmp:
                "0001_first.sql ; npx wrangler deploy"),
           True, env_behind)
 
+    # migration_guard
+    mig2 = os.path.join(tmp, "mig2")
+    os.makedirs(mig2, exist_ok=True)
+    with open(os.path.join(mig2, "0001_clean.sql"), "w") as f:
+        f.write("CREATE TABLE x (id text PRIMARY KEY);\n")
+    env_mig2 = {"BINDER_MIGRATIONS_DIR": mig2}
+    check("clean migration applies remotely", "migration_guard.py",
+          bash("npx wrangler d1 migrations apply binder-db --remote"),
+          False, env_mig2)
+    with open(os.path.join(mig2, "0002_pragma.sql"), "w") as f:
+        f.write("PRAGMA foreign_keys=OFF;\nDROP TABLE x;\n")
+    check("PRAGMA foreign_keys is refused by remote D1 - deny before "
+          "production does", "migration_guard.py",
+          bash("npx wrangler d1 migrations apply binder-db --remote"),
+          True, env_mig2)
+    with open(os.path.join(mig2, "0002_pragma.sql"), "w") as f:
+        f.write("PRAGMA defer_foreign_keys = on;\nDROP TABLE x;\n")
+    check("defer_foreign_keys does not span remote statements - deny",
+          "migration_guard.py",
+          bash("npx wrangler d1 migrations apply binder-db --remote"),
+          True, env_mig2)
+    check("a local apply is the test bench - the guard leaves it alone",
+          "migration_guard.py",
+          bash("npx wrangler d1 migrations apply binder-db --local"),
+          False, env_mig2)
+    check("unrelated commands pass", "migration_guard.py",
+          bash("npx wrangler deploy"), False, env_mig2)
+
     # secret_guard
     def write(path, content):
         return {"tool_name": "Write",

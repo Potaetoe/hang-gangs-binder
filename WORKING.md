@@ -113,6 +113,15 @@ and a pass case) and runs in CI.
 7. **report-reminder** — injects the standing rules (plain speech; done
    means driven; reports are works / broken / untested) at each prompt,
    so they survive any session's context.
+8. **migration-guard** — blocks a REMOTE `d1 migrations apply` while
+   any migration file leans on a pragma that behaves differently on
+   production: `PRAGMA foreign_keys` (remote D1 refuses it) or
+   `defer_foreign_keys` (remote commits statement by statement, so
+   the deferral quietly does nothing). Born 2026-08-26, the day a
+   migration passed the whole local suite and production rolled it
+   back; the remedy is a parent-first rebuild that satisfies every
+   foreign key at every statement boundary. Local applies stay
+   unguarded on purpose — they are the test bench.
 
 Stated honestly: the rules a regex cannot hold — blunt reporting, the
 same-commit rule, never repeating an unverified claim — are enforced by
