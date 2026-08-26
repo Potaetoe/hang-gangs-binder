@@ -4,6 +4,13 @@
  * compiler learns they exist. Add a secret? It goes here AND in the
  * runbook's list, in the same commit.
  */
+/**
+ * Build-time constant (vite.config.ts `define`): true in `vite dev`
+ * and in builds run with TEST_HOOKS=1; false in a plain production
+ * build, where it tree-shakes the /test/* handlers away entirely.
+ */
+declare const __TEST_HOOKS__: boolean;
+
 interface Env {
 	ID_SECRET: string;
 	DIRECTORY_SECRET: string;

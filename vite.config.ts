@@ -2,7 +2,17 @@ import adapter from '@sveltejs/adapter-cloudflare';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+	define: {
+		// The build boundary for the /test/* hooks (SECURITY-REVIEW.md
+		// finding 2): true only in `vite dev` and in builds run with
+		// TEST_HOOKS=1 in the shell (the e2e suite's build, via
+		// playwright.config.ts). A plain `npm run build` folds this to
+		// false and the hook handlers tree-shake out of the worker -
+		// the capability does not exist in production, rather than
+		// existing switched off.
+		__TEST_HOOKS__: JSON.stringify(command === 'serve' || process.env.TEST_HOOKS === '1')
+	},
 	plugins: [
 		sveltekit({
 			compilerOptions: {
@@ -26,4 +36,4 @@ export default defineConfig({
 			}
 		})
 	]
-});
+}));

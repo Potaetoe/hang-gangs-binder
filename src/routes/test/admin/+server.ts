@@ -4,15 +4,18 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
 import { logins, members } from '$lib/server/db/schema';
 import { hmacHex } from '$lib/server/crypto';
+import { requireTestHooks } from '$lib/server/test-hooks';
 
 /**
- * TEST HOOK, dead in production (TEST_HOOKS is only set in .dev.vars,
- * like /test/approve): makes a password account an approved admin, so
- * the e2e suite can play the operator's one manual bootstrap step.
+ * TEST HOOK, absent from production: a plain build tree-shakes the
+ * handler away (`__TEST_HOOKS__`, vite.config.ts) and only the 404
+ * below remains; in test builds the runtime TEST_HOOKS guard still
+ * gates it. Makes a password account an approved admin, so the e2e
+ * suite can play the operator's one manual bootstrap step.
  */
-export async function POST({ url, platform }: RequestEvent) {
+async function makeAdmin({ url, platform }: RequestEvent) {
 	const env = platform!.env;
-	if (env.TEST_HOOKS !== '1') error(404, 'Not found');
+	requireTestHooks(env);
 
 	const username = url.searchParams.get('username')?.toLowerCase() ?? '';
 	const db = getDb(env.DB);
@@ -25,3 +28,5 @@ export async function POST({ url, platform }: RequestEvent) {
 		.where(eq(members.id, login.memberId));
 	return json({ ok: true });
 }
+
+export const POST = __TEST_HOOKS__ ? makeAdmin : () => error(404, 'Not found');

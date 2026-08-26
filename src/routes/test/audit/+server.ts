@@ -4,18 +4,18 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
 import { logins, memberAudit } from '$lib/server/db/schema';
 import { hmacHex } from '$lib/server/crypto';
+import { requireTestHooks } from '$lib/server/test-hooks';
 
 /**
- * TEST HOOK, dead in production (TEST_HOOKS is only set in .dev.vars,
- * like /test/approve): lets the e2e loop assert a member's correction
- * trail without parsing the admin page. The admin surface ships its
- * own corrections view now; this stays because the loop test reads
- * the trail as data (comment corrected on the hardening pass,
- * 2026-08-26 - it used to promise its own deletion).
+ * TEST HOOK, absent from production: a plain build tree-shakes the
+ * handler away (`__TEST_HOOKS__`, vite.config.ts) and only the 404
+ * below remains; in test builds the runtime TEST_HOOKS guard still
+ * gates it. Lets the e2e loop assert a member's correction trail
+ * without parsing the admin page.
  */
-export async function GET({ url, platform }: RequestEvent) {
+async function readAudit({ url, platform }: RequestEvent) {
 	const env = platform!.env;
-	if (env.TEST_HOOKS !== '1') error(404, 'Not found');
+	requireTestHooks(env);
 
 	const username = url.searchParams.get('username')?.toLowerCase() ?? '';
 	const db = getDb(env.DB);
@@ -32,3 +32,5 @@ export async function GET({ url, platform }: RequestEvent) {
 		.orderBy(asc(memberAudit.date));
 	return json(rows);
 }
+
+export const GET = __TEST_HOOKS__ ? readAudit : () => error(404, 'Not found');

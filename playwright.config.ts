@@ -5,6 +5,9 @@ export default defineConfig({
 		// A fresh local database every run (owner grant 2026-08-24:
 		// test data is disposable) - wiped, migrated, then served.
 		command: 'npm run db:wipe:local && npm run db:apply:local && npm run build && npm run preview',
+		// Build-time flag (vite.config.ts): compiles the /test/* hooks
+		// into THIS build. A plain `npm run build` leaves them out.
+		env: { TEST_HOOKS: '1' },
 		port: 4173,
 		timeout: 180_000
 	},
