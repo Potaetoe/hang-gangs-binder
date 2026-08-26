@@ -1179,8 +1179,8 @@ span.lightbox-step.off {
 		grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr) minmax(0, 1.5fr);
 		grid-template-rows: auto 1fr;
 		grid-template-areas:
-			'events entry trends'
-			'events entry entries';
+			'events entry entries'
+			'events entry trends';
 		gap: 0 1.5rem;
 		align-items: start;
 	}

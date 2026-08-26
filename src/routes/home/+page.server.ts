@@ -32,7 +32,7 @@ import {
 	monthOf,
 	validMonth
 } from '$lib/server/events';
-import { loadSettings } from '$lib/server/settings';
+import { loadSettings, trendSet } from '$lib/server/settings';
 import { hasSocials } from '$lib/server/socials';
 import type {
 	CalendarView,
@@ -68,7 +68,8 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 	const identity = await identityOf(db, env as unknown as Secrets, memberId);
 	const fields = await loadFields(db);
 	const latest = await latestValues(db, memberId);
-	const todayIso = today((await loadSettings(db)).timezone);
+	const settings = await loadSettings(db);
+	const todayIso = today(settings.timezone);
 
 	// The calendar card's month: today's unless the member flipped it.
 	const calParam = url.searchParams.get('cal') ?? '';
@@ -127,7 +128,17 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 		}))
 	};
 
-	const trends: TrendView[] = (await memberTrends(db, fields, memberId, units)).map((t) => ({
+	// Only the admin-chosen fields carry trend cards (owner ruling
+	// 2026-08-26) - adult height does not move, so it does not trend.
+	const chosen = trendSet(settings);
+	const trends: TrendView[] = (
+		await memberTrends(
+			db,
+			fields.filter((f) => chosen.has(f.id)),
+			memberId,
+			units
+		)
+	).map((t) => ({
 		name: t.field.name,
 		poly: sparklinePoints(t.points),
 		latest: t.latest

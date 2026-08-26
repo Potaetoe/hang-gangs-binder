@@ -57,9 +57,9 @@
 	{/if}
 
 	<!-- The tri-fold (owner ruling 2026-08-26): three desktop columns -
-	     the calendar, the form, trends over the entries. The phone reads
-	     this DOM top to bottom: events, form, trends, entries (owner
-	     correction on the drive). -->
+	     the calendar, the form, entries over trends. The phone reads
+	     this DOM top to bottom: events, form, entries, trends - trends
+	     close the page (owner ruling 2026-08-26). -->
 	<div class="home-folds">
 		<section class="fold-events">
 			<h2>Events</h2>
@@ -207,28 +207,6 @@
 			</div>
 		</section>
 
-		{#if data.trends.length}
-			<section class="fold-trends">
-				<h2>Your trends</h2>
-				<div class="trends">
-					{#each data.trends as trend (trend.name)}
-						<div class="trend card">
-							<p class="trend-name">{trend.name}</p>
-							<svg
-								viewBox="0 0 200 44"
-								preserveAspectRatio="none"
-								role="img"
-								aria-label={trend.name + ' trend'}
-							>
-								<polyline points={trend.poly} />
-							</svg>
-							<p class="trend-latest">{trend.latest}</p>
-						</div>
-					{/each}
-				</div>
-			</section>
-		{/if}
-
 		<section class="fold-entries">
 			<h2>Your entries</h2>
 			{#if !data.entryTable.rows.length && data.page === 1}
@@ -272,5 +250,29 @@
 				</nav>
 			{/if}
 		</section>
+
+		{#if data.trends.length}
+			<!-- Last on purpose (owner ruling 2026-08-26): the tri-fold's
+			     end on desktop, the bottom of the phone's scroll. -->
+			<section class="fold-trends">
+				<h2>Your trends</h2>
+				<div class="trends">
+					{#each data.trends as trend (trend.name)}
+						<div class="trend card">
+							<p class="trend-name">{trend.name}</p>
+							<svg
+								viewBox="0 0 200 44"
+								preserveAspectRatio="none"
+								role="img"
+								aria-label={trend.name + ' trend'}
+							>
+								<polyline points={trend.poly} />
+							</svg>
+							<p class="trend-latest">{trend.latest}</p>
+						</div>
+					{/each}
+				</div>
+			</section>
+		{/if}
 	</div>
 </main>

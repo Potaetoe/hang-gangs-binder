@@ -92,7 +92,14 @@ decisions.
    the view for that one page look only - any reload or fresh visit
    renders the default again, and nothing a toggle does is ever
    stored (owner ruling 2026-08-26; a small script tidies the URL -
-   the owner lifted the no-script rule for it).
+   the owner lifted the no-script rule for it). Trend LINES are
+   admin-curated (owner ruling 2026-08-26): a checkbox list in the
+   admin Settings picks which number fields carry them - the home
+   trend cards, the board sparklines, and the focused trend charts
+   alike; everything else about a field (tiles, headlines, stats,
+   distributions) stays either way. The default is Weight and BMI -
+   adult height does not move. The home page's trends sit last: the
+   tri-fold's end on desktop, the bottom of the phone's scroll.
 2. **Admin surface** — site settings (name, welcome text, timezone,
    default theme), member management (approvals, roles, resets), a
    change log, departed-member cleanup.

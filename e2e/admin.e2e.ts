@@ -233,6 +233,51 @@ test('a member paints their own device', async ({ page }) => {
 	await page.getByRole('button', { name: 'Site default' }).click();
 });
 
+test('the admin curates which fields carry trend lines', async ({ page }) => {
+	const stamp = Date.now();
+	const boss = `curator${stamp}`;
+	await register(page, boss);
+	await makeAdmin(page, boss);
+	await signIn(page, boss);
+
+	// Two entries give height, weight and BMI their points.
+	await fillStable(page, /height, feet/i, '5');
+	await fillStable(page, /height, inches/i, '10');
+	await fillStable(page, 'Weight', '180');
+	await page.getByRole('button', { name: 'Save entry' }).click();
+	await fillStable(page, 'Weight', '185');
+	await page.getByRole('button', { name: 'Save entry' }).click();
+
+	// Out of the box: Weight and BMI trend; adult height does not
+	// (owner ruling 2026-08-26).
+	await expect(page.locator('.trend').filter({ hasText: 'Weight' })).toBeVisible();
+	await expect(page.locator('.trend').filter({ hasText: 'BMI' })).toBeVisible();
+	await expect(page.locator('.trend').filter({ hasText: 'Height' })).not.toBeVisible();
+
+	// And the trends close the page: below the entries.
+	const trendsBox = await page.locator('.fold-trends').boundingBox();
+	const entriesBox = await page.locator('.fold-entries').boundingBox();
+	expect(trendsBox!.y).toBeGreaterThan(entriesBox!.y);
+
+	// Height keeps everything but the trend line on its focused page.
+	await page.goto('/charts');
+	await page.locator('.tile').filter({ hasText: 'Height' }).click();
+	await expect(page.getByText('Where everyone sits')).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Trend', exact: true })).not.toBeVisible();
+
+	// The admin flips the set: Height on, BMI off. The cards follow.
+	await page.goto('/admin/settings');
+	await page.getByRole('checkbox', { name: 'Height' }).check();
+	await page.getByRole('checkbox', { name: 'BMI' }).uncheck();
+	await page.getByRole('button', { name: 'Save settings' }).click();
+	await expect(page.getByText('Saved.')).toBeVisible();
+	await page.goto('/home');
+	await expect(page.locator('.trend').filter({ hasText: 'Height' })).toBeVisible();
+	await expect(page.locator('.trend').filter({ hasText: 'BMI' })).not.toBeVisible();
+	await page.goto('/admin/log');
+	await expect(page.getByText('changed the trend graphs').first()).toBeVisible();
+});
+
 test('settings shape the site', async ({ page }) => {
 	const stamp = Date.now();
 	const boss = `styler${stamp}`;

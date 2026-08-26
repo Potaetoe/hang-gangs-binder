@@ -19,6 +19,10 @@ export type SiteSettings = {
 	 * (owner ruling 2026-08-26). Group data, nothing personal, so a
 	 * plain setting is the right home. */
 	socialLinks: string;
+	/** JSON string[] of field ids that carry trend LINES (owner ruling
+	 * 2026-08-26): the home trend cards, the board sparklines, and the
+	 * focused trend charts. Everything else about a field stays. */
+	trendFields: string;
 };
 
 export const DEFAULTS: SiteSettings = {
@@ -26,7 +30,10 @@ export const DEFAULTS: SiteSettings = {
 	welcomeText: 'Sign in once — then it is your page to fill in, and everyone’s numbers to read.',
 	timezone: 'America/Chicago',
 	theme: 'auto',
-	socialLinks: '[]'
+	socialLinks: '[]',
+	// Weight and BMI move; adult height does not (owner ruling
+	// 2026-08-26). Admins tick more in Settings if their group wants.
+	trendFields: '["weight","bmi"]'
 };
 
 const KEYS: Record<keyof SiteSettings, string> = {
@@ -34,8 +41,19 @@ const KEYS: Record<keyof SiteSettings, string> = {
 	welcomeText: 'welcome_text',
 	timezone: 'timezone',
 	theme: 'theme',
-	socialLinks: 'social_links'
+	socialLinks: 'social_links',
+	trendFields: 'trend_fields'
 };
+
+/** The ids from the trend_fields setting, as a set the pages check. */
+export function trendSet(settings: SiteSettings): Set<string> {
+	try {
+		const parsed: unknown = JSON.parse(settings.trendFields || '[]');
+		return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+	} catch {
+		return new Set(['weight', 'bmi']);
+	}
+}
 
 export async function loadSettings(db: Db): Promise<SiteSettings> {
 	const rows = await db.select().from(table.settings);
