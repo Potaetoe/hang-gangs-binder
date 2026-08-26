@@ -11,12 +11,20 @@ import { sessionMember } from '$lib/server/auth';
  * id, no name ever reaches a log line. Workers Logs stores these
  * lines and nothing else - invocation logs are off (wrangler.jsonc).
  */
+/** How much of one crash we are willing to write down. The worker
+ * ships as ONE bundled file, so a raw stack can run to hundreds of
+ * kilobytes - and anyone able to provoke an error could turn that into
+ * a flood (defensive review, 2026-08-26). The top frames are where the
+ * answer lives; the rest is bundle. */
+const LOG_MAX = 2000;
+
 export const handleError: HandleServerError = ({ error, event, status }) => {
 	// A path that matched NO route also lands here (as a 404), and its
 	// message embeds the requested path - which can carry an entry id.
 	// Strays and scanners are not crashes: say not-found, log nothing.
 	if (!event.route.id) return { message: 'Not found' };
-	const text = error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : String(error);
+	const raw = error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : String(error);
+	const text = raw.length > LOG_MAX ? `${raw.slice(0, LOG_MAX)}… [${raw.length} chars]` : raw;
 	console.error(`unexpected ${status} on ${event.route.id}: ${text}`);
 	return { message: 'Something broke on our side. Try again in a minute.' };
 };

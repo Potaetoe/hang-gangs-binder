@@ -107,6 +107,66 @@ test('a group member signs in through the Telegram door', async ({ page }) => {
 	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).toBeVisible();
 });
 
+test('an admin removed by an admin stays removed, and the operator allow-list still lets them back in', async ({
+	page,
+	request
+}) => {
+	// Two halves of one rule (defensive review, 2026-08-26). The Telegram
+	// door used to re-grant admin on EVERY sign-in to anyone the group
+	// called an administrator, which quietly undid the admin page's
+	// "Remove admin". Only the operator's allow-list - a secret, and the
+	// runbook's way back in - re-grants now. This walks the half the test
+	// bench can reach: the allow-list still works after a demotion.
+	const stamp = Date.now();
+	const boss = `chair${stamp}`;
+	await page.goto('/register');
+	await fillStable(page, 'Username', boss);
+	await fillStable(page, 'Password', 'a-decent-password');
+	await page.getByRole('button', { name: /ask for the account/i }).click();
+	expect((await request.post(`/test/admin?username=${boss}`)).ok()).toBeTruthy();
+
+	// The allow-listed operator arrives through Telegram, an admin.
+	const query = signedTelegramQuery({
+		id: '7000004',
+		first_name: 'Hatch',
+		last_name: `Keeper${stamp}`,
+		username: `hatch${stamp}`,
+		auth_date: String(Math.floor(Date.now() / 1000))
+	});
+	await page.goto(`/auth/telegram?${query}`);
+	await expect(page.getByRole('heading', { name: /hello, hatch/i })).toBeVisible();
+	await page.getByRole('button', { name: 'Sign out' }).click();
+
+	// The other admin takes the role away, and it holds.
+	await page.goto('/');
+	await openPasswordFlap(page);
+	await fillStable(page, 'Username', boss);
+	await fillStable(page, 'Password', 'a-decent-password');
+	await page.getByRole('button', { name: 'Sign in' }).click();
+	await page.goto('/admin/members');
+	await page
+		.locator('.admin-table tbody tr')
+		.filter({ hasText: `Keeper${stamp}` })
+		.getByRole('link', { name: 'Open' })
+		.click();
+	await page.getByRole('button', { name: 'Remove admin' }).click();
+	await expect(page.getByRole('button', { name: 'Make admin' })).toBeVisible();
+	await page.goto('/home');
+	await page.getByRole('button', { name: 'Sign out' }).click();
+
+	// The allow-list is the operator's own escape hatch: a fresh signed
+	// payload brings the role back.
+	const again = signedTelegramQuery({
+		id: '7000004',
+		first_name: 'Hatch',
+		last_name: `Keeper${stamp}`,
+		username: `hatch${stamp}`,
+		auth_date: String(Math.floor(Date.now() / 1000))
+	});
+	await page.goto(`/auth/telegram?${again}`);
+	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).toBeVisible();
+});
+
 test('a forged Telegram payload is refused', async ({ page }) => {
 	const query = signedTelegramQuery({
 		id: ALLOWED_TELEGRAM_ID,
