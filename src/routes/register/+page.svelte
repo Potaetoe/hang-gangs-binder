@@ -7,7 +7,7 @@
 </script>
 
 <svelte:head>
-	<title>Ask for an account — {page.data.siteName} Binder</title>
+	<title>{page.data.siteName} Binder — Ask for an account</title>
 </svelte:head>
 
 <main>

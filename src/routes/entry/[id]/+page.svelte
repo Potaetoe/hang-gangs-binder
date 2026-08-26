@@ -9,7 +9,7 @@
 </script>
 
 <svelte:head>
-	<title>Correct an entry — {data.siteName} Binder</title>
+	<title>{data.siteName} Binder — Correct an entry</title>
 </svelte:head>
 
 <Nav active="home" />

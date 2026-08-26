@@ -8,7 +8,7 @@
 </script>
 
 <svelte:head>
-	<title>Group Stats — {data.siteName} Binder</title>
+	<title>{data.siteName} Binder — Group Stats</title>
 </svelte:head>
 
 <Nav active="charts" />

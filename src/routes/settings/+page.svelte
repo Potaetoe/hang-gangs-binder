@@ -17,7 +17,7 @@
 </script>
 
 <svelte:head>
-	<title>Settings — {page.data.siteName} Binder</title>
+	<title>{page.data.siteName} Binder — Settings</title>
 </svelte:head>
 
 <Nav active="settings" />

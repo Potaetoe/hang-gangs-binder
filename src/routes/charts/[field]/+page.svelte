@@ -19,7 +19,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.focus.name} — {data.siteName} Binder</title>
+	<title>{data.siteName} Binder — {data.focus.name}</title>
 	<script src="/units-view.js" defer></script>
 </svelte:head>
 

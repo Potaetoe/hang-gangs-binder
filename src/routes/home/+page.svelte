@@ -26,7 +26,7 @@
 </script>
 
 <svelte:head>
-	<title>Home — {data.siteName} Binder</title>
+	<title>{data.siteName} Binder — Home</title>
 	<script src="/units-view.js" defer></script>
 	<script src="/event-times.js" defer></script>
 </svelte:head>
