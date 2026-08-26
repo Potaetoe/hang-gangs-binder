@@ -10,5 +10,9 @@
 ID_SECRET=local-id-secret
 DIRECTORY_SECRET=local-dir-seal
 TELEGRAM_BOT_TOKEN=local-test-bot-token
+# The widget only renders when the bot has a username - and the door
+# only sets its anti-CSRF state cookie when the widget renders, so the
+# e2e telegram walks need this set (finding 3, 2026-08-26).
+TELEGRAM_BOT_USERNAME=local_test_bot
 TELEGRAM_ALLOW_IDS=7000001,7000002,7000003,7000004
 TEST_HOOKS=1
