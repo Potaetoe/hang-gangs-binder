@@ -37,7 +37,15 @@ export type Formula = {
 	 * follows the units toggle (the weight-gain way). */
 	units: 'metric' | 'both';
 	decimals: 0 | 1 | 2;
+	/** A short label shown after the number ("kg", "%") - optional,
+	 * absent when the admin typed none. */
+	unit?: string;
 };
+
+export const UNIT_MAX = 8;
+
+const cleanUnit = (raw: unknown): string =>
+	typeof raw === 'string' ? raw.trim().slice(0, UNIT_MAX) : '';
 
 export const MAX_STEPS = 5;
 export const OPS: Record<CalcOp, string> = {
@@ -78,7 +86,8 @@ export function parseFormula(field: Field): Formula | null {
 		}
 		const units = raw.units === 'both' ? 'both' : 'metric';
 		const decimals = raw.decimals === 0 || raw.decimals === 2 ? raw.decimals : 1;
-		return { start: raw.start, steps: steps as CalcStep[], units, decimals };
+		const unit = cleanUnit(raw.unit);
+		return { start: raw.start, steps: steps as CalcStep[], units, decimals, ...(unit && { unit }) };
 	} catch {
 		return null;
 	}
@@ -87,6 +96,11 @@ export function parseFormula(field: Field): Formula | null {
 /** A field is calculated when it carries a formula column at all -
  * even an unfinished one. */
 export const isCalculated = (field: Field): boolean => field.formula !== null;
+
+/** The field's unit label ("kg", "%"), or '' - typed number fields
+ * carry their unit in `measure`; this is the calculated ones' answer. */
+export const formulaUnit = (field: Field): string =>
+	field.formula ? (parseFormula(field)?.unit ?? '') : '';
 
 /* ---------------------------------------------------------------- */
 /* Evaluation                                                        */
@@ -220,13 +234,14 @@ export function formulaInputNames(formula: Formula, fields: Field[]): string[] {
 	return names;
 }
 
-/** The whole recipe in words, for admin eyes. */
+/** The whole recipe in words, for admin eyes. The unit label rides
+ * along so a unit-only change still reads as a change in the log. */
 export function describeFormula(formula: Formula, fields: Field[]): string {
 	const parts = [operandName(formula.start, fields)];
 	for (const step of formula.steps) {
 		parts.push(`${OPS[step.op]} ${operandName(step.value, fields)}`);
 	}
-	return parts.join(' ');
+	return parts.join(' ') + (formula.unit ? `, shown as "${formula.unit}"` : '');
 }
 
 /* ---------------------------------------------------------------- */
@@ -297,8 +312,9 @@ export function parseBuilderForm(form: FormData, fields: Field[]): BuilderParse 
 	const units = form.get('units') === 'metric' ? 'metric' : 'both';
 	const rawDecimals = Number(form.get('decimals'));
 	const decimals = rawDecimals === 0 || rawDecimals === 2 ? rawDecimals : 1;
+	const unit = cleanUnit(form.get('unit_label'));
 	if (problems.length || !start) return { ok: false, problems };
-	return { ok: true, formula: { start, steps, units, decimals } };
+	return { ok: true, formula: { start, steps, units, decimals, ...(unit && { unit }) } };
 }
 
 /** The preview's sample answer: every field reads 100, a first-entry
@@ -312,7 +328,6 @@ export function previewFormula(formula: Formula): string {
 		return 100;
 	};
 	const result = evaluate(formula, resolve);
-	return result === null
-		? 'blank (the recipe cannot be worked with those numbers)'
-		: String(result);
+	if (result === null) return 'blank (the recipe cannot be worked with those numbers)';
+	return formula.unit ? `${result} ${formula.unit}` : String(result);
 }

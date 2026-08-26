@@ -12,7 +12,13 @@ import type { FormFieldView } from '$lib/views';
 import * as table from './db/schema';
 import { runBatch, type Writes } from './db';
 import { randomToken } from './crypto';
-import { formulaInputNames, isCalculated, parseFormula, type HistoryValues } from './calc';
+import {
+	formulaInputNames,
+	formulaUnit,
+	isCalculated,
+	parseFormula,
+	type HistoryValues
+} from './calc';
 
 type Db = DrizzleD1Database<typeof import('./db/schema')>;
 
@@ -128,7 +134,8 @@ export function formatValue(field: Field, value: EntryValue, units: Units): stri
 		return `${feet} ft ${inches} in`;
 	}
 	if (field.measure === 'mass') return units === 'imperial' ? `${n} lb` : `${n} kg`;
-	return String(n);
+	const unit = formulaUnit(field);
+	return unit ? `${n} ${unit}` : String(n);
 }
 
 /** The site's calendar day. Entries are dated in one zone for the

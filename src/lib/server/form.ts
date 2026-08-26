@@ -22,7 +22,14 @@ import * as table from './db/schema';
 import { runBatch, type Writes } from './db';
 import { logAdminQuery } from './admin';
 import { choicePicks, fieldOptions, type Field } from './stats';
-import { describeFormula, isCalculated, parseFormula, type Formula, type Operand } from './calc';
+import {
+	describeFormula,
+	formulaReads,
+	isCalculated,
+	parseFormula,
+	type Formula,
+	type Operand
+} from './calc';
 import { randomToken } from './crypto';
 
 type Db = DrizzleD1Database<typeof import('./db/schema')>;
@@ -272,6 +279,24 @@ export async function deleteField(
 	)[0];
 	if (used) {
 		return { ok: false, reason: 'This field has collected values - retire it instead.' };
+	}
+	// A recipe that reads this field would break for good - the UI
+	// warns, the database refuses (fix pass 2026-08-26). Every formula
+	// counts, retired ones too: a revived recipe must still work.
+	const readers = (await allFields(db))
+		.filter((f) => {
+			if (!isCalculated(f) || f.id === id) return false;
+			const formula = parseFormula(f);
+			return formula !== null && formulaReads(formula).includes(id);
+		})
+		.map((f) => `"${f.name}"`);
+	if (readers.length) {
+		return {
+			ok: false,
+			reason: `The recipe${readers.length === 1 ? '' : 's'} ${readers.join(', ')} still ${
+				readers.length === 1 ? 'reads' : 'read'
+			} this field - change the recipe first, or retire this field instead.`
+		};
 	}
 	await runBatch(db, [
 		db.delete(table.fields).where(eq(table.fields.id, id)),

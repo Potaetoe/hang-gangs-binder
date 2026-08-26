@@ -77,6 +77,7 @@ export const load: PageServerLoad = async ({ platform, params }) => {
 			recipe: formula ? describeFormula(formula, fields) : null,
 			units: formula?.units ?? 'both',
 			decimals: formula?.decimals ?? 1,
+			unitLabel: formula?.unit ?? '',
 			start: encodePick(formula?.start),
 			steps: Array.from({ length: MAX_STEPS }, (_, i) => {
 				const step = formula?.steps[i];
@@ -210,7 +211,7 @@ export const actions: Actions = {
  * form shows what the admin had picked. */
 function echoBuilder(form: FormData): Record<string, string> {
 	const out: Record<string, string> = {};
-	for (const key of ['start_pick', 'start_const', 'units', 'decimals']) {
+	for (const key of ['start_pick', 'start_const', 'units', 'decimals', 'unit_label']) {
 		out[key] = String(form.get(key) ?? '');
 	}
 	for (let i = 1; i <= MAX_STEPS; i++) {
