@@ -141,6 +141,13 @@ h2 {
 	font-size: 2rem;
 }
 
+/* An admin's greeting carries their standing in the name itself -
+   the accent is the one bright color every palette ships (owner
+   ruling 2026-08-26). */
+.admin-name {
+	color: var(--color-accent);
+}
+
 .card {
 	background: var(--color-surface);
 	border: 1px solid var(--color-border);

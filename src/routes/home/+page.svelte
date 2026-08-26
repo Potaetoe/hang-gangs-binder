@@ -29,10 +29,11 @@
 <Nav active="home" />
 <main class="wide with-rail home-main">
 	<Brand />
-	<h1>Hello, {data.name}</h1>
-	{#if data.isAdmin}
-		<p class="muted">You are signed in as an admin.</p>
-	{/if}
+	<!-- An admin's name wears the accent instead of a tagline saying so
+	     (owner ruling 2026-08-26). -->
+	<h1>
+		Hello, {#if data.isAdmin}<span class="admin-name">{data.name}</span>{:else}{data.name}{/if}
+	</h1>
 	{#if data.pendingCount}
 		<a class="card banner" href={resolve('/admin/members')}
 			>{data.pendingCount === 1 ? 'Someone is' : `${data.pendingCount} people are`} waiting to be approved</a
@@ -155,7 +156,7 @@
 			<!-- The heading stands outside the card like its neighbours,
 			     and carries no date - the calendar already says what day
 			     it is (owner corrections on the drive, 2026-08-26). -->
-			<h2>Add an entry</h2>
+			<h2>Add your current information</h2>
 			<div class="card home-entry">
 				<form method="POST" action="?/units" class="units">
 					<button
@@ -183,7 +184,7 @@
 
 		{#if data.trends.length}
 			<section class="fold-trends">
-				<h2>Trends</h2>
+				<h2>Your trends</h2>
 				<div class="trends">
 					{#each data.trends as trend (trend.name)}
 						<div class="trend card">
