@@ -26,7 +26,6 @@
 	<!-- The rail already says where you are (owner ruling 2026-08-26);
 	     the heading stays for screen readers only. -->
 	<h1 class="sr-only">Settings</h1>
-	<p class="muted">Yours, on this device. A tap saves it.</p>
 
 	<div class="settings-list">
 		<section class="setting">
