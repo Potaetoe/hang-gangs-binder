@@ -1416,6 +1416,98 @@ a.banner {
 	text-decoration: none;
 }
 
+/* The socials nudge: the banner with a wave-away X at its side. */
+div.banner.nudge {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	border-color: var(--color-accent);
+}
+div.banner.nudge a {
+	font-weight: 600;
+	text-decoration: none;
+}
+div.banner.nudge form {
+	margin: 0;
+	flex: none;
+}
+button.nudge-off {
+	min-height: 2rem;
+	min-width: 2rem;
+	padding: 0;
+	font-size: 1.1rem;
+	color: var(--color-text-muted);
+	background: transparent;
+	border: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Socials (DESIGN.md feature 6): the group's own links, then the     */
+/* roster - a name, then letter badges for where they are.            */
+
+.official-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 1.5rem;
+}
+.official-list a {
+	font-weight: 600;
+}
+.official-title {
+	font-weight: 600;
+	margin: 1rem 0 0.5rem;
+}
+.socials-roster {
+	list-style: none;
+	margin-block: var(--space);
+	padding: 0.25rem 1rem;
+}
+.socials-roster li {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	padding: 0.6rem 0;
+	border-top: 1px solid var(--color-border);
+}
+.socials-roster li:first-child {
+	border-top: 0;
+}
+.roster-name {
+	margin: 0;
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+.roster-links {
+	display: flex;
+	gap: 0.5rem;
+	flex: none;
+}
+.social-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.1rem;
+	height: 2.1rem;
+	border-radius: 999px;
+	border: 1px solid var(--color-border-strong);
+	font-family: var(--font-mono);
+	font-size: 0.8rem;
+	font-weight: 700;
+	color: var(--color-accent);
+	text-decoration: none;
+}
+.social-badge:hover,
+.social-badge:focus-visible {
+	background: var(--color-accent);
+	border-color: var(--color-accent);
+	color: var(--color-on-accent);
+}
+
 /* The action card holds the flap-buttons too; an opened flap takes
    the full row for its form. */
 .admin-actions details {

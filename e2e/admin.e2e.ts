@@ -60,9 +60,10 @@ test('the admin approves, denies, and the log remembers', async ({ page }) => {
 	await signIn(page, boss);
 	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).toBeVisible();
 
-	// The waiting banner carries the admin straight to approvals.
-	await expect(page.locator('.banner')).toContainText('waiting to be approved');
-	await page.locator('.banner').click();
+	// The waiting banner carries the admin straight to approvals. (The
+	// socials nudge is a banner too - a.banner picks the approvals one.)
+	await expect(page.locator('a.banner')).toContainText('waiting to be approved');
+	await page.locator('a.banner').click();
 	const askerRow = page.locator('.history li').filter({ hasText: asker });
 	await expect(askerRow).toBeVisible();
 	await askerRow.getByRole('button', { name: 'Approve' }).click();

@@ -231,6 +231,21 @@ export const eventImageChunks = sqliteTable(
 	(t) => [primaryKey({ columns: [t.imageId, t.seq] })]
 );
 
+/**
+ * Member socials (DESIGN.md feature 6, owner rulings 2026-08-26):
+ * links are real identities, so they live sealed exactly like names -
+ * a leaked copy shows nothing. One row per member who has added
+ * links; deleting the row is what removes them. Every payload is
+ * pre-padded into one fixed bucket before sealing, so even the count
+ * of someone's links leaks nothing.
+ */
+export const socials = sqliteTable('socials', {
+	memberId: text('member_id').primaryKey(),
+	sealed: text('sealed').notNull(),
+	// Day only, like every member-linked timestamp.
+	updatedAt: text('updated_at').notNull()
+});
+
 export const sessions = sqliteTable('sessions', {
 	// SHA-256 of the cookie token: a leaked table holds no usable
 	// credential.

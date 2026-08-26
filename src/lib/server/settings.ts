@@ -15,20 +15,26 @@ export type SiteSettings = {
 	welcomeText: string;
 	timezone: string;
 	theme: string;
+	/** JSON [{label, url}] — the group's own links on the Socials page
+	 * (owner ruling 2026-08-26). Group data, nothing personal, so a
+	 * plain setting is the right home. */
+	socialLinks: string;
 };
 
 export const DEFAULTS: SiteSettings = {
 	siteName: 'Hang Gang',
 	welcomeText: 'Sign in once — then it is your page to fill in, and everyone’s numbers to read.',
 	timezone: 'America/Chicago',
-	theme: 'auto'
+	theme: 'auto',
+	socialLinks: '[]'
 };
 
 const KEYS: Record<keyof SiteSettings, string> = {
 	siteName: 'site_name',
 	welcomeText: 'welcome_text',
 	timezone: 'timezone',
-	theme: 'theme'
+	theme: 'theme',
+	socialLinks: 'social_links'
 };
 
 export async function loadSettings(db: Db): Promise<SiteSettings> {

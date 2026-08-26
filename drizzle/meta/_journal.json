@@ -57,6 +57,13 @@
       "when": 1787752256868,
       "tag": "0007_event_times",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787754176289,
+      "tag": "0008_socials",
+      "breakpoints": true
     }
   ]
 }

@@ -44,6 +44,17 @@
 			>{data.pendingCount === 1 ? 'Someone is' : `${data.pendingCount} people are`} waiting to be approved</a
 		>
 	{/if}
+	{#if data.socialsNudge}
+		<div class="card banner nudge">
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() is in the template; the rule cannot see through the anchor -->
+			<a href={`${resolve('/settings')}#socials`}
+				>Add your socials — the gang can't find what isn't listed</a
+			>
+			<form method="POST" action="?/nudgeoff">
+				<button class="nudge-off" aria-label="Dismiss">&times;</button>
+			</form>
+		</div>
+	{/if}
 
 	<!-- The tri-fold (owner ruling 2026-08-26): three desktop columns -
 	     the calendar, the form, trends over the entries. The phone reads
