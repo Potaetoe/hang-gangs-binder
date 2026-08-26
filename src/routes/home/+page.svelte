@@ -140,12 +140,10 @@
 		</section>
 
 		<section class="fold-entry">
-			<!-- The heading stands outside the card like its neighbours
-			     (owner correction on the drive, 2026-08-26). -->
-			<div class="card-head">
-				<h2>Add an entry</h2>
-				<p class="muted">{data.todayLabel}</p>
-			</div>
+			<!-- The heading stands outside the card like its neighbours,
+			     and carries no date - the calendar already says what day
+			     it is (owner corrections on the drive, 2026-08-26). -->
+			<h2>Add an entry</h2>
 			<div class="card home-entry">
 				<form method="POST" action="?/units" class="units">
 					<button

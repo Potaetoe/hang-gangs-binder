@@ -1069,7 +1069,10 @@ span.lightbox-step.off {
 	   the calendar on the left, the entry form in the middle, trends
 	   and the entries on the right, filling the page. The DOM keeps
 	   the phone's reading order; the grid areas do the folding. */
-	main.home-main {
+	/* Beats main.wide's 72rem cap (same specificity alone, and that
+	   rule sits later in this file) - the tri-fold gets the whole
+	   screen. */
+	main.wide.home-main {
 		max-width: none;
 	}
 	.home-folds {

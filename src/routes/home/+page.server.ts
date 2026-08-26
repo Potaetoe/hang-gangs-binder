@@ -122,7 +122,6 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 		isAdmin: locals.member.isAdmin,
 		pendingCount,
 		units,
-		todayLabel: formatDate(todayIso),
 		formFields: formFieldViews(fields, latest, units),
 		trends,
 		calendar,
