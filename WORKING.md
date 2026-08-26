@@ -65,20 +65,28 @@ Rules that priced in the old lessons:
 
 ## Security
 
-The full security pass happens once the app is feature-complete, before
-launch:
+Before launch, the app gets a **defensive code review**: a first-party
+read of our own source for security-relevant defects, so we find and
+fix our own weaknesses before the group arrives. It is quality
+assurance on code we own and operate — the same class of pass as the
+linter or the test suite.
 
-- A small panel of independent Opus attackers — one each on
-  auth/sessions, member-data exposure, and the privacy floor — trying to
-  break the deployed app, findings ranked.
-- Plus an outside check: current security best practice for small
-  community apps, researched and verified with the owner, compared
-  against our posture.
-- Claude fixes the findings; the owner gets the blunt report.
+- Claude reviews `src/lib/server/` and the routes against current
+  published guidance, looked up fresh rather than recalled: the OWASP
+  Top 10 and cheat sheets, plus any standard the owner names.
+- Focus areas: authentication and sessions, authorization on every
+  admin path, input parsing, the sealed-identity encryption, and the
+  privacy promises DESIGN.md makes.
+- Findings are ranked by severity, the ones that matter get fixed, and
+  the owner gets the blunt report. What is deliberately accepted gets
+  written down as accepted, with its reason.
 
-Until then, security-sensitive code (hashing, sessions, the sealed
-directory, the floor) gets Claude's most careful work and honest
-flagging of anything uncertain — not ceremony.
+The first pass ran 2026-08-26 and is recorded in
+[docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md).
+
+Day to day, security-sensitive code (hashing, sessions, the sealed
+directory) gets Claude's most careful work and honest flagging of
+anything uncertain — not ceremony.
 
 ## Enforcement — the hooks
 

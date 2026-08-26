@@ -5,9 +5,10 @@
 #
 # 7000001 is the ordinary Telegram member; 7000002 belongs to the
 # replay test, which needs an identity of its own so it cannot race
-# the first one over a shared display name.
+# the first one over a shared display name. 7000004 belongs to the
+# operator-escape-hatch test, for the same no-racing reason.
 ID_SECRET=local-id-secret
 DIRECTORY_SECRET=local-dir-seal
 TELEGRAM_BOT_TOKEN=local-test-bot-token
-TELEGRAM_ALLOW_IDS=7000001,7000002,7000003
+TELEGRAM_ALLOW_IDS=7000001,7000002,7000003,7000004
 TEST_HOOKS=1

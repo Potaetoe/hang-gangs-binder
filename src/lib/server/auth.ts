@@ -428,14 +428,20 @@ async function burnPayload(db: Db, hash: string): Promise<boolean> {
 	}
 }
 
-type Standing = 'member' | 'admin' | 'out' | 'unknown';
+/** 'operator' is the allow-list - a secret only the person holding the
+ * Cloudflare account can set, and the documented way back in when the
+ * binder's own admins are gone. 'admin' is merely what the Telegram
+ * group says: its creator and its administrators. The two are kept
+ * apart because they must not carry the same weight (defensive review,
+ * 2026-08-26). */
+type Standing = 'operator' | 'member' | 'admin' | 'out' | 'unknown';
 
 async function groupStanding(secrets: Secrets, telegramId: string): Promise<Standing> {
 	const allowed = (secrets.TELEGRAM_ALLOW_IDS ?? '')
 		.split(',')
 		.map((s) => s.trim())
 		.filter(Boolean);
-	if (allowed.includes(telegramId)) return 'admin';
+	if (allowed.includes(telegramId)) return 'operator';
 	if (!secrets.TELEGRAM_BOT_TOKEN || !secrets.TELEGRAM_CHAT_ID) return 'unknown';
 	try {
 		const res = await fetch(
@@ -490,7 +496,9 @@ export async function signInTelegram(
 		await db.insert(table.members).values({
 			id: memberId,
 			status: 'approved',
-			isAdmin: standing === 'admin',
+			// A brand-new member arrives an admin if the Telegram group
+			// already trusts them that far - the fork's convenient start.
+			isAdmin: standing === 'operator' || standing === 'admin',
 			createdAt: todayUtc()
 		});
 		await db.insert(table.logins).values({
@@ -500,7 +508,16 @@ export async function signInTelegram(
 			passwordHash: null,
 			createdAt: todayUtc()
 		});
-	} else if (standing === 'admin') {
+	} else if (standing === 'operator') {
+		// Only the OPERATOR'S allow-list re-grants on a later sign-in -
+		// that list is a secret, and the runbook's way back in.
+		//
+		// Telegram group admins deliberately do NOT (defensive review,
+		// 2026-08-26). Re-granting on every sign-in quietly undid the
+		// admin page's "Remove admin": a group administrator demoted in
+		// the binder was an admin again at their next Telegram sign-in,
+		// with nothing said and no way for an admin to make it stick.
+		// A control that cannot be relied on is worse than no control.
 		await db.update(table.members).set({ isAdmin: true }).where(eq(table.members.id, memberId));
 	}
 	// Merged over what is already there, so a linked password
