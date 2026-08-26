@@ -139,32 +139,36 @@
 			</div>
 		</section>
 
-		<section class="card home-entry fold-entry">
+		<section class="fold-entry">
+			<!-- The heading stands outside the card like its neighbours
+			     (owner correction on the drive, 2026-08-26). -->
 			<div class="card-head">
 				<h2>Add an entry</h2>
 				<p class="muted">{data.todayLabel}</p>
 			</div>
-			<form method="POST" action="?/units" class="units">
-				<button
-					name="units"
-					value="imperial"
-					class:on={data.units === 'imperial'}
-					aria-pressed={data.units === 'imperial'}>Imperial (US)</button
-				>
-				<button
-					name="units"
-					value="metric"
-					class:on={data.units === 'metric'}
-					aria-pressed={data.units === 'metric'}>Metric</button
-				>
-			</form>
-			<EntryForm
-				fields={data.formFields}
-				raw={form?.raw}
-				problems={form?.problems}
-				action="?/entry"
-				submitLabel="Save entry"
-			/>
+			<div class="card home-entry">
+				<form method="POST" action="?/units" class="units">
+					<button
+						name="units"
+						value="imperial"
+						class:on={data.units === 'imperial'}
+						aria-pressed={data.units === 'imperial'}>Imperial (US)</button
+					>
+					<button
+						name="units"
+						value="metric"
+						class:on={data.units === 'metric'}
+						aria-pressed={data.units === 'metric'}>Metric</button
+					>
+				</form>
+				<EntryForm
+					fields={data.formFields}
+					raw={form?.raw}
+					problems={form?.problems}
+					action="?/entry"
+					submitLabel="Save entry"
+				/>
+			</div>
 		</section>
 
 		<section class="fold-entries">
