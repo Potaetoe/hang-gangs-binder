@@ -287,6 +287,23 @@ export const socials = sqliteTable('socials', {
 	updatedAt: text('updated_at').notNull()
 });
 
+/**
+ * Global sign-in backoff (security review finding 9, owner ruling
+ * 2026-08-26): failure counts per account, kept in the one database so
+ * the limit holds across every edge - the per-edge limiter stays as
+ * the outer layer. Keyed by the same opaque lookup hash as logins,
+ * never a plain username. A row exists only while an account is being
+ * failed at: success deletes it, and a quiet day decays it.
+ */
+export const loginBackoff = sqliteTable('login_backoff', {
+	lookupHash: text('lookup_hash').primaryKey(),
+	fails: integer('fails').notNull(),
+	// A real clock, deliberately - minute-scale backoff cannot be
+	// enforced day-granular. It marks FAILED tries only; nothing about
+	// a successful visit ever lands here.
+	blockedUntil: integer('blocked_until').notNull()
+});
+
 export const sessions = sqliteTable('sessions', {
 	// SHA-256 of the cookie token: a leaked table holds no usable
 	// credential.

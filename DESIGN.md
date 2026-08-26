@@ -58,6 +58,20 @@ never hands over the mapping.
   day boundary — "alive as of day X" is the finest thing the sessions
   table may say about a member's visits, and a member holds at most 3
   live sessions.
+- One deliberate exception to day-only (owner ruling 2026-08-26,
+  security review finding 9): the sign-in backoff table. Repeated
+  failures at an account put it on a slowing clock, and a minute-scale
+  clock cannot be day-granular. The row is keyed by the account's
+  opaque lookup hash — never a name — records failed tries only, is
+  deleted the moment the right password arrives, and decays after a
+  quiet day. Nothing about a member's successful visits ever lands
+  there.
+- Registration says when a username is taken (owner ruling 2026-08-26,
+  security review finding 10). That is a roster oracle — an outsider
+  can probe whether a name has an account — and it is accepted as
+  inherent to having usernames: the alternative, letting lookalike
+  registrations pile up, hurts real people more. It is throttled, and
+  the sign-in door stays silent either way.
 - The app writes no member data to logs. It carries exactly ONE
   logging call (owner OK 2026-08-26, after an outage produced 500s
   and left nothing to read): when the server hits an UNEXPECTED

@@ -339,7 +339,38 @@ export async function register(
 }
 
 export type PasswordSignIn =
-	{ ok: true; token: string } | { ok: false; reason: 'wrong' | 'pending' };
+	{ ok: true; token: string } | { ok: false; reason: 'wrong' | 'pending' | 'throttled' };
+
+/**
+ * The global backoff's shape (finding 9, owner ruling 2026-08-26):
+ * three misses are free, the fourth starts a clock - 10 seconds,
+ * doubling per further miss, capped at 15 minutes. Backoff, never
+ * lockout: the worst a griefer can do to a member is make their
+ * sign-in wait, and the member's own success wipes the slate. About
+ * a dozen guesses an hour per account, from everywhere combined.
+ */
+const BACKOFF_FREE_FAILS = 3;
+const BACKOFF_BASE_SECONDS = 10;
+const BACKOFF_CAP_SECONDS = 900;
+/** A quiet day forgets the count - and bounds the table to accounts
+ * under active failure. */
+const BACKOFF_DECAY_SECONDS = 86_400;
+
+async function recordSignInFailure(db: Db, lookupHash: string, priorFails: number) {
+	const fails = priorFails + 1;
+	const over = fails - BACKOFF_FREE_FAILS;
+	const blockedUntil =
+		over > 0
+			? now() + Math.min(BACKOFF_BASE_SECONDS * 2 ** (over - 1), BACKOFF_CAP_SECONDS)
+			: now();
+	await db
+		.insert(table.loginBackoff)
+		.values({ lookupHash, fails, blockedUntil })
+		.onConflictDoUpdate({ target: table.loginBackoff.lookupHash, set: { fails, blockedUntil } });
+	await db
+		.delete(table.loginBackoff)
+		.where(lt(table.loginBackoff.blockedUntil, now() - BACKOFF_DECAY_SECONDS));
+}
 
 export async function signInPassword(
 	db: Db,
@@ -349,6 +380,16 @@ export async function signInPassword(
 ): Promise<PasswordSignIn> {
 	const username = usernameRaw.trim().toLowerCase();
 	const lookupHash = await hmacHex(secrets.ID_SECRET, `password:${username}`);
+	// The global backoff first (finding 9): checked before any hash is
+	// loaded or verified, so a blocked attempt costs no PBKDF2 - and
+	// rows exist for imaginary accounts too, so the blocked answer is
+	// as silent about who exists as the wrong-password answer.
+	const backoff = (
+		await db.select().from(table.loginBackoff).where(eq(table.loginBackoff.lookupHash, lookupHash))
+	)[0];
+	if (backoff && backoff.blockedUntil > now()) return { ok: false, reason: 'throttled' };
+	const priorFails =
+		backoff && backoff.blockedUntil >= now() - BACKOFF_DECAY_SECONDS ? backoff.fails : 0;
 	const login = (
 		await db.select().from(table.logins).where(eq(table.logins.lookupHash, lookupHash))
 	)[0];
@@ -360,9 +401,11 @@ export async function signInPassword(
 	// two paths now take the same time as well as saying the same thing.
 	if (!login?.passwordHash) {
 		await verifyPassword(password, DECOY_HASH);
+		await recordSignInFailure(db, lookupHash, priorFails);
 		return { ok: false, reason: 'wrong' };
 	}
 	if (!(await verifyPassword(password, login.passwordHash))) {
+		await recordSignInFailure(db, lookupHash, priorFails);
 		return { ok: false, reason: 'wrong' };
 	}
 	// The one moment the plain password is in hand and known good: if it
@@ -374,6 +417,11 @@ export async function signInPassword(
 			.update(table.logins)
 			.set({ passwordHash: await hashPassword(password) })
 			.where(eq(table.logins.lookupHash, login.lookupHash));
+	}
+	// The password was right from here on: the backoff row - a record
+	// of somebody failing at this account - has no more to say.
+	if (backoff) {
+		await db.delete(table.loginBackoff).where(eq(table.loginBackoff.lookupHash, lookupHash));
 	}
 	const member = (
 		await db.select().from(table.members).where(eq(table.members.id, login.memberId))

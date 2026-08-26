@@ -52,6 +52,11 @@ export const actions: Actions = {
 			password
 		);
 		if (!result.ok) {
+			// The backoff's refusal wears the throttle's words - one
+			// message for every slow-down, silent about who exists.
+			if (result.reason === 'throttled') {
+				return fail(429, { username, message: TOO_MANY_MESSAGE });
+			}
 			return fail(400, {
 				username,
 				message:

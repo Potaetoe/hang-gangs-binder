@@ -173,6 +173,19 @@ export async function denyMember(
 	const member = (await db.select().from(table.members).where(eq(table.members.id, id)))[0];
 	if (!member || member.status !== 'pending') return false;
 	await runBatch(db, [
+		// The backoff rows ride on the login's lookup hash, so they go
+		// while the logins still exist to name them.
+		db
+			.delete(table.loginBackoff)
+			.where(
+				inArray(
+					table.loginBackoff.lookupHash,
+					db
+						.select({ h: table.logins.lookupHash })
+						.from(table.logins)
+						.where(eq(table.logins.memberId, id))
+				)
+			),
 		db.delete(table.logins).where(eq(table.logins.memberId, id)),
 		db.delete(table.directory).where(eq(table.directory.memberId, id)),
 		db.delete(table.members).where(eq(table.members.id, id)),
@@ -275,6 +288,19 @@ export async function purgeMember(db: Db, date: string, actorId: string, id: str
 		db.delete(table.entries).where(eq(table.entries.memberId, id)),
 		db.delete(table.memberAudit).where(eq(table.memberAudit.memberId, id)),
 		db.delete(table.sessions).where(eq(table.sessions.memberId, id)),
+		// Backoff rows before the logins whose lookup hash names them -
+		// the purge leaves NOTHING, this table included.
+		db
+			.delete(table.loginBackoff)
+			.where(
+				inArray(
+					table.loginBackoff.lookupHash,
+					db
+						.select({ h: table.logins.lookupHash })
+						.from(table.logins)
+						.where(eq(table.logins.memberId, id))
+				)
+			),
 		db.delete(table.logins).where(eq(table.logins.memberId, id)),
 		db.delete(table.socials).where(eq(table.socials.memberId, id)),
 		db.delete(table.directory).where(eq(table.directory.memberId, id)),
