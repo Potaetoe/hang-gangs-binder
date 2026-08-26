@@ -3,12 +3,17 @@
 
 	let {
 		fields,
+		units,
 		raw = {},
 		problems = [],
 		action,
 		submitLabel
 	}: {
 		fields: FormFieldView[];
+		/** The units the form renders in, posted back with it so the
+		 * server parses what the member actually saw - the view can be
+		 * one page load old by the time the submit lands. */
+		units: string;
 		/** What a failed submit actually typed, echoed back over the
 		 * pre-fill so nothing anyone wrote is thrown away. Checkboxes
 		 * submit one value per tick, so every key holds a list. */
@@ -29,6 +34,7 @@
 </script>
 
 <form method="POST" {action}>
+	<input type="hidden" name="units" value={units} />
 	{#if problems.length}
 		<ul class="error problems">
 			{#each problems as problem (problem)}

@@ -8,6 +8,7 @@ import {
 	editEntry,
 	formatDate,
 	formFieldViews,
+	formUnits,
 	loadFields,
 	memberEntry,
 	memberUnits,
@@ -50,7 +51,7 @@ export const actions: Actions = {
 		const env = platform!.env;
 		const db = getDb(env.DB);
 		const form = await request.formData();
-		const units = memberUnits(cookies);
+		const units = formUnits(form, cookies);
 
 		const fields = await loadFields(db);
 		const { values, problems } = parseEntryForm(fields, form, units);

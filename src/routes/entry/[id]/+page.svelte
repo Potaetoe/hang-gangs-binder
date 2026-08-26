@@ -20,6 +20,7 @@
 	<section class="card">
 		<EntryForm
 			fields={data.formFields}
+			units={data.units}
 			raw={form?.raw}
 			problems={form?.problems}
 			action="?/save"

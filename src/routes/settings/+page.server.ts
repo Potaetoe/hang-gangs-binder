@@ -72,9 +72,10 @@ export const actions: Actions = {
 	units: async ({ request, locals, cookies }) => {
 		if (!locals.member) redirect(303, '/');
 		const form = await request.formData();
-		// The DEFAULT (owner ruling 2026-08-26). The page toggles write a
-		// session-long units_view that never touches this; choosing here
-		// clears it so the new default shows immediately.
+		// The DEFAULT (owner ruling 2026-08-26). The page toggles carry a
+		// one-view ?u= and store nothing. The delete sweeps the view
+		// cookie one interim build wrote - members who never saw that
+		// build have nothing to sweep.
 		cookies.set('units', form.get('units') === 'metric' ? 'metric' : 'imperial', COOKIE);
 		cookies.delete('units_view', { path: '/' });
 		redirect(303, '/settings');

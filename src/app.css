@@ -317,22 +317,30 @@ select {
 	margin: 0;
 }
 
-/* Imperial | Metric: one form, two submit buttons, the active one
-   filled in. */
+/* Imperial | Metric: two controls, the active one filled in. On the
+   member pages they are one-view links (?u=); Settings keeps them as
+   the buttons that write the default. */
 .units {
 	display: flex;
 	gap: 0.5rem;
 	margin-bottom: 1rem;
 }
-.units button {
+.units button,
+.units a {
+	display: inline-flex;
+	align-items: center;
 	min-height: 2.25rem;
 	padding: 0.25rem 0.9rem;
 	font-size: 0.9rem;
+	font-weight: 600;
 	color: var(--color-text-muted);
 	background: transparent;
 	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius);
+	text-decoration: none;
 }
-.units button.on {
+.units button.on,
+.units a.on {
 	color: var(--color-on-accent);
 	background: var(--color-accent);
 	border-color: var(--color-accent);

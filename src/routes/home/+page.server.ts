@@ -12,6 +12,7 @@ import {
 	formatValue,
 	formFieldViews,
 	latestValues,
+	formUnits,
 	loadFields,
 	memberHistory,
 	memberTrends,
@@ -58,7 +59,7 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 	const env = platform!.env;
 	const db = getDb(env.DB);
 	const memberId = locals.member.memberId;
-	const units = memberUnits(cookies);
+	const units = memberUnits(cookies, url);
 
 	const identity = await identityOf(db, env as unknown as Secrets, memberId);
 	const fields = await loadFields(db);
@@ -159,7 +160,7 @@ export const actions: Actions = {
 		const env = platform!.env;
 		const db = getDb(env.DB);
 		const form = await request.formData();
-		const units = memberUnits(cookies);
+		const units = formUnits(form, cookies);
 
 		const fields = await loadFields(db);
 		const { values, problems } = parseEntryForm(fields, form, units);
@@ -177,21 +178,8 @@ export const actions: Actions = {
 
 		computeBmi(fields, values);
 		await createEntry(db, locals.member.memberId, today((await loadSettings(db)).timezone), values);
-		redirect(303, '/home');
-	},
-
-	units: async ({ request, cookies, locals }) => {
-		if (!locals.member) redirect(303, '/');
-		const form = await request.formData();
-		const choice = form.get('units') === 'metric' ? 'metric' : 'imperial';
-		// A session-long view, not the default - Settings owns that
-		// (owner ruling 2026-08-26). No maxAge: it dies with the browser.
-		cookies.set('units_view', choice, {
-			path: '/',
-			httpOnly: true,
-			sameSite: 'lax',
-			secure: true
-		});
-		redirect(303, '/home');
+		// The confirmation shows in the units just typed in; the script
+		// strips ?u=, so the next load is the default again.
+		redirect(303, `/home?u=${units}`);
 	}
 };

@@ -1,5 +1,5 @@
 import { error, redirect } from '@sveltejs/kit';
-import type { Actions, PageServerLoad } from './$types';
+import type { PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import { focusView, loadGroup, readFilters } from '$lib/server/charts';
 import { loadFields, memberUnits } from '$lib/server/stats';
@@ -7,7 +7,7 @@ import { loadFields, memberUnits } from '$lib/server/stats';
 export const load: PageServerLoad = async ({ locals, platform, params, url, cookies }) => {
 	if (!locals.member) redirect(303, '/');
 	const db = getDb(platform!.env.DB);
-	const units = memberUnits(cookies);
+	const units = memberUnits(cookies, url);
 	const fields = await loadFields(db);
 	const field = fields.find((f) => f.id === params.field);
 	if (!field) error(404, 'Not found');
@@ -23,23 +23,4 @@ export const load: PageServerLoad = async ({ locals, platform, params, url, cook
 		focus: focusView(group, fields, field, filters, units, locals.member.memberId),
 		query: url.search
 	};
-};
-
-export const actions: Actions = {
-	units: async ({ request, cookies, locals }) => {
-		if (!locals.member) redirect(303, '/');
-		const form = await request.formData();
-		const choice = form.get('units') === 'metric' ? 'metric' : 'imperial';
-		// A session-long view, not the default - Settings owns that
-		// (owner ruling 2026-08-26). No maxAge: it dies with the browser.
-		cookies.set('units_view', choice, {
-			path: '/',
-			httpOnly: true,
-			sameSite: 'lax',
-			secure: true
-		});
-		// Back to the same field and filters; only same-site paths.
-		const back = String(form.get('back') ?? '/charts');
-		redirect(303, back.startsWith('/') && !back.startsWith('//') ? back : '/charts');
-	}
 };

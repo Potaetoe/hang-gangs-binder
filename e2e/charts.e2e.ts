@@ -94,9 +94,9 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 	await expect(page.getByText(/you are here/)).not.toBeVisible();
 
 	// The same member in the other system: both were stored.
-	await page.getByRole('button', { name: 'Metric' }).click();
+	await page.getByRole('link', { name: 'Metric' }).click();
 	await expect(page.locator('.stat').filter({ hasText: '90.7 kg' })).toBeVisible();
-	await page.getByRole('button', { name: /imperial/i }).click();
+	await page.getByRole('link', { name: /imperial/i }).click();
 
 	// Loosen to everyone from Iceland: two members averaged, and the
 	// viewer is one of them - now the marker may speak.

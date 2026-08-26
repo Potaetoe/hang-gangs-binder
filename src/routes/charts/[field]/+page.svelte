@@ -2,14 +2,25 @@
 	import Brand from '$lib/Brand.svelte';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
+	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import Nav from '$lib/Nav.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	// The units toggle carries ?u= for one page view, filters intact;
+	// the static script strips it after render (owner ruling
+	// 2026-08-26).
+	const unitsHref = (u: string) => {
+		const params = new SvelteURLSearchParams(page.url.search);
+		params.set('u', u);
+		return `${page.url.pathname}?${params.toString()}`;
+	};
 </script>
 
 <svelte:head>
 	<title>{data.focus.name} — {data.siteName} Binder</title>
+	<script src="/units-view.js" defer></script>
 </svelte:head>
 
 <Nav active="charts" />
@@ -71,21 +82,20 @@
 
 		<div class="charts-col">
 			{#if data.hasUnits}
-				<form method="POST" action="?/units" class="units">
-					<input type="hidden" name="back" value={page.url.pathname + page.url.search} />
-					<button
-						name="units"
-						value="imperial"
+				<nav class="units">
+					<!-- eslint-disable svelte/no-navigation-without-resolve -- the same page with ?u= swapped; the path is the page's own -->
+					<a
+						href={unitsHref('imperial')}
 						class:on={data.units === 'imperial'}
-						aria-pressed={data.units === 'imperial'}>Imperial (US)</button
+						aria-current={data.units === 'imperial'}>Imperial (US)</a
 					>
-					<button
-						name="units"
-						value="metric"
+					<a
+						href={unitsHref('metric')}
 						class:on={data.units === 'metric'}
-						aria-pressed={data.units === 'metric'}>Metric</button
+						aria-current={data.units === 'metric'}>Metric</a
 					>
-				</form>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+				</nav>
 			{/if}
 			<div class="stats-row">
 				{#each data.focus.stats as stat (stat.label)}

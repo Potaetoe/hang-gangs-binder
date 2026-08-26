@@ -78,9 +78,9 @@ test('a member logs stats, reads them back, corrects and deletes, leaving a trai
 	await expect(page.locator('.trend').filter({ hasText: 'Weight' })).toBeVisible();
 
 	// Metric shows the same entry in the other system.
-	await page.getByRole('button', { name: 'Metric' }).click();
+	await page.getByRole('link', { name: 'Metric' }).click();
 	await expect(page.getByText('84.8 kg').first()).toBeVisible();
-	await page.getByRole('button', { name: /imperial/i }).click();
+	await page.getByRole('link', { name: /imperial/i }).click();
 
 	// A correction: 187 was a typo for 186.
 	await entryRow(page, ['187 lb']).getByRole('link', { name: 'Edit' }).click();
@@ -108,14 +108,14 @@ test('a metric member types kilograms and centimeters', async ({ page }) => {
 	const username = `metric${Date.now()}`;
 	await signInFreshMember(page, username);
 
-	await page.getByRole('button', { name: 'Metric' }).click();
+	await page.getByRole('link', { name: 'Metric' }).click();
 	await fillStable(page, 'Height', '178');
 	await fillStable(page, 'Weight', '84');
 	await page.getByRole('button', { name: 'Save entry' }).click();
 	await expect(entryRow(page, ['178 cm', '84 kg', '26.5'])).toBeVisible();
 
 	// The same entry back in American: both systems were stored.
-	await page.getByRole('button', { name: /imperial/i }).click();
+	await page.getByRole('link', { name: /imperial/i }).click();
 	await expect(entryRow(page, ['5 ft 10.1 in', '185.2 lb', '26.5'])).toBeVisible();
 });
 
@@ -214,11 +214,15 @@ test('the settings units default survives a page toggle', async ({ page }) => {
 	await page.goto('/home');
 	await expect(page.getByText('cm', { exact: true })).toBeVisible();
 
-	// The page toggle flips the VIEW to imperial - and Settings still
-	// says Metric, because a view is not the default (owner ruling
-	// 2026-08-26).
-	await page.getByRole('button', { name: /imperial/i }).click();
+	// The page toggle flips the VIEW to imperial - for this one look
+	// only. A reload renders the default again: the Settings choice is
+	// the rule of law (owner ruling 2026-08-26).
+	await page.getByRole('link', { name: /imperial/i }).click();
 	await expect(page.getByLabel(/height, feet/i)).toBeVisible();
+	await page.reload();
+	await expect(page.getByText('cm', { exact: true })).toBeVisible();
+
+	// And Settings still says Metric throughout.
 	await page.locator('.rail').getByRole('link', { name: 'Settings' }).click();
 	await expect(unitsSetting.getByRole('button', { name: 'Metric' })).toHaveAttribute(
 		'aria-pressed',

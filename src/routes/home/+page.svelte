@@ -10,20 +10,24 @@
 
 	// The pagers and the month arrows each keep the others' places.
 	// Every value is the server's own string, never a person's. A month
-	// flip hands the events row back to its first page.
-	const homeQuery = (parts: { cal?: string; page?: number; ev?: number }) => {
+	// flip hands the events row back to its first page. `u` is the
+	// one-page-view units toggle (owner ruling 2026-08-26) - only the
+	// toggle links set it, and a static script strips it after render.
+	const homeQuery = (parts: { cal?: string; page?: number; ev?: number; u?: string }) => {
 		const cal = parts.cal ?? data.month;
 		const page = parts.page ?? data.page;
 		const ev = parts.cal ? 1 : (parts.ev ?? data.eventsPager.page);
 		let query = `?cal=${cal}`;
 		if (ev > 1) query += `&ev=${ev}`;
 		if (page > 1) query += `&page=${page}`;
+		if (parts.u) query += `&u=${parts.u}`;
 		return query;
 	};
 </script>
 
 <svelte:head>
 	<title>Home — {data.siteName} Binder</title>
+	<script src="/units-view.js" defer></script>
 </svelte:head>
 
 <Nav active="home" />
@@ -158,22 +162,26 @@
 			     it is (owner corrections on the drive, 2026-08-26). -->
 			<h2>Add your current information</h2>
 			<div class="card home-entry">
-				<form method="POST" action="?/units" class="units">
-					<button
-						name="units"
-						value="imperial"
+				<!-- The toggle is a link carrying ?u= for one page view; a
+				     reload falls back to the Settings default (owner ruling
+				     2026-08-26). -->
+				<nav class="units">
+					<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() is in the template; the rule cannot see through the query string -->
+					<a
+						href={`${resolve('/home')}${homeQuery({ u: 'imperial' })}`}
 						class:on={data.units === 'imperial'}
-						aria-pressed={data.units === 'imperial'}>Imperial (US)</button
+						aria-current={data.units === 'imperial'}>Imperial (US)</a
 					>
-					<button
-						name="units"
-						value="metric"
+					<a
+						href={`${resolve('/home')}${homeQuery({ u: 'metric' })}`}
 						class:on={data.units === 'metric'}
-						aria-pressed={data.units === 'metric'}>Metric</button
+						aria-current={data.units === 'metric'}>Metric</a
 					>
-				</form>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+				</nav>
 				<EntryForm
 					fields={data.formFields}
+					units={data.units}
 					raw={form?.raw}
 					problems={form?.problems}
 					action="?/entry"

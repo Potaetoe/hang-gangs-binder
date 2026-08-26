@@ -21,15 +21,28 @@ export type Units = 'imperial' | 'metric';
 
 /**
  * The units a member sees (owner ruling 2026-08-26): the Settings
- * choice is the DEFAULT, stored long in `units`; a page's toggle
- * writes `units_view`, a session cookie that wins while it lives and
- * never touches the default. Swapping units on the entry form must
- * not rewrite Settings.
+ * choice is the DEFAULT, stored in the `units` cookie and written
+ * only by Settings. A page's toggle is a link that carries ?u= for
+ * exactly one page view - a static script then strips it from the
+ * address bar, so any reload or fresh visit falls back to the
+ * default. Nothing a page toggle does is ever stored.
  */
-export function memberUnits(cookies: { get(name: string): string | undefined }): Units {
-	const view = cookies.get('units_view');
+export function memberUnits(cookies: { get(name: string): string | undefined }, url?: URL): Units {
+	const view = url?.searchParams.get('u');
 	if (view === 'metric' || view === 'imperial') return view;
 	return cookies.get('units') === 'metric' ? 'metric' : 'imperial';
+}
+
+/** The units a submitted entry form was RENDERED in - it posts them
+ * back (EntryForm's hidden field), so numbers are parsed as the
+ * member saw them, whatever the view has since become. */
+export function formUnits(
+	form: FormData,
+	cookies: { get(name: string): string | undefined }
+): Units {
+	const posted = form.get('units');
+	if (posted === 'metric' || posted === 'imperial') return posted;
+	return memberUnits(cookies);
 }
 
 /* ---------------------------------------------------------------- */

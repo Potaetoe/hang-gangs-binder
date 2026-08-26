@@ -3,9 +3,11 @@ import { getDb } from '$lib/server/db';
 import { sessionMember } from '$lib/server/auth';
 
 /**
- * What a browser is allowed to load. The pages ship no JavaScript of
- * their own, so the only script anywhere is Telegram's sign-in widget
- * and the frame it opens - everything else is refused outright.
+ * What a browser is allowed to load. The pages ship almost no
+ * JavaScript of their own - one static script (units-view.js, served
+ * same-origin under 'self') tidies the units-view parameter, and the
+ * only other script anywhere is Telegram's sign-in widget and the
+ * frame it opens. Everything else is refused outright.
  *
  * Styles are the one loose thread: the palette arrives as an inline
  * <style> in the layout head, so inline styles have to be allowed.
