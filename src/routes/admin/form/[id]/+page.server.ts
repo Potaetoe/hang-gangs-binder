@@ -5,6 +5,7 @@ import { getDb } from '$lib/server/db';
 import * as table from '$lib/server/db/schema';
 import {
 	addOption,
+	allFields,
 	deleteField,
 	ESSENTIAL,
 	makeMultiple,
@@ -12,10 +13,30 @@ import {
 	renameField,
 	renameOption,
 	retireField,
-	reviveField
+	reviveField,
+	saveFormula
 } from '$lib/server/form';
+import {
+	describeFormula,
+	formulaReads,
+	isCalculated,
+	MAX_STEPS,
+	OPS,
+	parseBuilderForm,
+	parseFormula,
+	previewFormula,
+	type Operand
+} from '$lib/server/calc';
 import { fieldOptions, today } from '$lib/server/stats';
 import { loadSettings } from '$lib/server/settings';
+
+/** An operand back into the builder's select value. */
+const encodePick = (operand: Operand | undefined): { pick: string; constant: string } => {
+	if (!operand) return { pick: '', constant: '' };
+	if (operand.kind === 'const') return { pick: 'const', constant: String(operand.value) };
+	const kind = operand.kind === 'field' ? 'f' : operand.kind;
+	return { pick: `${kind}:${operand.id}`, constant: '' };
+};
 
 export const load: PageServerLoad = async ({ platform, params }) => {
 	const db = getDb(platform!.env.DB);
@@ -28,18 +49,59 @@ export const load: PageServerLoad = async ({ platform, params }) => {
 			.where(eq(table.entryValues.fieldId, params.id))
 			.limit(1)
 	)[0];
+
+	const fields = await allFields(db);
+
+	// The recipes that read THIS field, for the leaving-the-form
+	// warnings (owner ruling 2026-08-26): they go blank without it.
+	const readBy = fields
+		.filter((f) => {
+			if (!isCalculated(f) || f.id === field.id) return false;
+			const formula = parseFormula(f);
+			return formula !== null && formulaReads(formula).includes(field.id);
+		})
+		.map((f) => f.name);
+
+	// The guided builder's furniture, for calculated fields only.
+	let calc = null;
+	if (isCalculated(field)) {
+		const formula = parseFormula(field);
+		const inputs = fields.filter(
+			(f) => f.type === 'number' && !isCalculated(f) && f.status === 'active'
+		);
+		calc = {
+			locked: field.computed === 'bmi',
+			recipe: formula ? describeFormula(formula, fields) : null,
+			units: formula?.units ?? 'both',
+			decimals: formula?.decimals ?? 1,
+			start: encodePick(formula?.start),
+			steps: Array.from({ length: MAX_STEPS }, (_, i) => {
+				const step = formula?.steps[i];
+				return { op: step?.op ?? '', ...encodePick(step?.value) };
+			}),
+			ops: Object.entries(OPS).map(([value, label]) => ({ value, label })),
+			choices: inputs.flatMap((f) => [
+				{ value: `f:${f.id}`, label: f.name },
+				{ value: `first:${f.id}`, label: `${f.name} (first entry)` },
+				{ value: `prev:${f.id}`, label: `${f.name} (previous entry)` }
+			])
+		};
+	}
+
 	return {
 		field: {
 			id: field.id,
 			name: field.name,
 			isChoice: field.type === 'choice',
 			multiple: field.multiple,
-			computed: Boolean(field.computed),
+			computed: Boolean(field.computed) || isCalculated(field),
 			active: field.status === 'active',
 			essential: ESSENTIAL.has(field.id),
 			options: fieldOptions(field),
 			used: Boolean(used)
-		}
+		},
+		readBy,
+		calc
 	};
 };
 
@@ -108,5 +170,50 @@ export const actions: Actions = {
 	removeoption: async (event) =>
 		run(event, (db, date, actor, form) =>
 			removeOption(db, date, actor, event.params.id, String(form.get('option') ?? ''))
-		)
+		),
+
+	formula: async (event) => {
+		const actor = guard(event.locals);
+		const db = getDb(event.platform!.env.DB);
+		const form = await event.request.formData();
+		const parsed = parseBuilderForm(form, await allFields(db));
+		if (!parsed.ok) return fail(400, { problems: parsed.problems, calcRaw: echoBuilder(form) });
+		const settings = await loadSettings(db);
+		const result = await saveFormula(
+			db,
+			today(settings.timezone),
+			actor.memberId,
+			event.params.id,
+			parsed.formula
+		);
+		if (!result.ok) return fail(400, { message: result.reason, calcRaw: echoBuilder(form) });
+		return { done: true };
+	},
+
+	// The live look before anything is saved (owner ruling 2026-08-26).
+	// The picks echo back so the form still holds them - a preview
+	// must never cost the admin their unsaved recipe.
+	preview: async (event) => {
+		guard(event.locals);
+		const db = getDb(event.platform!.env.DB);
+		const form = await event.request.formData();
+		const parsed = parseBuilderForm(form, await allFields(db));
+		if (!parsed.ok) return fail(400, { problems: parsed.problems, calcRaw: echoBuilder(form) });
+		return { preview: previewFormula(parsed.formula), calcRaw: echoBuilder(form) };
+	}
 };
+
+/** Everything the builder posted, handed back so the re-rendered
+ * form shows what the admin had picked. */
+function echoBuilder(form: FormData): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const key of ['start_pick', 'start_const', 'units', 'decimals']) {
+		out[key] = String(form.get(key) ?? '');
+	}
+	for (let i = 1; i <= MAX_STEPS; i++) {
+		for (const part of ['op', 'pick', 'const']) {
+			out[`step${i}_${part}`] = String(form.get(`step${i}_${part}`) ?? '');
+		}
+	}
+	return out;
+}

@@ -92,7 +92,14 @@ decisions.
    the view for that one page look only - any reload or fresh visit
    renders the default again, and nothing a toggle does is ever
    stored (owner ruling 2026-08-26; a small script tidies the URL -
-   the owner lifted the no-script rule for it).
+   the owner lifted the no-script rule for it). Trend LINES are
+   admin-curated (owner ruling 2026-08-26): a checkbox list in the
+   admin Settings picks which number fields carry them - the home
+   trend cards, the board sparklines, and the focused trend charts
+   alike; everything else about a field (tiles, headlines, stats,
+   distributions) stays either way. The default is Weight and BMI -
+   adult height does not move. The home page's trends sit last: the
+   tri-fold's end on desktop, the bottom of the phone's scroll.
 2. **Admin surface** — site settings (name, welcome text, timezone,
    default theme), member management (approvals, roles, resets), a
    change log, departed-member cleanup.
@@ -173,9 +180,33 @@ decisions.
    member's links from the admin member page, logged; the departed
    purge sweeps socials with everything else.
 
-**Later** (named so they are not forgotten): admin-defined calculated
-fields (BMI is the only computed field in 1.0, wired in code; the
-door stays open).
+7. **Calculated fields** (owner rulings, 2026-08-26) — admins define
+   computed numbers in the form builder, as a field kind beside the
+   others. A guided builder, never a typed expression: a starting
+   value, then a chain of steps worked left to right, each step an
+   operation (add, subtract, multiply, divide, power, min, max)
+   against a field, a typed constant, the member's FIRST entry's
+   value of a field, or their PREVIOUS entry's value. Inputs are
+   typed number fields only — a calculated field never feeds another.
+   The admin picks the units mode per field: "follows the units
+   toggle" (computed once per system — right for gains and
+   differences) or "one number for everyone, from metric" (right for
+   BMI-style ratios); and picks 0, 1, or 2 decimals (default 1). A
+   live preview shows the recipe's answer before it goes on the form.
+   Values compute at save, forward only — no backfill, and editing a
+   formula leaves old values standing: history is what it said. An
+   entry missing any input gets a blank, never a zero; so does
+   division by zero or a result past the number ceiling. Members meet
+   it everywhere a number lives — the quiet worked-out-from note on
+   the form (inputs named, math private), the entries table, trends,
+   and the full charts treatment. **BMI migrates into this system**
+   as its first field: still essential, still un-retirable, and its
+   formula is locked — renameable, never rewritable. Taking an input
+   off the form warns the admin which recipes read it (owner ruling
+   2026-08-26); while it is gone their new values are blank, and the
+   moment it returns they compute again.
+
+**Later**: (nothing — the 1.0 list is built).
 
 ## Stack
 
@@ -195,7 +226,23 @@ desktop only (owner ruling 2026-08-24). A page never restates the
 rail (owner ruling 2026-08-26): the highlighted rail item says where
 you are, so titles like "Admin" are screen-reader-only — a visible
 title must say something the rail does not, like "Hello, Marcus" or
-a field's name. Layout and detail are free to
+a field's name. The phone rail runs four stops — Home, Group Stats,
+Socials, Settings (owner ruling 2026-08-26, after an iPhone drive):
+Sign out lives in Settings there, and the Admin door is desktop's
+alone, matching the desktop-only admin ruling — though an admin can
+call the door onto the phone rail for one sitting with the phone-only
+Mobile Admin Mode switch in Settings (owner rulings 2026-08-26): a
+session cookie, gone when the browser closes, and the admin pages
+come as the squeeze they are. The page never
+rubber-bands and the rail never floats (owner rulings 2026-08-26,
+after two iPhone drives): on the phone the page is a one-screen app
+shell - nothing sits position-fixed, the main column is the one
+scroller, and the rail rests in flow on the bottom edge - because iOS
+ignores gentler hints, bounces the document, and floats fixed bars in
+the installed app. A scrolling card keeps its own momentum. The binder installs as a
+home-screen app (owner ruling 2026-08-26): a manifest carrying the
+fork's own name and default palette, real icons, no service worker -
+the pages stay no-JavaScript. Layout and detail are free to
 improve as pages are rebuilt as components. The rebuild changes the
 machinery, not the face.
 

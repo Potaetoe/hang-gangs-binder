@@ -19,6 +19,8 @@ export type FormFieldView = {
 	/** Pick-several only: the picks that arrive pre-checked. */
 	picks: string[];
 	unit: string;
+	/** Computed only: the input names the worked-out-from note reads. */
+	computedFrom?: string;
 };
 
 export type TrendView = { name: string; poly: string; latest: string };

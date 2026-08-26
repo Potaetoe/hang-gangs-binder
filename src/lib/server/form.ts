@@ -21,6 +21,7 @@ import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import * as table from './db/schema';
 import { logAdmin } from './admin';
 import { choicePicks, fieldOptions, type Field } from './stats';
+import { isCalculated, parseFormula, type Formula, type Operand } from './calc';
 import { randomToken } from './crypto';
 
 type Db = DrizzleD1Database<typeof import('./db/schema')>;
@@ -30,7 +31,7 @@ export const ESSENTIAL = new Set(['height', 'weight', 'bmi']);
 export const NAME_MAX = 40;
 export const OPTION_MAX = 60;
 
-export type FieldKind = 'choice' | 'multi' | 'mass' | 'length' | 'plain';
+export type FieldKind = 'choice' | 'multi' | 'mass' | 'length' | 'plain' | 'calculated';
 
 export async function allFields(db: Db): Promise<Field[]> {
 	return db.select().from(table.fields).orderBy(asc(table.fields.position));
@@ -45,7 +46,8 @@ const cleanName = (raw: string): string => raw.trim().slice(0, NAME_MAX);
 export type AddResult = { ok: true; id: string } | { ok: false; reason: 'bad-name' };
 
 /** A number field goes straight on the form; a choice field starts
- * retired until it has options to offer. */
+ * retired until it has options to offer, and a calculated one until
+ * it has a working recipe (owner ruling 2026-08-26). */
 export async function addField(
 	db: Db,
 	date: string,
@@ -56,6 +58,7 @@ export async function addField(
 	const name = cleanName(nameRaw);
 	if (!name) return { ok: false, reason: 'bad-name' };
 	const isChoice = kind === 'choice' || kind === 'multi';
+	const isCalc = kind === 'calculated';
 	const fields = await allFields(db);
 	const position = Math.max(0, ...fields.map((f) => f.position)) + 1;
 	const id = randomToken(6);
@@ -63,15 +66,50 @@ export async function addField(
 		id,
 		name,
 		type: isChoice ? 'choice' : 'number',
-		measure: kind === 'choice' || kind === 'multi' ? null : kind,
+		measure: isChoice || isCalc ? null : kind,
 		computed: null,
+		formula: isCalc ? '{}' : null,
 		options: isChoice ? '[]' : null,
 		multiple: kind === 'multi',
 		position,
-		status: isChoice ? 'retired' : 'active'
+		status: isChoice || isCalc ? 'retired' : 'active'
 	});
 	await logAdmin(db, date, actorId, `added the field "${name}"`);
 	return { ok: true, id };
+}
+
+/**
+ * Writes a calculated field's recipe (owner rulings 2026-08-26).
+ * Inputs must be typed number fields - never another calculated one,
+ * never a choice - and BMI's recipe is locked for good.
+ */
+export async function saveFormula(
+	db: Db,
+	date: string,
+	actorId: string,
+	id: string,
+	formula: Formula
+): Promise<SimpleResult> {
+	const field = await fieldById(db, id);
+	if (!field || !isCalculated(field)) return { ok: false, reason: 'No such calculated field.' };
+	if (field.computed === 'bmi') {
+		return { ok: false, reason: "BMI's recipe is fixed - it cannot be rewritten." };
+	}
+	const fields = await allFields(db);
+	const operands: Operand[] = [formula.start, ...formula.steps.map((s) => s.value)];
+	for (const operand of operands) {
+		if (operand.kind === 'const') continue;
+		const input = fields.find((f) => f.id === operand.id);
+		if (!input || input.type !== 'number' || isCalculated(input)) {
+			return { ok: false, reason: 'A recipe reads typed number fields only.' };
+		}
+	}
+	await db
+		.update(table.fields)
+		.set({ formula: JSON.stringify(formula) })
+		.where(eq(table.fields.id, id));
+	await logAdmin(db, date, actorId, `changed the recipe of "${field.name}"`);
+	return { ok: true };
 }
 
 export type SimpleResult = { ok: true } | { ok: false; reason: string };
@@ -159,6 +197,12 @@ export async function reviveField(
 		return {
 			ok: false,
 			reason: 'A choice field needs at least one option before it goes on the form.'
+		};
+	}
+	if (isCalculated(field) && !parseFormula(field)) {
+		return {
+			ok: false,
+			reason: 'A calculated field needs a working recipe before it goes on the form.'
 		};
 	}
 	await db.update(table.fields).set({ status: 'active' }).where(eq(table.fields.id, id));

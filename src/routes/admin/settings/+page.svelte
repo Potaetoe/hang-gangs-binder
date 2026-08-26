@@ -47,6 +47,20 @@
 		</select>
 
 		<p class="official-title">
+			Trend graphs — the ticked fields carry trend lines on home cards, board sparklines, and the
+			focused charts. Everything else about a field stays either way.
+		</p>
+		<fieldset class="picks">
+			<legend class="sr-only">Fields with trend graphs</legend>
+			{#each data.trendChoices as choice (choice.id)}
+				<label class="pick">
+					<input type="checkbox" name="trend" value={choice.id} checked={choice.on} />
+					<span>{choice.name}</span>
+				</label>
+			{/each}
+		</fieldset>
+
+		<p class="official-title">
 			Group links on the Socials page — the group chat, a Discord, whatever the group runs. Blank
 			rows stay off the page.
 		</p>

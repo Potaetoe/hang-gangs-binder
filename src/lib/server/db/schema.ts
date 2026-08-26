@@ -103,8 +103,14 @@ export const fields = sqliteTable('fields', {
 	// For numbers: which measure, deciding the inputs and conversion.
 	// length is ft+in / cm, mass is lb / kg, plain has no units.
 	measure: text('measure', { enum: ['length', 'mass', 'plain'] }),
-	// 'bmi' marks the computed field - nothing is ever typed into it.
+	// 'bmi' marks the one locked recipe - still essential, formula
+	// fixed (owner ruling 2026-08-26); nothing is ever typed into it.
 	computed: text('computed', { enum: ['bmi'] }),
+	// Calculated fields (DESIGN.md feature 7): JSON {start, steps,
+	// units, decimals} - the guided builder's chain, worked left to
+	// right at save time. Non-null IS what makes a field calculated;
+	// BMI carries the locked version.
+	formula: text('formula'),
 	// JSON string[] for choice fields.
 	options: text('options'),
 	// Pick-several choice fields: members tick checkboxes and the

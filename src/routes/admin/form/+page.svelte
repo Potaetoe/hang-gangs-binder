@@ -6,7 +6,7 @@
 </script>
 
 <section>
-	<h2>The form</h2>
+	<h2>Modify Stats Form</h2>
 	<p class="muted">
 		What the form asks, in the order it asks it. A field you add reaches the member form and the
 		chart filters on its own.
@@ -70,9 +70,11 @@
 				<option value="mass">A weight (lb / kg)</option>
 				<option value="length">A length (ft+in / cm)</option>
 				<option value="plain">A plain number</option>
+				<option value="calculated">Worked out from other fields (like BMI)</option>
 			</select>
 			<p class="muted">
-				A choice field stays off the form until you give it options on the next page.
+				A choice field stays off the form until you give it options on the next page; a calculated
+				one until you give it its recipe.
 			</p>
 			<button>Add the field</button>
 		</form>

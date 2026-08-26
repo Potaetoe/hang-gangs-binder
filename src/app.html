@@ -2,8 +2,21 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<!-- viewport-fit=cover: without it env(safe-area-inset-*) is
+		     always zero and the rail sits under the home indicator. -->
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="text-scale" content="scale" />
+		<!-- The PWA shell (owner ruling 2026-08-26): installable from
+		     the share sheet. No service worker - the pages stay no-JS. -->
+		<link rel="manifest" href="/manifest.webmanifest" />
+		<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+		<!-- iOS reads these once, when the app is added to the home
+		     screen. Without the capable pair the installed web view can
+		     stop short of the screen's bottom edge and the status-bar
+		     style is ignored - the manifest alone is not always enough. -->
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 		<!-- Every navigation is a full page load (the pages ship no
 		     JavaScript), so the fonts must win the race to first paint
 		     on every page. Preloading pins them; without it the swap
@@ -46,6 +59,6 @@
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
-		<div style="display: contents">%sveltekit.body%</div>
+		<div class="page">%sveltekit.body%</div>
 	</body>
 </html>

@@ -94,6 +94,76 @@ body {
 	font-size: 16px;
 	line-height: 1.5;
 	min-height: 100svh;
+	/* Android and desktop honor this; iOS does not - the scroll lock
+	   below is what really stops the bounce there. */
+	overscroll-behavior-y: none;
+}
+
+/* The wrapper app.html puts around every page. Invisible by default;
+   the phone's app shell below gives it a shape. */
+.page {
+	display: contents;
+}
+
+/* The app shell (owner rulings 2026-08-26, after two iPhone drives):
+   iOS bounces the whole document, ignores overscroll-behavior on it,
+   and floats position:fixed bars - the installed app showed the rail
+   hovering above the bottom edge. So on the phone NOTHING is fixed
+   and the document cannot scroll: the page is a flex column exactly
+   one screen tall - a status-bar scrim, the scrolling main, and the
+   rail resting in flow on the bottom edge. A scrolling card inside
+   keeps its own momentum. Desktop keeps document scroll and its
+   sticky top bar. */
+@media (max-width: 899.98px) {
+	html:has(main.with-rail),
+	body:has(main.with-rail) {
+		height: 100%;
+		overflow: hidden;
+	}
+	.page:has(main.with-rail) {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		height: 100dvh;
+		overflow: hidden;
+	}
+	/* Standalone on an iPhone the page runs under the clock; this
+	   pane keeps the status bar on solid ground. Zero-height
+	   anywhere without a notch inset. */
+	.page:has(main.with-rail)::before {
+		content: '';
+		flex: none;
+		height: env(safe-area-inset-top);
+		background: var(--color-bg);
+	}
+	.page:has(main.with-rail) > main.with-rail {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		/* Full width, so a touch anywhere scrolls; the padding draws
+		   the same centered column the max-width used to. */
+		width: 100%;
+		max-width: none;
+		padding-inline: max(1rem, calc(50% - 12rem));
+	}
+	.page:has(main.with-rail) > .rail {
+		position: static;
+		order: 1;
+	}
+}
+
+/* iOS 26's installed-app container miscalculates 100% and 100dvh as
+   if Safari's toolbar were still on screen, leaving a dead strip
+   under the page (owner drive 2026-08-26; the web agrees). Plain
+   100vh reads the true screen there. Only for the installed app -
+   in a browser 100vh would overshoot under the toolbar. */
+@media (max-width: 899.98px) and (display-mode: standalone) {
+	html:has(main.with-rail),
+	body:has(main.with-rail),
+	.page:has(main.with-rail) {
+		height: 100vh;
+	}
 }
 
 main {
@@ -467,6 +537,18 @@ select {
 	display: flex;
 	border-top: 1px solid var(--color-border);
 	background: var(--color-surface);
+	/* The iPhone's home-indicator strip gets its own room, and the
+	   notch's flanks do in landscape. */
+	padding-bottom: env(safe-area-inset-bottom);
+	padding-left: env(safe-area-inset-left);
+	padding-right: env(safe-area-inset-right);
+}
+
+/* Four stops on the phone (owner ruling 2026-08-26): Sign out lives
+   in Settings there, and admin work is desktop work. The desktop top
+   bar has the room and keeps both. */
+.rail .rail-wide {
+	display: none;
 }
 .rail .rail-brand {
 	display: none;
@@ -515,9 +597,9 @@ select {
 	width: 22px;
 	height: 22px;
 }
-main.with-rail {
-	padding-bottom: 6rem;
-}
+/* The rail sits in flow on the phone and sticks to the top on the
+   desktop - no clearance padding needed on either; the scrim in the
+   app shell handles the iPhone's status bar. */
 
 /* ------------------------------------------------------------------ */
 /* The calendar card (DESIGN.md feature 5): month grid, event list.   */
@@ -1096,6 +1178,11 @@ span.lightbox-step.off {
 /* desktop layouts, not a stretched phone column.                     */
 
 @media (min-width: 900px) {
+	/* Things the desktop face already covers - like the Mobile Admin
+	   Mode switch, whose door is on this width's rail anyway. */
+	.phone-only {
+		display: none;
+	}
 	.rail {
 		position: sticky;
 		top: 0;
@@ -1105,6 +1192,12 @@ span.lightbox-step.off {
 		align-items: center;
 		gap: 1.75rem;
 		padding: 0.4rem 2.5rem;
+	}
+	.rail a.rail-wide {
+		display: flex;
+	}
+	.rail form.rail-wide {
+		display: flex;
 	}
 	.rail .rail-brand {
 		display: block;
@@ -1179,8 +1272,8 @@ span.lightbox-step.off {
 		grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr) minmax(0, 1.5fr);
 		grid-template-rows: auto 1fr;
 		grid-template-areas:
-			'events entry trends'
-			'events entry entries';
+			'events entry entries'
+			'events entry trends';
 		gap: 0 1.5rem;
 		align-items: start;
 	}
@@ -1351,6 +1444,9 @@ button.quiet {
 .table-scroll {
 	overflow-x: auto;
 	padding: 0.5rem 1rem;
+	/* A card's leftover scroll momentum stays in the card - it never
+	   spills into scrolling the page (the iPhone endless-scroll feel). */
+	overscroll-behavior: contain;
 }
 .admin-table {
 	width: 100%;
@@ -1600,6 +1696,37 @@ a.wordmark {
 	border-radius: 0.5rem;
 	z-index: 5;
 	pointer-events: none;
+}
+
+/* The recipe builder (calculated fields): one row per step - the
+   operation, what it reads, and the typed-number box beside it. */
+.calc-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-bottom: 0.5rem;
+}
+.calc-row select {
+	flex: 2;
+	min-width: 0;
+	width: auto;
+	margin-bottom: 0;
+}
+.calc-row select.calc-op {
+	flex: 0 0 5.5rem;
+}
+.calc-row input {
+	flex: 1;
+	min-width: 0;
+	margin-bottom: 0;
+}
+.calc-word {
+	flex: 0 0 5.5rem;
+	font-size: 0.9rem;
+	color: var(--color-text-muted);
+}
+.calc-form .admin-actions {
+	margin-top: 0.75rem;
 }
 
 /* The form builder's small controls. */

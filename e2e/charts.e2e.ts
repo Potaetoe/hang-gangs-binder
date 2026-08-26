@@ -128,9 +128,34 @@ test('the rail is a bottom bar on the phone and wears the brand on desktop', asy
 	await expect(page.locator('.rail-brand-name')).toBeVisible();
 	await expect(page.locator('.rail-brand-name')).toHaveText('Hang Gang');
 
-	// Phone: the brand hides, the links remain as the bottom rail.
+	// Phone: the brand hides and the rail slims to four stops (owner
+	// ruling 2026-08-26) - Sign out moves into Settings there.
 	await page.setViewportSize({ width: 375, height: 812 });
 	await page.reload();
 	await expect(page.locator('.rail-brand-name')).not.toBeVisible();
 	await expect(page.locator('.rail').getByRole('link', { name: 'Group Stats' })).toBeVisible();
+
+	// The app shell (owner rulings 2026-08-26): on the phone nothing
+	// is position:fixed and the document cannot scroll - the main
+	// column is the one scroller and the rail sits in flow, flush
+	// with the bottom of the screen. iOS has nothing left to bounce
+	// or float.
+	const shell = await page.evaluate(() => ({
+		body: getComputedStyle(document.body).overflow,
+		main: getComputedStyle(document.querySelector('main.with-rail')!).overflowY,
+		rail: getComputedStyle(document.querySelector('.rail')!).position
+	}));
+	expect(shell).toEqual({ body: 'hidden', main: 'auto', rail: 'static' });
+	const railBox = await page.locator('.rail').boundingBox();
+	expect(Math.round(railBox!.y + railBox!.height)).toBe(812);
+
+	// The PWA shell: the manifest is served, named, and installable.
+	const manifest = await (await page.request.get('/manifest.webmanifest')).json();
+	expect(manifest.name).toContain('Binder');
+	expect(manifest.display).toBe('standalone');
+	await expect(page.locator('.rail').getByRole('button', { name: 'Sign out' })).not.toBeVisible();
+	await page.locator('.rail').getByRole('link', { name: 'Settings' }).click();
+	await expect(page.getByRole('button', { name: 'Sign out on this device' })).toBeVisible();
+	// Mobile Admin Mode is the admin's escape hatch - a member never sees it.
+	await expect(page.getByRole('heading', { name: 'Mobile Admin Mode' })).not.toBeVisible();
 });

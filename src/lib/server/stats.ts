@@ -11,6 +11,7 @@ import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import type { FormFieldView } from '$lib/views';
 import * as table from './db/schema';
 import { randomToken } from './crypto';
+import { formulaInputNames, isCalculated, parseFormula, type HistoryValues } from './calc';
 
 type Db = DrizzleD1Database<typeof import('./db/schema')>;
 
@@ -195,8 +196,16 @@ export function formFieldViews(
 			unit: ''
 		};
 		const v = values[field.id];
-		if (field.computed) {
+		if (field.computed || isCalculated(field)) {
+			// The note names the inputs, never the math (owner ruling
+			// 2026-08-26) - and renamed inputs rename with it.
 			view.kind = 'computed';
+			const formula = isCalculated(field) ? parseFormula(field) : null;
+			const names = formula ? formulaInputNames(formula, fields) : [];
+			view.computedFrom =
+				names.length > 1
+					? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
+					: (names[0] ?? 'other fields');
 		} else if (field.type === 'choice' && field.multiple) {
 			view.kind = 'multi';
 			view.options = fieldOptions(field);
@@ -249,7 +258,7 @@ export function parseEntryForm(fields: Field[], form: FormData, units: Units): P
 	const imperial = units === 'imperial';
 
 	for (const field of fields) {
-		if (field.computed) continue;
+		if (field.computed || isCalculated(field)) continue;
 
 		if (field.type === 'choice' && field.multiple) {
 			// Checkboxes: every ticked box arrives as its own value. No
@@ -349,7 +358,7 @@ export function carryForward(
 	latest: Record<string, EntryValue>
 ): void {
 	for (const field of fields) {
-		if (field.computed || values[field.id]) continue;
+		if (field.computed || isCalculated(field) || values[field.id]) continue;
 		const prior = latest[field.id];
 		if (!prior) continue;
 		if (field.type === 'choice' && field.multiple) {
@@ -373,19 +382,32 @@ export function carryForward(
 }
 
 /**
- * BMI = kg / m^2, computed from this entry's height and weight (by
- * their seeded ids). If either is missing or its field is gone, BMI
- * quietly sits out - retiring a field must never break saving.
+ * The first and previous stored value per field, for calculated
+ * fields' time references (DESIGN.md feature 7). `before` scopes the
+ * "previous" to entries strictly before that (date, seq) - the edit
+ * path passes the entry being edited; a new entry passes nothing and
+ * previous means the member's latest. First is always the earliest.
  */
-export function computeBmi(fields: Field[], values: ParsedValues): void {
-	const bmiField = fields.find((f) => f.computed === 'bmi');
-	if (!bmiField) return;
-	const heightCm = values['height']?.metric;
-	const weightKg = values['weight']?.metric;
-	if (!heightCm || !weightKg) return;
-	const meters = heightCm / 100;
-	const bmi = round(weightKg / (meters * meters), 1);
-	values[bmiField.id] = { metric: bmi, imperial: bmi, entered: null, choice: null };
+export async function historyFor(
+	db: Db,
+	memberId: string,
+	before?: { date: string; seq: number }
+): Promise<HistoryValues> {
+	const rows = await db
+		.select({ value: table.entryValues, date: table.entries.date, seq: table.entries.seq })
+		.from(table.entryValues)
+		.innerJoin(table.entries, eq(table.entryValues.entryId, table.entries.id))
+		.where(eq(table.entries.memberId, memberId))
+		.orderBy(asc(table.entries.date), asc(table.entries.seq));
+	const first: Record<string, EntryValue> = {};
+	const prev: Record<string, EntryValue> = {};
+	for (const row of rows) {
+		const beforeThis =
+			!before || row.date < before.date || (row.date === before.date && row.seq < before.seq);
+		if (beforeThis && !first[row.value.fieldId]) first[row.value.fieldId] = row.value;
+		if (beforeThis) prev[row.value.fieldId] = row.value;
+	}
+	return { first, prev };
 }
 
 /* ---------------------------------------------------------------- */

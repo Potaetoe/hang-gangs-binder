@@ -1,0 +1,2 @@
+ALTER TABLE `fields` ADD `formula` text;--> statement-breakpoint
+UPDATE `fields` SET `formula` = '{"start":{"kind":"field","id":"weight"},"steps":[{"op":"div","value":{"kind":"field","id":"height"}},{"op":"div","value":{"kind":"field","id":"height"}},{"op":"mul","value":{"kind":"const","value":10000}}],"units":"metric","decimals":1}' WHERE `id` = 'bmi';
