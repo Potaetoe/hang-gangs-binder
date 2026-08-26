@@ -226,7 +226,7 @@ test('a short password is refused by the server, not just the browser', async ({
 	// post past it. The refusal that counts is the server's.
 	await page.goto('/register');
 	const minlength = await page.getByLabel('Password').getAttribute('minlength');
-	expect(minlength).toBe('12');
+	expect(minlength).toBe('15');
 
 	const res = await request.post('/register?/register', {
 		headers: { Origin: new URL(page.url()).origin },
@@ -236,7 +236,7 @@ test('a short password is refused by the server, not just the browser', async ({
 			displayName: 'Short'
 		}
 	});
-	expect(await res.text()).toContain('at least 12 characters');
+	expect(await res.text()).toContain('at least 15 characters');
 });
 
 test('the password door waits behind its flap, closed by default', async ({ page }) => {
@@ -251,4 +251,42 @@ test('the home page is a door for the signed-out', async ({ page }) => {
 	const response = await page.goto('/home');
 	expect(response?.url()).not.toContain('/home');
 	await expect(page.getByRole('heading', { name: 'Hang Gang' })).toBeVisible();
+});
+
+test('a fourth sign-in quietly drops the oldest session', async ({
+	page,
+	request,
+	playwright,
+	baseURL
+}) => {
+	// The cap is 3 (security review finding 6; owner picked the number,
+	// 2026-08-26). A fourth device signing in silently signs out the
+	// oldest one - a forgotten library computer, not the phone in hand.
+	const username = `capped${Date.now()}`;
+	await page.goto('/register');
+	await fillStable(page, 'Username', username);
+	await fillStable(page, 'Password', 'a-decent-password');
+	await page.getByRole('button', { name: /ask for the account/i }).click();
+	expect((await request.post(`/test/approve?username=${username}`)).ok()).toBeTruthy();
+
+	// Four devices, four separate cookie jars.
+	const doors = [];
+	for (let i = 0; i < 4; i++) {
+		const ctx = await playwright.request.newContext({ baseURL });
+		const res = await ctx.post('/?/signin', {
+			headers: { Origin: baseURL! },
+			form: { username, password: 'a-decent-password' }
+		});
+		expect(res.ok()).toBeTruthy();
+		doors.push(ctx);
+	}
+
+	// The first of the four is signed out; the newest three still stand.
+	const evicted = await doors[0].get('/home');
+	expect(evicted.url()).not.toContain('/home');
+	for (const door of doors.slice(1)) {
+		const alive = await door.get('/home');
+		expect(alive.url()).toContain('/home');
+	}
+	for (const door of doors) await door.dispose();
 });
