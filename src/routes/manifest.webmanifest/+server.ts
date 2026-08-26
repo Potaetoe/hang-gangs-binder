@@ -21,7 +21,15 @@ export const GET: RequestHandler = async ({ platform }) => {
 			theme_color: bg,
 			icons: [
 				{ src: '/icons/binder-192.png', sizes: '192x192', type: 'image/png' },
-				{ src: '/icons/binder-512.png', sizes: '512x512', type: 'image/png' }
+				{ src: '/icons/binder-512.png', sizes: '512x512', type: 'image/png' },
+				// Android masks launcher icons into circles and squircles;
+				// this one keeps the letters inside the safe zone.
+				{
+					src: '/icons/binder-maskable-512.png',
+					sizes: '512x512',
+					type: 'image/png',
+					purpose: 'maskable'
+				}
 			]
 		}),
 		{
