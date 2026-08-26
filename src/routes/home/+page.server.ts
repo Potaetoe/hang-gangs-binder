@@ -15,10 +15,10 @@ import {
 	loadFields,
 	memberHistory,
 	memberTrends,
+	memberUnits,
 	parseEntryForm,
 	sparklinePoints,
-	today,
-	type Units
+	today
 } from '$lib/server/stats';
 import {
 	calendarGrid,
@@ -41,9 +41,6 @@ import type {
 // own height and scrolls, so a page can afford to be deep.
 const PAGE_SIZE = 50;
 
-const unitsOf = (cookie: string | undefined): Units =>
-	cookie === 'metric' ? 'metric' : 'imperial';
-
 /** Everything a submitted form's fields said, echoed back on failure
  * so a typo never costs the rest of what was typed. Checkboxes repeat
  * their name once per tick, so every key collects a list. */
@@ -61,7 +58,7 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 	const env = platform!.env;
 	const db = getDb(env.DB);
 	const memberId = locals.member.memberId;
-	const units = unitsOf(cookies.get('units'));
+	const units = memberUnits(cookies);
 
 	const identity = await identityOf(db, env as unknown as Secrets, memberId);
 	const fields = await loadFields(db);
@@ -162,7 +159,7 @@ export const actions: Actions = {
 		const env = platform!.env;
 		const db = getDb(env.DB);
 		const form = await request.formData();
-		const units = unitsOf(cookies.get('units'));
+		const units = memberUnits(cookies);
 
 		const fields = await loadFields(db);
 		const { values, problems } = parseEntryForm(fields, form, units);
@@ -187,12 +184,13 @@ export const actions: Actions = {
 		if (!locals.member) redirect(303, '/');
 		const form = await request.formData();
 		const choice = form.get('units') === 'metric' ? 'metric' : 'imperial';
-		cookies.set('units', choice, {
+		// A session-long view, not the default - Settings owns that
+		// (owner ruling 2026-08-26). No maxAge: it dies with the browser.
+		cookies.set('units_view', choice, {
 			path: '/',
 			httpOnly: true,
 			sameSite: 'lax',
-			secure: true,
-			maxAge: 400 * 86_400
+			secure: true
 		});
 		redirect(303, '/home');
 	}

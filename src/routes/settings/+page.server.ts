@@ -72,7 +72,11 @@ export const actions: Actions = {
 	units: async ({ request, locals, cookies }) => {
 		if (!locals.member) redirect(303, '/');
 		const form = await request.formData();
+		// The DEFAULT (owner ruling 2026-08-26). The page toggles write a
+		// session-long units_view that never touches this; choosing here
+		// clears it so the new default shows immediately.
 		cookies.set('units', form.get('units') === 'metric' ? 'metric' : 'imperial', COOKIE);
+		cookies.delete('units_view', { path: '/' });
 		redirect(303, '/settings');
 	}
 };

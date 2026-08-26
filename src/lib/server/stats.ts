@@ -19,6 +19,19 @@ export type Entry = typeof table.entries.$inferSelect;
 export type EntryValue = typeof table.entryValues.$inferSelect;
 export type Units = 'imperial' | 'metric';
 
+/**
+ * The units a member sees (owner ruling 2026-08-26): the Settings
+ * choice is the DEFAULT, stored long in `units`; a page's toggle
+ * writes `units_view`, a session cookie that wins while it lives and
+ * never touches the default. Swapping units on the entry form must
+ * not rewrite Settings.
+ */
+export function memberUnits(cookies: { get(name: string): string | undefined }): Units {
+	const view = cookies.get('units_view');
+	if (view === 'metric' || view === 'imperial') return view;
+	return cookies.get('units') === 'metric' ? 'metric' : 'imperial';
+}
+
 /* ---------------------------------------------------------------- */
 /* Conversion - exact by definition, both constants                  */
 

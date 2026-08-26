@@ -87,7 +87,10 @@ decisions.
 
 1. **Core loop** — sign in, enter stats, your page (history, corrections),
    group charts with trend and distribution views, filtered by the
-   categorical fields, with unit choice.
+   categorical fields, with unit choice. The Settings choice is the
+   units DEFAULT; a page's units toggle changes the view for that
+   browser session only and never rewrites the default (owner ruling
+   2026-08-26).
 2. **Admin surface** — site settings (name, welcome text, timezone,
    default theme), member management (approvals, roles, resets), a
    change log, departed-member cleanup.

@@ -17,12 +17,9 @@ import {
 	formatValue,
 	loadFields,
 	memberHistory,
-	today,
-	type Units
+	memberUnits,
+	today
 } from '$lib/server/stats';
-
-const unitsOf = (cookie: string | undefined): Units =>
-	cookie === 'metric' ? 'metric' : 'imperial';
 
 export const load: PageServerLoad = async ({ platform, params, cookies }) => {
 	const env = platform!.env;
@@ -35,7 +32,7 @@ export const load: PageServerLoad = async ({ platform, params, cookies }) => {
 		.select({ kind: table.logins.kind })
 		.from(table.logins)
 		.where(eq(table.logins.memberId, params.id));
-	const units = unitsOf(cookies.get('units'));
+	const units = memberUnits(cookies);
 	const fields = await loadFields(db);
 	const { entries } = await memberHistory(db, params.id, 1, 500);
 	const corrections = await db

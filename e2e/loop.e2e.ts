@@ -74,7 +74,7 @@ test('a member logs stats, reads them back, corrects and deletes, leaving a trai
 	// A second entry gives every number a trend.
 	await fillStable(page, 'Weight', '187');
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(page.getByText('Trends')).toBeVisible();
+	await expect(page.getByText('Your trends')).toBeVisible();
 	await expect(page.locator('.trend').filter({ hasText: 'Weight' })).toBeVisible();
 
 	// Metric shows the same entry in the other system.
@@ -195,6 +195,35 @@ test('an empty submit saves nothing and says so', async ({ page }) => {
 	await signInFreshMember(page, username);
 	await page.getByRole('button', { name: 'Save entry' }).click();
 	await expect(page.getByText(/nothing to save yet/i)).toBeVisible();
+});
+
+test('the settings units default survives a page toggle', async ({ page }) => {
+	const username = `unitary${Date.now()}`;
+	await signInFreshMember(page, username);
+
+	// Metric becomes the DEFAULT, chosen in Settings.
+	await page.locator('.rail').getByRole('link', { name: 'Settings' }).click();
+	const unitsSetting = page.locator('.setting').filter({ hasText: 'Units' });
+	await unitsSetting.getByRole('button', { name: 'Metric' }).click();
+	await expect(unitsSetting.getByRole('button', { name: 'Metric' })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+
+	// The home form arrives metric.
+	await page.goto('/home');
+	await expect(page.getByText('cm', { exact: true })).toBeVisible();
+
+	// The page toggle flips the VIEW to imperial - and Settings still
+	// says Metric, because a view is not the default (owner ruling
+	// 2026-08-26).
+	await page.getByRole('button', { name: /imperial/i }).click();
+	await expect(page.getByLabel(/height, feet/i)).toBeVisible();
+	await page.locator('.rail').getByRole('link', { name: 'Settings' }).click();
+	await expect(unitsSetting.getByRole('button', { name: 'Metric' })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
 });
 
 test('the shown name can be changed by its member', async ({ page }) => {

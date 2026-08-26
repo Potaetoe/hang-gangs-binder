@@ -10,14 +10,11 @@ import {
 	formFieldViews,
 	loadFields,
 	memberEntry,
+	memberUnits,
 	parseEntryForm,
 	today,
-	type EntryValue,
-	type Units
+	type EntryValue
 } from '$lib/server/stats';
-
-const unitsOf = (cookie: string | undefined): Units =>
-	cookie === 'metric' ? 'metric' : 'imperial';
 
 const rawEcho = (form: FormData): Record<string, string[]> => {
 	const raw: Record<string, string[]> = {};
@@ -35,7 +32,7 @@ export const load: PageServerLoad = async ({ locals, platform, params, cookies }
 	// entry ids exist.
 	const found = await memberEntry(db, locals.member.memberId, params.id);
 	if (!found) error(404, 'Not found');
-	const units = unitsOf(cookies.get('units'));
+	const units = memberUnits(cookies);
 	const fields = await loadFields(db);
 	const values: Record<string, EntryValue> = Object.fromEntries(
 		found.values.map((v) => [v.fieldId, v])
@@ -53,7 +50,7 @@ export const actions: Actions = {
 		const env = platform!.env;
 		const db = getDb(env.DB);
 		const form = await request.formData();
-		const units = unitsOf(cookies.get('units'));
+		const units = memberUnits(cookies);
 
 		const fields = await loadFields(db);
 		const { values, problems } = parseEntryForm(fields, form, units);
