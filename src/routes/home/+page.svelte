@@ -8,12 +8,17 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	// The pager and the month arrows each keep the other's place. Both
-	// values are the server's own strings, never a person's.
-	const homeQuery = (parts: { cal?: string; page?: number }) => {
+	// The pagers and the month arrows each keep the others' places.
+	// Every value is the server's own string, never a person's. A month
+	// flip hands the events row back to its first page.
+	const homeQuery = (parts: { cal?: string; page?: number; ev?: number }) => {
 		const cal = parts.cal ?? data.month;
 		const page = parts.page ?? data.page;
-		return `?cal=${cal}${page > 1 ? `&page=${page}` : ''}`;
+		const ev = parts.cal ? 1 : (parts.ev ?? data.eventsPager.page);
+		let query = `?cal=${cal}`;
+		if (ev > 1) query += `&ev=${ev}`;
+		if (page > 1) query += `&page=${page}`;
+		return query;
 	};
 </script>
 
@@ -41,9 +46,9 @@
 	<div class="home-folds">
 		<section class="fold-events">
 			<h2>Events</h2>
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() is in the template; the rule cannot see through the query strings -->
 			<div class="card cal-card">
 				<div class="cal-head">
-					<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() is in the template; the rule cannot see through the query string -->
 					<a
 						class="cal-arrow"
 						href={`${resolve('/home')}${homeQuery({ cal: data.calendar.prev })}`}
@@ -55,7 +60,6 @@
 						href={`${resolve('/home')}${homeQuery({ cal: data.calendar.next })}`}
 						aria-label="Later month">&rarr;</a
 					>
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				</div>
 				<table class="cal-table">
 					<thead>
@@ -72,11 +76,10 @@
 									<td>
 										{#if cell}
 											{#if cell.eventId}
-												<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- a same-page anchor down to the event -->
 												<a
 													class="cal-day has-event"
 													class:today={cell.today}
-													href={`#ev-${cell.eventId}`}
+													href={`${resolve('/home')}${homeQuery({ ev: cell.eventPage ?? 1 })}#ev-${cell.eventId}`}
 													aria-label={`Day ${cell.day}, ${cell.eventCount === 1 ? 'an event' : cell.eventCount + ' events'}`}
 													>{cell.day}</a
 												>
@@ -90,12 +93,14 @@
 						{/each}
 					</tbody>
 				</table>
-				<div class="cal-events">
-					{#if !data.events.length}
-						<p class="muted">Nothing on the calendar this month.</p>
-					{:else}
+				{#if !data.events.length}
+					<p class="muted events-empty">Nothing on the calendar this month.</p>
+				{:else}
+					<!-- The month's events, three across (owner ruling
+					     2026-08-26); the pager pages the rest. -->
+					<div class="events-row">
 						{#each data.events as event (event.id)}
-							<article class="event" id={'ev-' + event.id}>
+							<article class="event card" id={'ev-' + event.id}>
 								<p class="muted event-date">{event.dateLabel}</p>
 								<h3 class="event-title">{event.title}</h3>
 								{#if event.place}
@@ -109,13 +114,38 @@
 										imageIds={event.imageIds}
 										title={event.title}
 										returnTo={'ev-' + event.id}
+										maxThumbs={3}
 									/>
 								{/if}
 							</article>
 						{/each}
+					</div>
+					{#if data.eventsPager.pages > 1}
+						<nav class="events-pager">
+							{#if data.eventsPager.page > 1}
+								<a
+									class="cal-arrow"
+									href={`${resolve('/home')}${homeQuery({ ev: data.eventsPager.page - 1 })}`}
+									aria-label="Earlier events">&larr;</a
+								>
+							{:else}
+								<span class="cal-arrow off">&larr;</span>
+							{/if}
+							<p>{data.eventsPager.from}-{data.eventsPager.to} of {data.eventsPager.total}</p>
+							{#if data.eventsPager.page < data.eventsPager.pages}
+								<a
+									class="cal-arrow"
+									href={`${resolve('/home')}${homeQuery({ ev: data.eventsPager.page + 1 })}`}
+									aria-label="Later events">&rarr;</a
+								>
+							{:else}
+								<span class="cal-arrow off">&rarr;</span>
+							{/if}
+						</nav>
 					{/if}
-				</div>
+				{/if}
 			</div>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		</section>
 
 		<section class="fold-entry">
@@ -175,7 +205,7 @@
 			{#if !data.entryTable.rows.length && data.page === 1}
 				<p class="muted">No entries yet — the form is where they start.</p>
 			{:else}
-				<div class="table-scroll card">
+				<div class="table-scroll entries-scroll card">
 					<table class="admin-table entries-table">
 						<thead>
 							<tr>

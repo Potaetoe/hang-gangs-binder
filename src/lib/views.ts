@@ -45,7 +45,22 @@ export type CalendarView = {
 	prev: string;
 	next: string;
 	weekdays: string[];
-	weeks: ({ day: number; eventId: string | null; eventCount: number; today: boolean } | null)[][];
+	weeks: ({
+		day: number;
+		eventId: string | null;
+		eventPage: number | null;
+		eventCount: number;
+		today: boolean;
+	} | null)[][];
+};
+
+/** The events row's pager: which three of the month are showing. */
+export type EventsPagerView = {
+	page: number;
+	pages: number;
+	from: number;
+	to: number;
+	total: number;
 };
 
 /** A tile on the charts board: numbers carry a sparkline, choices

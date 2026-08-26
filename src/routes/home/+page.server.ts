@@ -22,15 +22,24 @@ import {
 } from '$lib/server/stats';
 import {
 	calendarGrid,
+	EVENTS_PER_PAGE,
 	imageIdsByEvent,
 	monthEvents,
 	monthOf,
 	validMonth
 } from '$lib/server/events';
 import { loadSettings } from '$lib/server/settings';
-import type { CalendarView, EntryTableView, EventView, TrendView } from '$lib/views';
+import type {
+	CalendarView,
+	EntryTableView,
+	EventsPagerView,
+	EventView,
+	TrendView
+} from '$lib/views';
 
-const PAGE_SIZE = 10;
+// Entries page by fifty (owner ruling 2026-08-26) - the card caps its
+// own height and scrolls, so a page can afford to be deep.
+const PAGE_SIZE = 50;
 
 const unitsOf = (cookie: string | undefined): Units =>
 	cookie === 'metric' ? 'metric' : 'imperial';
@@ -63,10 +72,6 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 	const calParam = url.searchParams.get('cal') ?? '';
 	const month = validMonth(calParam) ? calParam : monthOf(todayIso);
 	const eventRows = await monthEvents(db, month);
-	const imageIds = await imageIdsByEvent(
-		db,
-		eventRows.map((e) => e.id)
-	);
 	const grid = calendarGrid(month, todayIso, eventRows);
 	const calendar: CalendarView = {
 		label: grid.label,
@@ -75,7 +80,24 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 		weekdays: grid.weekdays,
 		weeks: grid.weeks
 	};
-	const events: EventView[] = eventRows.map((e) => ({
+
+	// The events row shows three at a time (owner ruling 2026-08-26);
+	// `ev` picks which three, and the day links carry it.
+	const eventPages = Math.max(1, Math.ceil(eventRows.length / EVENTS_PER_PAGE));
+	const eventPage = Math.min(Math.max(1, Number(url.searchParams.get('ev')) || 1), eventPages);
+	const pageRows = eventRows.slice((eventPage - 1) * EVENTS_PER_PAGE, eventPage * EVENTS_PER_PAGE);
+	const eventsPager: EventsPagerView = {
+		page: eventPage,
+		pages: eventPages,
+		from: eventRows.length ? (eventPage - 1) * EVENTS_PER_PAGE + 1 : 0,
+		to: (eventPage - 1) * EVENTS_PER_PAGE + pageRows.length,
+		total: eventRows.length
+	};
+	const imageIds = await imageIdsByEvent(
+		db,
+		pageRows.map((e) => e.id)
+	);
+	const events: EventView[] = pageRows.map((e) => ({
 		id: e.id,
 		dateLabel: formatDate(e.date),
 		title: e.title,
@@ -126,6 +148,7 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 		trends,
 		calendar,
 		events,
+		eventsPager,
 		month,
 		entryTable,
 		page,

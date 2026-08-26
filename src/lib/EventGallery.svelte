@@ -6,23 +6,30 @@
 	 * (owner ruling 2026-08-26). The overlay is CSS `:target` - open,
 	 * previous, next and close are plain links, because member pages
 	 * ship no JavaScript. `returnTo` is the element id a close jumps
-	 * back to.
+	 * back to. `maxThumbs` caps the thumbnails; the rest fold into a
+	 * "+N more" tile that opens the overlay where the arrows reach
+	 * every image.
 	 */
 	let {
 		imageIds,
 		title,
 		returnTo,
-		removable = false
+		removable = false,
+		maxThumbs = Infinity
 	}: {
 		imageIds: string[];
 		title: string;
 		returnTo: string;
 		removable?: boolean;
+		maxThumbs?: number;
 	} = $props();
+
+	const shown = $derived(imageIds.slice(0, maxThumbs));
+	const hidden = $derived(imageIds.length - shown.length);
 </script>
 
 <div class="gallery">
-	{#each imageIds as id (id)}
+	{#each shown as id (id)}
 		<div class="gallery-slot">
 			<a href={'#lb-' + id}>
 				<img src={resolve('/events/image/[id]', { id })} alt={'For ' + title} loading="lazy" />
@@ -35,6 +42,9 @@
 			{/if}
 		</div>
 	{/each}
+	{#if hidden > 0}
+		<a class="gallery-more" href={'#lb-' + imageIds[shown.length]}>+{hidden} more</a>
+	{/if}
 </div>
 {#each imageIds as id, i (id)}
 	<div class="lightbox" id={'lb-' + id}>

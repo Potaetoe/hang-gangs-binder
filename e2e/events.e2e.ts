@@ -56,22 +56,23 @@ test('an event an admin adds reaches every member home, gallery included', async
 	await register(page, member);
 	expect((await page.request.post(`/test/approve?username=${member}`)).ok()).toBeTruthy();
 
-	// The admin fills the whole card: day, place, notes, two images.
+	// The admin fills the whole card: day, place, notes, four images.
 	await signIn(page, boss);
 	await page.goto('/admin/events');
 	await fillStable(page, /what is happening/i, title);
 	await fillStable(page, 'The day', '2031-05-15');
 	await fillStable(page, /where/i, 'The park');
 	await fillStable(page, /notes/i, 'Bring a chair.');
-	await page.getByLabel(/^images/i).setInputFiles([
-		{ name: 'flyer.png', mimeType: 'image/png', buffer: PNG },
-		{ name: 'flyer2.png', mimeType: 'image/png', buffer: PNG }
-	]);
+	await page
+		.getByLabel(/^images/i)
+		.setInputFiles(
+			[1, 2, 3, 4].map((n) => ({ name: `flyer${n}.png`, mimeType: 'image/png', buffer: PNG }))
+		);
 	await page.getByRole('button', { name: 'Add the event' }).click();
 
-	// The add lands on the event's own page, both images stored.
+	// The add lands on the event's own page, all four images stored.
 	await expect(page.getByRole('heading', { name: title })).toBeVisible();
-	await expect(page.locator('.gallery img')).toHaveCount(2);
+	await expect(page.locator('.gallery img')).toHaveCount(4);
 
 	// The list page carries the new row.
 	await page.goto('/admin/events');
@@ -90,6 +91,9 @@ test('an event an admin adds reaches every member home, gallery included', async
 	await expect(event).toBeVisible();
 	await expect(event).toContainText('The park');
 	await expect(event).toContainText('Bring a chair.');
+	// Three thumbnails; the fourth folds into the "+1 more" tile.
+	await expect(event.locator('.gallery img')).toHaveCount(3);
+	await expect(event.locator('.gallery-more')).toHaveText('+1 more');
 	const imgSrc = await event.locator('.gallery img').first().getAttribute('src');
 	expect(imgSrc).toBeTruthy();
 	const img = await page.request.get(imgSrc!);
@@ -107,11 +111,17 @@ test('an event an admin adds reaches every member home, gallery included', async
 	// A tapped image opens the preview overlay; the arrows walk the
 	// gallery; the close puts it away (owner ruling 2026-08-26).
 	await event.locator('.gallery a').first().click();
-	await expect(page.locator('.lightbox:visible')).toContainText('1 of 2');
+	await expect(page.locator('.lightbox:visible')).toContainText('1 of 4');
 	await page.locator('.lightbox:visible').getByLabel('Next image').click();
-	await expect(page.locator('.lightbox:visible')).toContainText('2 of 2');
+	await expect(page.locator('.lightbox:visible')).toContainText('2 of 4');
 	await page.locator('.lightbox:visible').getByLabel('Previous image').click();
-	await expect(page.locator('.lightbox:visible')).toContainText('1 of 2');
+	await expect(page.locator('.lightbox:visible')).toContainText('1 of 4');
+	await page.locator('.lightbox:visible .lightbox-x').click();
+	await expect(page.locator('.lightbox:visible')).toHaveCount(0);
+
+	// The "+1 more" tile opens the preview at the first hidden image.
+	await event.locator('.gallery-more').click();
+	await expect(page.locator('.lightbox:visible')).toContainText('4 of 4');
 	await page.locator('.lightbox:visible .lightbox-x').click();
 	await expect(page.locator('.lightbox:visible')).toHaveCount(0);
 
@@ -196,4 +206,36 @@ test('a file that is not a small image is skipped and said so', async ({ page })
 	await page.getByRole('button', { name: 'Add the event' }).click();
 	await expect(page.getByText('An event needs a title.')).toBeVisible();
 	await expect(page.getByText('Pick a real day for it.')).toBeVisible();
+});
+
+test('the events row shows three at a time, and the days know their page', async ({ page }) => {
+	const stamp = Date.now();
+	const boss = `pager${stamp}`;
+	await register(page, boss);
+	expect((await page.request.post(`/test/admin?username=${boss}`)).ok()).toBeTruthy();
+
+	// Four events in one month - one more than a page holds.
+	await signIn(page, boss);
+	for (let day = 1; day <= 4; day++) {
+		await page.goto('/admin/events');
+		await fillStable(page, /what is happening/i, `Night ${day} ${stamp}`);
+		await fillStable(page, 'The day', `2031-03-0${day}`);
+		await page.getByRole('button', { name: 'Add the event' }).click();
+		await expect(page.getByRole('heading', { name: `Night ${day} ${stamp}` })).toBeVisible();
+	}
+
+	// Page one: three cards and the count.
+	await page.goto('/home?cal=2031-03');
+	await expect(page.locator('.event')).toHaveCount(3);
+	await expect(page.locator('.events-pager')).toContainText('1-3 of 4');
+
+	// The pager reaches the fourth.
+	await page.getByLabel('Later events').click();
+	await expect(page.locator('.event')).toHaveCount(1);
+	await expect(page.locator('.event')).toContainText(`Night 4 ${stamp}`);
+	await expect(page.locator('.events-pager')).toContainText('4-4 of 4');
+
+	// A day on the grid links straight to the page its event is on.
+	const day4 = page.locator('a.cal-day.has-event', { hasText: '4' });
+	expect(await day4.getAttribute('href')).toContain('ev=2');
 });

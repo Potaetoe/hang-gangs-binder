@@ -32,6 +32,10 @@ export const TITLE_MAX = 80;
 export const PLACE_MAX = 120;
 export const NOTES_MAX = 2000;
 
+/** The home page shows this many events at a time (owner ruling
+ * 2026-08-26): a row of three with a pager for the rest. */
+export const EVENTS_PER_PAGE = 3;
+
 /* ---------------------------------------------------------------- */
 /* Validation                                                        */
 
@@ -286,6 +290,9 @@ export type CalendarCell = {
 	iso: string;
 	/** First event that day, for the anchor link down the page. */
 	eventId: string | null;
+	/** Which page of the events row holds it, so the day link can
+	 * land on the right three. */
+	eventPage: number | null;
 	eventCount: number;
 	today: boolean;
 };
@@ -315,6 +322,7 @@ export function calendarGrid(month: string, todayIso: string, events: EventRow[]
 		list.push(event);
 		byDay.set(event.date, list);
 	}
+	const pageOf = new Map(events.map((e, i) => [e.id, Math.floor(i / EVENTS_PER_PAGE) + 1]));
 
 	const cells: (CalendarCell | null)[] = Array.from({ length: firstWeekday }, () => null);
 	for (let day = 1; day <= dayCount; day++) {
@@ -324,6 +332,7 @@ export function calendarGrid(month: string, todayIso: string, events: EventRow[]
 			day,
 			iso,
 			eventId: dayEvents[0]?.id ?? null,
+			eventPage: dayEvents[0] ? (pageOf.get(dayEvents[0].id) ?? 1) : null,
 			eventCount: dayEvents.length,
 			today: iso === todayIso
 		});

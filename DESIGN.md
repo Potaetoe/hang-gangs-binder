@@ -135,9 +135,16 @@ decisions.
    member's entries on the right, the entries a real table with one
    column per active field and the widest share of the page. The
    phone stacks the same pieces in one column — events, form, trends,
-   entries — every card full width. Tapping an event image opens it
-   in a preview overlay with previous/next arrows and a close — built
-   from plain links, because member pages ship no JavaScript.
+   entries — every card full width. The month's events sit under the
+   grid as a row of compact cards, three at a time with a pager (the
+   phone swipes the row); a day on the grid links to the page its
+   event is on. A gallery shows three thumbnails, and the rest fold
+   into a "+N more" tile. Tapping any of it opens the image in a
+   preview overlay with previous/next arrows and a close — built from
+   plain links, because member pages ship no JavaScript. The entries
+   page by fifty, and the entries card caps its own height — a deep
+   page scrolls inside it, headers pinned. The admin's date field is
+   the browser's own date box: calendar flyout and typing both work.
 
 **Later** (named so they are not forgotten): a socials-links page,
 admin-defined calculated fields (BMI is the only computed field in

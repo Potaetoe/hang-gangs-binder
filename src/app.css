@@ -42,6 +42,13 @@
 }
 
 :root {
+	/* Native widgets (the date picker's button, dropdowns, scrollbars)
+	   follow the palette. The pinned palettes carry their own
+	   color-scheme (settings.ts); this pair covers 'auto'. Without it
+	   the date box's calendar button painted black on midnight - an
+	   invisible control (owner report, 2026-08-26). */
+	color-scheme: light;
+
 	--font-text: 'DM Sans', system-ui, sans-serif;
 	--font-display: 'Playfair Display', Georgia, serif;
 	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -63,6 +70,7 @@
 @media (prefers-color-scheme: dark) {
 	:root {
 		/* midnight */
+		color-scheme: dark;
 		--color-bg: #120d10;
 		--color-surface: #1c1417;
 		--color-accent: #c73743;
@@ -391,9 +399,23 @@ select {
 }
 
 /* The entries table: one column per field, the edit link at the row's
-   end. Cells hold their line; a wide row scrolls inside its card. */
+   end. Cells hold their line; a wide row scrolls inside its card. The
+   card also caps its height (owner ruling 2026-08-26) - a deep page
+   scrolls in place, headers pinned, instead of stretching the fold. */
 .entries-table td {
 	white-space: nowrap;
+}
+.entries-scroll {
+	max-height: 34rem;
+	overflow-y: auto;
+	padding-top: 0;
+}
+.entries-scroll thead th {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background: var(--color-surface);
+	padding-top: 0.6rem;
 }
 .pager {
 	display: flex;
@@ -548,23 +570,28 @@ a.cal-day.has-event.today {
 	border-color: var(--color-text);
 }
 
-/* The month's events under the grid (beside it on desktop). */
-.cal-events {
-	display: flex;
-	flex-direction: column;
-	gap: 1rem;
-	margin-top: 1rem;
+/* The month's events under the grid: a row of compact cards, three
+   at a time (owner ruling 2026-08-26). The phone swipes the row; the
+   desktop grid puts the three side by side (media query below). */
+.events-empty {
+	margin: 1rem 0 0;
 }
-.cal-events > .muted {
-	margin: 0;
+.events-row {
+	display: flex;
+	gap: 0.75rem;
+	margin-top: 1rem;
+	overflow-x: auto;
+	scrollbar-width: none;
+	-webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+	mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+}
+.events-row::-webkit-scrollbar {
+	display: none;
 }
 .event {
-	border-top: 1px solid var(--color-border);
-	padding-top: 0.75rem;
-}
-.event:first-child {
-	border-top: 0;
-	padding-top: 0;
+	flex: 0 0 15rem;
+	margin-block: 0;
+	background: var(--color-bg);
 }
 .event-date {
 	margin: 0;
@@ -572,17 +599,39 @@ a.cal-day.has-event.today {
 }
 .event-title {
 	margin: 0.1rem 0 0.25rem;
-	font-size: 1.15rem;
+	font-size: 1.05rem;
 }
 .event-place {
 	margin: 0 0 0.25rem;
 	font-weight: 600;
 	font-size: 0.9rem;
 }
+/* Long notes hold to a few lines - the card stays a card. */
 .event-notes {
 	margin: 0;
-	font-size: 0.95rem;
+	font-size: 0.9rem;
 	white-space: pre-line;
+	display: -webkit-box;
+	-webkit-line-clamp: 4;
+	line-clamp: 4;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+.events-pager {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 1rem;
+	margin-top: 0.75rem;
+}
+.events-pager p {
+	margin: 0;
+	font-family: var(--font-mono);
+	font-size: 0.8rem;
+	color: var(--color-text-muted);
+}
+span.cal-arrow.off {
+	opacity: 0.35;
 }
 .gallery {
 	display: flex;
@@ -597,6 +646,26 @@ a.cal-day.has-event.today {
 	object-fit: cover;
 	border-radius: 0.5rem;
 	border: 1px solid var(--color-border);
+}
+/* In the events row the thumbs shrink to fit the card, and the
+   overflow folds into a "+N more" tile that opens the preview. */
+.event .gallery img {
+	width: 3.6rem;
+	height: 3.6rem;
+}
+.gallery-more {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 3.6rem;
+	height: 3.6rem;
+	padding: 0.2rem;
+	border: 1px dashed var(--color-border-strong);
+	border-radius: 0.5rem;
+	color: var(--color-text-muted);
+	font-size: 0.7rem;
+	text-align: center;
+	text-decoration: none;
 }
 .gallery-slot {
 	display: flex;
@@ -1093,6 +1162,17 @@ span.lightbox-step.off {
 	.fold-events {
 		grid-area: events;
 	}
+	/* The events row stops swiping and folds three across. */
+	.events-row {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		overflow: visible;
+		-webkit-mask-image: none;
+		mask-image: none;
+	}
+	.event {
+		flex: none;
+	}
 	.fold-entry {
 		grid-area: entry;
 	}
@@ -1194,6 +1274,13 @@ textarea {
 	border: 1px solid var(--color-border-strong);
 	border-radius: var(--radius);
 	resize: vertical;
+}
+
+/* The date box keeps the browser's own flyout and typing (owner
+   ruling 2026-08-26); its calendar button just has to be seen. */
+input[type='date']::-webkit-calendar-picker-indicator {
+	cursor: pointer;
+	opacity: 0.85;
 }
 
 .badge {
