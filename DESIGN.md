@@ -234,7 +234,13 @@ call the door onto the phone rail for one sitting with the phone-only
 Mobile Admin Mode switch in Settings (owner rulings 2026-08-26): a
 session cookie, gone when the browser closes, and the admin pages
 come as the squeeze they are. The page never
-rubber-bands, and a scrolling card keeps its own momentum. Layout and detail are free to
+rubber-bands (owner ruling 2026-08-26): on the phone the document
+itself cannot scroll - the page wrapper is the one scroller, because
+iOS ignores gentler hints and bounces the document, rail and all - and
+a scrolling card keeps its own momentum. The binder installs as a
+home-screen app (owner ruling 2026-08-26): a manifest carrying the
+fork's own name and default palette, real icons, no service worker -
+the pages stay no-JavaScript. Layout and detail are free to
 improve as pages are rebuilt as components. The rebuild changes the
 machinery, not the face.
 

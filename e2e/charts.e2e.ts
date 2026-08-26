@@ -134,6 +134,20 @@ test('the rail is a bottom bar on the phone and wears the brand on desktop', asy
 	await page.reload();
 	await expect(page.locator('.rail-brand-name')).not.toBeVisible();
 	await expect(page.locator('.rail').getByRole('link', { name: 'Group Stats' })).toBeVisible();
+
+	// The scroll lock (owner ruling 2026-08-26): on the phone the
+	// document cannot scroll - the page wrapper is the one scroller -
+	// so iOS has no page edge to rubber-band the rail off of.
+	const lock = await page.evaluate(() => ({
+		body: getComputedStyle(document.body).overflow,
+		page: getComputedStyle(document.querySelector('.page')!).overflowY
+	}));
+	expect(lock).toEqual({ body: 'hidden', page: 'auto' });
+
+	// The PWA shell: the manifest is served, named, and installable.
+	const manifest = await (await page.request.get('/manifest.webmanifest')).json();
+	expect(manifest.name).toContain('Binder');
+	expect(manifest.display).toBe('standalone');
 	await expect(page.locator('.rail').getByRole('button', { name: 'Sign out' })).not.toBeVisible();
 	await page.locator('.rail').getByRole('link', { name: 'Settings' }).click();
 	await expect(page.getByRole('button', { name: 'Sign out on this device' })).toBeVisible();
