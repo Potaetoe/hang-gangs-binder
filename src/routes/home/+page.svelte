@@ -35,7 +35,7 @@
 	{/if}
 
 	<!-- The tri-fold (owner ruling 2026-08-26): three desktop columns -
-	     trends and the form, the calendar, the entries. The phone reads
+	     the calendar, the form, trends over the entries. The phone reads
 	     the same pieces top to bottom in the ruled order. -->
 	<div class="home-folds">
 		{#if data.trends.length}

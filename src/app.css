@@ -1066,9 +1066,9 @@ span.lightbox-step.off {
 		padding-bottom: 3rem;
 	}
 	/* Your page on desktop is a tri-fold (owner ruling 2026-08-26):
-	   trends and the form on the left, the calendar in the middle,
-	   the entries on the right, filling the page. The DOM keeps the
-	   phone's reading order; the grid areas do the folding. */
+	   the calendar on the left, the entry form in the middle, trends
+	   and the entries on the right, filling the page. The DOM keeps
+	   the phone's reading order; the grid areas do the folding. */
 	main.home-main {
 		max-width: none;
 	}
@@ -1077,8 +1077,8 @@ span.lightbox-step.off {
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 		grid-template-rows: auto 1fr;
 		grid-template-areas:
-			'trends events entries'
-			'entry events entries';
+			'events entry trends'
+			'events entry entries';
 		gap: 0 1.5rem;
 		align-items: start;
 	}

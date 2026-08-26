@@ -96,13 +96,13 @@ test('an event an admin adds reaches every member home, gallery included', async
 	expect(img.ok()).toBeTruthy();
 	expect(img.headers()['content-type']).toBe('image/png');
 
-	// The desktop is a tri-fold: form, calendar, entries, left to
+	// The desktop is a tri-fold: calendar, form, entries, left to
 	// right (owner ruling 2026-08-26).
 	const entryBox = await page.locator('.fold-entry').boundingBox();
 	const eventsBox = await page.locator('.fold-events').boundingBox();
 	const entriesBox = await page.locator('.fold-entries').boundingBox();
-	expect(eventsBox!.x).toBeGreaterThan(entryBox!.x);
-	expect(entriesBox!.x).toBeGreaterThan(eventsBox!.x);
+	expect(entryBox!.x).toBeGreaterThan(eventsBox!.x);
+	expect(entriesBox!.x).toBeGreaterThan(entryBox!.x);
 
 	// A tapped image opens the preview overlay; the arrows walk the
 	// gallery; the close puts it away (owner ruling 2026-08-26).

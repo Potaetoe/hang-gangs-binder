@@ -128,11 +128,12 @@ decisions.
    is the price of keeping the fork one database. Admins manage
    events in their own admin section: add, edit, delete, every action
    in the change log. The home page is a tri-fold on the desktop
-   (owner ruling 2026-08-26): three columns filling the page — trends
-   and the entry form on the left, the calendar card in the middle (a
-   month grid with event days marked and that month's events under
-   it, flipping months back and forward), and the member's entries on
-   the right as a real table, one column per active field. The phone
+   (owner ruling 2026-08-26): three columns filling the page — the
+   calendar card on the left (a month grid with event days marked and
+   that month's events under it, flipping months back and forward),
+   the entry form in the middle, and trends above the member's
+   entries on the right, the entries a real table with one column per
+   active field. The phone
    stacks the same pieces in one column — trends, calendar, form,
    entries — every card full width. Tapping an event image opens it
    in a preview overlay with previous/next arrows and a close — built
