@@ -165,7 +165,11 @@ admin-defined calculated fields (BMI is the only computed field in
 The identity carries over: the wordmark, the four palettes, the fonts,
 phone-first layout with the bottom bar. Member-facing pages serve the
 phone and the desktop equally; admin-facing pages are designed for
-desktop only (owner ruling 2026-08-24). Layout and detail are free to
+desktop only (owner ruling 2026-08-24). A page never restates the
+rail (owner ruling 2026-08-26): the highlighted rail item says where
+you are, so titles like "Admin" are screen-reader-only — a visible
+title must say something the rail does not, like "Hello, Marcus" or
+a field's name. Layout and detail are free to
 improve as pages are rebuilt as components. The rebuild changes the
 machinery, not the face.
 

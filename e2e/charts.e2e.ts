@@ -74,9 +74,10 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 	await signInFreshMember(page, `chartthree${stamp}`);
 	await logEntry(page, { weight: '150', gender: 'Female', country: 'Iceland' });
 
-	// The rail carries them to the board.
+	// The rail carries them to the board. The page title is for screen
+	// readers only - the rail says where you are (owner, 2026-08-26).
 	await page.locator('.rail').getByRole('link', { name: 'Group Stats' }).click();
-	await expect(page.getByRole('heading', { name: 'Group Stats' })).toBeVisible();
+	await expect(page.getByText(/\d+ members/)).toBeVisible();
 	await expect(page.locator('.tile').filter({ hasText: 'Weight' })).toBeVisible();
 
 	// Into the focused field.
