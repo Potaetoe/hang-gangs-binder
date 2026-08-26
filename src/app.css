@@ -153,6 +153,35 @@ body {
 	}
 }
 
+/* The screen-check page (temporary diagnostic, 2026-08-26). */
+.vc-list {
+	font-family: var(--font-mono);
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 0.35rem 1rem;
+}
+.vc-list dt {
+	margin: 0;
+	color: var(--color-text-muted);
+}
+.vc-list dd {
+	margin: 0;
+	text-align: right;
+}
+
+/* iOS 26's installed-app container miscalculates 100% and 100dvh as
+   if Safari's toolbar were still on screen, leaving a dead strip
+   under the page (owner drive 2026-08-26; the web agrees). Plain
+   100vh reads the true screen there. Only for the installed app -
+   in a browser 100vh would overshoot under the toolbar. */
+@media (max-width: 899.98px) and (display-mode: standalone) {
+	html:has(main.with-rail),
+	body:has(main.with-rail),
+	.page:has(main.with-rail) {
+		height: 100vh;
+	}
+}
+
 main {
 	max-width: 26rem;
 	margin: 0 auto;

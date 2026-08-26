@@ -177,5 +177,9 @@
 				<button class="quiet">Sign out on this device</button>
 			</form>
 		</section>
+
+		<!-- TEMPORARY (2026-08-26): a door to the tape-measure page
+		     while the installed app's bottom gap is being hunted. -->
+		<p class="muted"><a href={resolve('/viewport-check')}>Screen check</a></p>
 	</div>
 </main>
