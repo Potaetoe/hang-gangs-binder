@@ -161,6 +161,14 @@
 							>
 						{/each}
 					</select>
+					<label for="calc-unit">Shown after the number — like kg or % (optional)</label>
+					<input
+						id="calc-unit"
+						name="unit_label"
+						autocomplete="off"
+						maxlength="8"
+						value={rawOr('unit_label', data.calc.unitLabel)}
+					/>
 					<div class="admin-actions">
 						<button class="quiet" formaction="?/preview">Preview</button>
 						<button>Save the recipe</button>

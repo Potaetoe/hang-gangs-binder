@@ -12,6 +12,7 @@ import { asc, eq, inArray, sql } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import type { FocusView, TileView } from '$lib/views';
 import * as table from './db/schema';
+import { formulaUnit } from './calc';
 import {
 	choicePicks,
 	feetInches,
@@ -272,7 +273,8 @@ function rangeLabel(field: Field, from: number, to: number, units: Units): strin
 const unitSuffix = (field: Field, units: Units): string => {
 	if (field.measure === 'mass') return units === 'imperial' ? ' lb' : ' kg';
 	if (field.measure === 'length') return units === 'imperial' ? ' in' : ' cm';
-	return '';
+	const unit = formulaUnit(field);
+	return unit ? ` ${unit}` : '';
 };
 
 /** "238 lb", "5 ft 11 in", "31.9" - a group average, readably. */

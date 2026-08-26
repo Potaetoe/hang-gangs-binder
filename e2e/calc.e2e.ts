@@ -233,6 +233,102 @@ test('a recipe locks the moment its field holds a value', async ({ page }) => {
 	await expect(page.getByRole('button', { name: 'Save the recipe' })).not.toBeVisible();
 });
 
+test('a unit label follows the number to the table, the tile, and the focused chart', async ({
+	page
+}) => {
+	const stamp = Date.now();
+	const boss = `labeler${stamp}`;
+	const score = `Score ${stamp}`;
+	await register(page, boss);
+	expect((await page.request.post(`/test/admin?username=${boss}`)).ok()).toBeTruthy();
+
+	// Weight ÷ 2, shown as "pts".
+	await signIn(page, boss);
+	await addCalculatedField(page, score);
+	await page.getByLabel(/what the recipe starts from/i).selectOption({ label: 'Weight' });
+	await page.getByLabel('Step 1 operation').selectOption({ label: '÷' });
+	await page.getByLabel('Step 1 reads').selectOption({ label: 'a number you type' });
+	await fillStable(page, 'Step 1 typed number', '2');
+	await fillStable(page, /shown after the number/i, 'pts');
+
+	// The preview already wears the label.
+	await page.getByRole('button', { name: 'Preview' }).click();
+	await expect(page.locator('.done strong')).toHaveText('50 pts');
+
+	await page.getByRole('button', { name: 'Save the recipe' }).click();
+	await expect(page.getByText(/shown as "pts"/)).toBeVisible();
+	await page.getByRole('button', { name: 'Put it on the form' }).click();
+
+	// 180 lb ÷ 2 = 90 pts in the entries table.
+	await page.goto('/home');
+	await fillStable(page, 'Weight', '180');
+	await page.getByRole('button', { name: 'Save entry' }).click();
+	await expect(entryRow(page, ['180 lb', '90 pts'])).toBeVisible();
+
+	// The board tile's headline carries it, and so does the focused
+	// chart's group average. The exact average belongs to the whole
+	// parallel suite (every member saving here computes a Score), so
+	// the label is the assertion, not the number.
+	await page.goto('/charts');
+	const tile = page.locator('.tile').filter({ hasText: score });
+	await expect(tile.locator('.tile-headline')).toContainText('pts');
+	await tile.click();
+	await expect(page.locator('.stat-value').filter({ hasText: 'pts' }).first()).toBeVisible();
+});
+
+test('a field a recipe reads cannot be deleted until the recipe lets go', async ({ page }) => {
+	const stamp = Date.now();
+	const boss = `keeper${stamp}`;
+	const fuel = `Fuel ${stamp}`;
+	const burn = `Burn ${stamp}`;
+	await register(page, boss);
+	expect((await page.request.post(`/test/admin?username=${boss}`)).ok()).toBeTruthy();
+
+	// A plain field, and a recipe that reads it - neither collects a
+	// value, so only the new dependency guard can refuse the delete.
+	await signIn(page, boss);
+	await page.goto('/admin/form');
+	await fillStable(page, /what the form should ask/i, fuel);
+	await page.getByLabel(/what kind of answer/i).selectOption('plain');
+	await page.getByRole('button', { name: 'Add the field' }).click();
+	await addCalculatedField(page, burn);
+	await page.getByLabel(/what the recipe starts from/i).selectOption({ label: fuel });
+	await page.getByRole('button', { name: 'Save the recipe' }).click();
+	await expect(page.getByText(/Now: Fuel/)).toBeVisible();
+
+	// Off the form, then the delete - refused, with the recipe named.
+	await page.goto('/admin/form');
+	await page
+		.locator('.admin-table tbody tr')
+		.filter({ hasText: fuel })
+		.getByRole('link', { name: 'Open' })
+		.click();
+	await page.getByText('Take it off the form').click();
+	await page.getByRole('button', { name: 'Yes, take it off' }).click();
+	await page.getByText('Delete it', { exact: true }).click();
+	await page.getByRole('button', { name: 'Yes, delete it' }).click();
+	await expect(page.getByText(`The recipe "${burn}" still reads this field`)).toBeVisible();
+
+	// Deleting the recipe frees the field.
+	await page.goto('/admin/form');
+	await page
+		.locator('.admin-table tbody tr')
+		.filter({ hasText: burn })
+		.getByRole('link', { name: 'Open' })
+		.click();
+	await page.getByText('Delete it', { exact: true }).click();
+	await page.getByRole('button', { name: 'Yes, delete it' }).click();
+	await page
+		.locator('.admin-table tbody tr')
+		.filter({ hasText: fuel })
+		.getByRole('link', { name: 'Open' })
+		.click();
+	await page.getByText('Delete it', { exact: true }).click();
+	await page.getByRole('button', { name: 'Yes, delete it' }).click();
+	await expect(page).toHaveURL(/\/admin\/form$/);
+	await expect(page.locator('.admin-table tbody tr').filter({ hasText: fuel })).not.toBeVisible();
+});
+
 test('a one-number recipe with constants ignores the units toggle', async ({ page }) => {
 	const stamp = Date.now();
 	const boss = `targeter${stamp}`;
