@@ -103,7 +103,17 @@ and a pass case) and runs in CI.
    file has not been recorded as applied. The schema goes first, as a
    machine rule, from day one.
 4. **git-guard** — blocks force-pushes to the default branch, pushes to
-   the frozen old branches, and `--no-verify`.
+   the frozen old branches, and `--no-verify`. Since 2026-08-26 (owner
+   order, after PowerShell 5.1 mangled inline prose into git errors
+   twice in one day) it also holds the git process itself: commit
+   messages and gh bodies travel by FILE — `git commit -F <file>`,
+   `--body-file <file>` — never inline `-m`/`--body`, because this
+   machine's shell rebuilds native arguments naively and any quote or
+   newline in them becomes garbage. And a sign-off recording never
+   shares a command with the merge it unlocks: the merge-gate reads
+   its state before the command runs, and PowerShell has no `&&` to
+   make the pair atomic — record first, merge as its own next command
+   (an `&&` chain from the Bash tool stays honored).
 5. **secret-guard** — blocks writing secret-shaped values (bot tokens,
    `*_SECRET=` literals) into repo files. Remedy: `wrangler secret put`.
 6. **fleet-guard** — holds agent dispatches to the fleet rules: an agent
