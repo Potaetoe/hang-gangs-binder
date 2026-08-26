@@ -67,6 +67,35 @@ with tempfile.TemporaryDirectory() as tmp:
           bash("git push origin old-accounts"), True, state_env())
     check("--no-verify", "git_guard.py",
           bash("git commit --no-verify -m x"), True, state_env())
+    check("inline commit message (-m) - PS 5.1 mangles prose",
+          "git_guard.py",
+          bash('git commit -m "words with \\"quotes\\""'), True,
+          state_env())
+    check("inline commit message (-am)", "git_guard.py",
+          bash("git commit -am fix"), True, state_env())
+    check("commit by message file passes", "git_guard.py",
+          bash("git commit -F C:/scratch/msg.txt"), False, state_env())
+    check("commit --amend without a message passes", "git_guard.py",
+          bash("git commit --amend --no-edit"), False, state_env())
+    check("inline gh pr body (--body)", "git_guard.py",
+          bash('gh pr create --title t --body "words"'), True,
+          state_env())
+    check("inline gh body (-b)", "git_guard.py",
+          bash("gh pr comment 5 -b thanks"), True, state_env())
+    check("gh --body-file passes", "git_guard.py",
+          bash("gh pr create --title t --body-file pr.md"), False,
+          state_env())
+    check("signoff ; merge in one command - the gate reads state "
+          "before the command runs", "git_guard.py",
+          bash('py -3 hooks/record.py signoff 9 "ok" ; '
+               "gh pr merge 9 --merge"), True, state_env())
+    check("signoff && merge stays honored - the Bash tool's atomic "
+          "pair", "git_guard.py",
+          bash('py -3 hooks/record.py signoff 9 "ok" && '
+               "gh pr merge 9 --merge"), False, state_env())
+    check("a merge alone passes git-guard - sign-off checking is the "
+          "merge-gate's job", "git_guard.py",
+          bash("gh pr merge 9 --merge"), False, state_env())
 
     # merge_gate
     check("pr merge without sign-off", "merge_gate.py",
