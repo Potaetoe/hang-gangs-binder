@@ -127,11 +127,16 @@ decisions.
    cap per image, so a fork still needs nothing beyond D1 — the cap
    is the price of keeping the fork one database. Admins manage
    events in their own admin section: add, edit, delete, every action
-   in the change log. The home page shows, in this order on every
-   screen size: trends, the calendar card (a month grid with event
-   days marked and that month's events listed under it, flipping
-   months back and forward), the entry form, and the member's entries
-   as a real table — one column per active field.
+   in the change log. The home page is a tri-fold on the desktop
+   (owner ruling 2026-08-26): three columns filling the page — trends
+   and the entry form on the left, the calendar card in the middle (a
+   month grid with event days marked and that month's events under
+   it, flipping months back and forward), and the member's entries on
+   the right as a real table, one column per active field. The phone
+   stacks the same pieces in one column — trends, calendar, form,
+   entries — every card full width. Tapping an event image opens it
+   in a preview overlay with previous/next arrows and a close — built
+   from plain links, because member pages ship no JavaScript.
 
 **Later** (named so they are not forgotten): a socials-links page,
 admin-defined calculated fields (BMI is the only computed field in

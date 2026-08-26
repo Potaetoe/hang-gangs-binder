@@ -56,21 +56,22 @@ test('an event an admin adds reaches every member home, gallery included', async
 	await register(page, member);
 	expect((await page.request.post(`/test/approve?username=${member}`)).ok()).toBeTruthy();
 
-	// The admin fills the whole card: day, place, notes, one image.
+	// The admin fills the whole card: day, place, notes, two images.
 	await signIn(page, boss);
 	await page.goto('/admin/events');
 	await fillStable(page, /what is happening/i, title);
 	await fillStable(page, 'The day', '2031-05-15');
 	await fillStable(page, /where/i, 'The park');
 	await fillStable(page, /notes/i, 'Bring a chair.');
-	await page
-		.getByLabel(/^images/i)
-		.setInputFiles({ name: 'flyer.png', mimeType: 'image/png', buffer: PNG });
+	await page.getByLabel(/^images/i).setInputFiles([
+		{ name: 'flyer.png', mimeType: 'image/png', buffer: PNG },
+		{ name: 'flyer2.png', mimeType: 'image/png', buffer: PNG }
+	]);
 	await page.getByRole('button', { name: 'Add the event' }).click();
 
-	// The add lands on the event's own page, image stored.
+	// The add lands on the event's own page, both images stored.
 	await expect(page.getByRole('heading', { name: title })).toBeVisible();
-	await expect(page.locator('.gallery img')).toHaveCount(1);
+	await expect(page.locator('.gallery img')).toHaveCount(2);
 
 	// The list page carries the new row.
 	await page.goto('/admin/events');
@@ -80,7 +81,7 @@ test('an event an admin adds reaches every member home, gallery included', async
 	await signOut(page);
 
 	// No code changed. The member's calendar knows the day, the list
-	// tells the story, the image arrives.
+	// tells the story, the images arrive.
 	await signIn(page, member);
 	await page.goto('/home?cal=2031-05');
 	await expect(page.locator('.cal-label')).toHaveText('May 2031');
@@ -89,11 +90,30 @@ test('an event an admin adds reaches every member home, gallery included', async
 	await expect(event).toBeVisible();
 	await expect(event).toContainText('The park');
 	await expect(event).toContainText('Bring a chair.');
-	const imgSrc = await event.locator('.gallery img').getAttribute('src');
+	const imgSrc = await event.locator('.gallery img').first().getAttribute('src');
 	expect(imgSrc).toBeTruthy();
 	const img = await page.request.get(imgSrc!);
 	expect(img.ok()).toBeTruthy();
 	expect(img.headers()['content-type']).toBe('image/png');
+
+	// The desktop is a tri-fold: form, calendar, entries, left to
+	// right (owner ruling 2026-08-26).
+	const entryBox = await page.locator('.fold-entry').boundingBox();
+	const eventsBox = await page.locator('.fold-events').boundingBox();
+	const entriesBox = await page.locator('.fold-entries').boundingBox();
+	expect(eventsBox!.x).toBeGreaterThan(entryBox!.x);
+	expect(entriesBox!.x).toBeGreaterThan(eventsBox!.x);
+
+	// A tapped image opens the preview overlay; the arrows walk the
+	// gallery; the close puts it away (owner ruling 2026-08-26).
+	await event.locator('.gallery a').first().click();
+	await expect(page.locator('.lightbox:visible')).toContainText('1 of 2');
+	await page.locator('.lightbox:visible').getByLabel('Next image').click();
+	await expect(page.locator('.lightbox:visible')).toContainText('2 of 2');
+	await page.locator('.lightbox:visible').getByLabel('Previous image').click();
+	await expect(page.locator('.lightbox:visible')).toContainText('1 of 2');
+	await page.locator('.lightbox:visible .lightbox-x').click();
+	await expect(page.locator('.lightbox:visible')).toHaveCount(0);
 
 	// The arrows flip months without losing the page.
 	await page.getByRole('link', { name: 'Later month' }).click();

@@ -332,10 +332,12 @@ select {
 	margin: 0 0 0.75rem;
 }
 
-/* Trends: small server-drawn lines, latest value underneath. */
+/* Trends: small server-drawn lines, latest value underneath. On the
+   phone every card takes the full column (owner ruling 2026-08-26);
+   the desktop media query packs them tighter. */
 .trends {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+	grid-template-columns: 1fr;
 	gap: 0.75rem;
 }
 .trend {
@@ -608,6 +610,82 @@ button.gallery-remove {
 	min-height: 1.9rem;
 	padding: 0.1rem 0.55rem;
 	font-size: 0.8rem;
+}
+
+/* The image preview overlay (owner ruling 2026-08-26): CSS :target
+   does the opening, plain links do the rest - no JavaScript. The
+   backdrop is a close link; arrows step through the gallery. */
+.lightbox {
+	display: none;
+	position: fixed;
+	inset: 0;
+	z-index: 40;
+	background: rgba(10, 6, 8, 0.88);
+}
+.lightbox:target {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+}
+.lightbox-shut {
+	position: absolute;
+	inset: 0;
+}
+.lightbox-x {
+	position: absolute;
+	top: 0.5rem;
+	right: 0.75rem;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2.75rem;
+	min-height: 2.75rem;
+	font-size: 1.8rem;
+	color: #fff;
+	text-decoration: none;
+}
+.lightbox-body {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 0.6rem;
+	max-width: min(64rem, 94vw);
+}
+.lightbox-body img {
+	max-width: 100%;
+	max-height: calc(94svh - 5rem);
+	object-fit: contain;
+	border-radius: var(--radius);
+}
+.lightbox-bar {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 1.25rem;
+}
+.lightbox-bar p {
+	margin: 0;
+	color: #fff;
+	font-family: var(--font-mono);
+	font-size: 0.85rem;
+}
+.lightbox-step {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2.75rem;
+	min-height: 2.75rem;
+	border: 1px solid rgba(255, 255, 255, 0.55);
+	border-radius: 999px;
+	color: #fff;
+	text-decoration: none;
+	font-size: 1.1rem;
+}
+span.lightbox-step.off {
+	opacity: 0.3;
 }
 
 /* ------------------------------------------------------------------ */
@@ -987,21 +1065,37 @@ button.gallery-remove {
 	main.with-rail {
 		padding-bottom: 3rem;
 	}
-	/* Your page on desktop reads top to bottom - trends, calendar,
-	   form, entries (owner ruling 2026-08-26). The calendar card puts
-	   its grid and its event list side by side; the entry form keeps
-	   its phone width rather than stretching across the page. */
-	.cal-body {
+	/* Your page on desktop is a tri-fold (owner ruling 2026-08-26):
+	   trends and the form on the left, the calendar in the middle,
+	   the entries on the right, filling the page. The DOM keeps the
+	   phone's reading order; the grid areas do the folding. */
+	main.home-main {
+		max-width: none;
+	}
+	.home-folds {
 		display: grid;
-		grid-template-columns: minmax(18rem, 23rem) minmax(0, 1fr);
-		gap: 1.75rem;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-rows: auto 1fr;
+		grid-template-areas:
+			'trends events entries'
+			'entry events entries';
+		gap: 0 1.5rem;
 		align-items: start;
 	}
-	.cal-events {
-		margin-top: 0;
+	.fold-trends {
+		grid-area: trends;
 	}
-	.home-entry {
-		max-width: 27rem;
+	.fold-events {
+		grid-area: events;
+	}
+	.fold-entry {
+		grid-area: entry;
+	}
+	.fold-entries {
+		grid-area: entries;
+	}
+	.trends {
+		grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
 	}
 	/* The top bar already wears the brand - the in-page eyebrow would
 	   say it twice (owner, 2026-08-24). The phone rail carries no

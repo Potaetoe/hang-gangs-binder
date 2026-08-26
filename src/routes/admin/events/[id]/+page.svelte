@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import EventGallery from '$lib/EventGallery.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -48,26 +49,15 @@
 		<button>Save the event</button>
 	</form>
 
-	<div class="card">
+	<div class="card" id="images">
 		<h3>Images</h3>
 		{#if data.images.length}
-			<div class="gallery">
-				{#each data.images as image (image.id)}
-					<div class="gallery-slot">
-						<a href={resolve('/events/image/[id]', { id: image.id })}>
-							<img
-								src={resolve('/events/image/[id]', { id: image.id })}
-								alt={'For ' + data.event.title}
-								loading="lazy"
-							/>
-						</a>
-						<form method="POST" action="?/delimage">
-							<input type="hidden" name="image" value={image.id} />
-							<button class="quiet gallery-remove">Remove</button>
-						</form>
-					</div>
-				{/each}
-			</div>
+			<EventGallery
+				imageIds={data.images.map((i) => i.id)}
+				title={data.event.title}
+				returnTo="images"
+				removable
+			/>
 		{:else}
 			<p class="muted">No images yet.</p>
 		{/if}
