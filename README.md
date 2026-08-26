@@ -196,6 +196,15 @@ want a nicer one:
 
 Everything else, including the free plan's SSL, is automatic.
 
+## When something goes wrong
+
+[docs/RUNBOOK.md](docs/RUNBOOK.md) is the operator's book: backups,
+point-in-time restore (rehearsed, not just written), secret custody,
+migration recovery, code rollback, a compromised account, handing the
+site to a new operator, and the normal upgrade sequence. Read it once
+before you need it — its whole point is that the bad day is not the
+day you learn the commands.
+
 ## Working on the code
 
 ```bash
