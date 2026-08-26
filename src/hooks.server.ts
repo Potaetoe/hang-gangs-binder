@@ -1,6 +1,25 @@
-import { redirect, type Handle } from '@sveltejs/kit';
+import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
 import { sessionMember } from '$lib/server/auth';
+
+/**
+ * The ONE logging call in the app (owner OK 2026-08-26, after an
+ * outage produced 500s and left nothing to read). Fires only for
+ * UNEXPECTED errors - a failed database query, a bug - never for
+ * redirects or deliberate error() responses. It logs the route's
+ * SHAPE (like "/entry/[id]") and the error text: no URL, no member
+ * id, no name ever reaches a log line. Workers Logs stores these
+ * lines and nothing else - invocation logs are off (wrangler.jsonc).
+ */
+export const handleError: HandleServerError = ({ error, event, status }) => {
+	// A path that matched NO route also lands here (as a 404), and its
+	// message embeds the requested path - which can carry an entry id.
+	// Strays and scanners are not crashes: say not-found, log nothing.
+	if (!event.route.id) return { message: 'Not found' };
+	const text = error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : String(error);
+	console.error(`unexpected ${status} on ${event.route.id}: ${text}`);
+	return { message: 'Something broke on our side. Try again in a minute.' };
+};
 
 /**
  * What a browser is allowed to load. The pages ship almost no

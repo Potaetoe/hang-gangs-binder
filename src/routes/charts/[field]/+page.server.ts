@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
-import { focusView, loadGroup, readFilters } from '$lib/server/charts';
+import { focusView, loadGroupFor, memberTotal, readFilters } from '$lib/server/charts';
 import { loadFields, memberUnits } from '$lib/server/stats';
 import { loadSettings, trendSet } from '$lib/server/settings';
 
@@ -12,9 +12,19 @@ export const load: PageServerLoad = async ({ locals, platform, params, url, cook
 	const fields = await loadFields(db);
 	const field = fields.find((f) => f.id === params.field);
 	if (!field) error(404, 'Not found');
-	const group = await loadGroup(db);
 	const filters = readFilters(fields, url.searchParams);
-	const focus = focusView(group, fields, field, filters, units, locals.member.memberId);
+	// Only the fields this view reads leave the database (hardening
+	// pass, 2026-08-26): the focused one and the active filters.
+	const group = await loadGroupFor(db, [field.id, ...Object.keys(filters)]);
+	const focus = focusView(
+		group,
+		fields,
+		field,
+		filters,
+		units,
+		locals.member.memberId,
+		await memberTotal(db)
+	);
 	// Trend lines only on the admin-chosen fields (owner ruling
 	// 2026-08-26); the stats and distribution stay.
 	if (!trendSet(await loadSettings(db)).has(field.id)) focus.trend = null;

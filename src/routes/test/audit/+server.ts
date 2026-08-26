@@ -7,9 +7,11 @@ import { hmacHex } from '$lib/server/crypto';
 
 /**
  * TEST HOOK, dead in production (TEST_HOOKS is only set in .dev.vars,
- * like /test/approve): lets the e2e loop see a member's correction
- * audit before the admin review surface (build order step 4) exists.
- * Once that surface ships, this file goes with it.
+ * like /test/approve): lets the e2e loop assert a member's correction
+ * trail without parsing the admin page. The admin surface ships its
+ * own corrections view now; this stays because the loop test reads
+ * the trail as data (comment corrected on the hardening pass,
+ * 2026-08-26 - it used to promise its own deletion).
  */
 export async function GET({ url, platform }: RequestEvent) {
 	const env = platform!.env;

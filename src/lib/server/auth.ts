@@ -96,6 +96,32 @@ export async function identityOf(db: Db, secrets: Secrets, memberId: string): Pr
 	}
 }
 
+/**
+ * Every sealed identity, opened, in ONE database query. The roster and
+ * the log pages used to call identityOf once per member, and each call
+ * was its own D1 round trip - a hundred members made a hundred trips,
+ * and the owner could feel every one of them (hardening pass,
+ * 2026-08-26). The directory holds one row per member, so reading it
+ * whole is bounded by the group's size. Unreadable rows throw, same as
+ * identityOf - a directory that cannot be opened is an error, never a
+ * silent blank.
+ */
+export async function allIdentities(db: Db, secrets: Secrets): Promise<Map<string, Identity>> {
+	const rows = await db.select().from(table.directory);
+	const out = new Map<string, Identity>();
+	for (const row of rows) {
+		try {
+			out.set(
+				row.memberId,
+				JSON.parse(await open(secrets.DIRECTORY_SECRET, row.sealed)) as Identity
+			);
+		} catch {
+			throw new IdentityUnreadableError();
+		}
+	}
+	return out;
+}
+
 async function writeIdentity(db: Db, secrets: Secrets, memberId: string, identity: Identity) {
 	const sealed = await seal(secrets.DIRECTORY_SECRET, JSON.stringify(identity));
 	await db

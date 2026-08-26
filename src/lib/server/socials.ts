@@ -7,11 +7,11 @@
  * one labelled Other.
  */
 
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import * as table from './db/schema';
 import { open, seal } from './crypto';
-import { identityOf, type Secrets } from './auth';
+import { allIdentities, type Secrets } from './auth';
 
 type Db = DrizzleD1Database<typeof import('./db/schema')>;
 
@@ -185,8 +185,11 @@ export function linkViews(links: SocialLinks): SocialLinkView[] {
 }
 
 /** Every APPROVED member with links, unsealed for display and sorted
- * by name - the page's whole roster. Two unseals per listed member,
- * like the admin roster pays for names. */
+ * by name - the page's whole roster. Three fixed queries however many
+ * members there are: it used to unseal one directory row per listed
+ * member, and its approved-filter carried one bound id per row, which
+ * would have hit D1's per-query parameter cap at scale (hardening
+ * pass, 2026-08-26). */
 export async function socialsRoster(db: Db, secrets: Secrets): Promise<RosterRow[]> {
 	const rows = await db.select().from(table.socials).orderBy(asc(table.socials.memberId));
 	if (!rows.length) return [];
@@ -195,21 +198,14 @@ export async function socialsRoster(db: Db, secrets: Secrets): Promise<RosterRow
 			await db
 				.select({ id: table.members.id })
 				.from(table.members)
-				.where(
-					and(
-						inArray(
-							table.members.id,
-							rows.map((r) => r.memberId)
-						),
-						eq(table.members.status, 'approved')
-					)
-				)
+				.where(eq(table.members.status, 'approved'))
 		).map((m) => m.id)
 	);
+	const identities = await allIdentities(db, secrets);
 	const out: RosterRow[] = [];
 	for (const row of rows) {
 		if (!approved.has(row.memberId)) continue;
-		const identity = await identityOf(db, secrets, row.memberId);
+		const identity = identities.get(row.memberId) ?? {};
 		const links = JSON.parse(await open(secrets.DIRECTORY_SECRET, row.sealed)) as SocialLinks;
 		const views = linkViews(links);
 		if (!views.length) continue;

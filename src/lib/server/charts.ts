@@ -8,7 +8,7 @@
  * however few (recorded in DESIGN.md the same day).
  */
 
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import type { FocusView, TileView } from '$lib/views';
 import * as table from './db/schema';
@@ -35,26 +35,129 @@ type GroupEntry = { date: string; seq: number; values: Map<string, EntryValue> }
 /** memberId -> entries, oldest first. */
 export type Group = Map<string, GroupEntry[]>;
 
-export async function loadGroup(db: Db): Promise<Group> {
+/**
+ * The group's entries carrying ONLY the named fields. The old
+ * loadGroup shipped every value of every entry into the Worker on
+ * every chart view - ~5,200 joined rows at a hundred members, which
+ * is what killed /charts on the free plan's CPU budget (Cloudflare
+ * 1102s, measured 2026-08-25). The focus page only ever reads the
+ * focused field and the choice fields it filters by, so that is all
+ * this loads. An entry carrying none of them changes no answer: it
+ * cannot supply the focused value, and with filters on it could
+ * never match them.
+ */
+export async function loadGroupFor(db: Db, fieldIds: string[]): Promise<Group> {
+	if (!fieldIds.length) return new Map();
 	const rows = await db
-		.select({ entry: table.entries, value: table.entryValues })
-		.from(table.entries)
-		.leftJoin(table.entryValues, eq(table.entryValues.entryId, table.entries.id))
+		.select({
+			entryId: table.entries.id,
+			memberId: table.entries.memberId,
+			date: table.entries.date,
+			seq: table.entries.seq,
+			value: table.entryValues
+		})
+		.from(table.entryValues)
+		.innerJoin(table.entries, eq(table.entryValues.entryId, table.entries.id))
+		.where(inArray(table.entryValues.fieldId, fieldIds))
 		.orderBy(asc(table.entries.date), asc(table.entries.seq));
 	const group: Group = new Map();
 	const byEntry = new Map<string, GroupEntry>();
 	for (const row of rows) {
-		let entry = byEntry.get(row.entry.id);
+		let entry = byEntry.get(row.entryId);
 		if (!entry) {
-			entry = { date: row.entry.date, seq: row.entry.seq, values: new Map() };
-			byEntry.set(row.entry.id, entry);
-			const list = group.get(row.entry.memberId) ?? [];
+			entry = { date: row.date, seq: row.seq, values: new Map() };
+			byEntry.set(row.entryId, entry);
+			const list = group.get(row.memberId) ?? [];
 			list.push(entry);
-			group.set(row.entry.memberId, list);
+			group.set(row.memberId, list);
 		}
-		if (row.value) entry.values.set(row.value.fieldId, row.value);
+		entry.values.set(row.value.fieldId, row.value);
 	}
 	return group;
+}
+
+/** How many members have any entry at all - the "of N" the pages
+ * show. A narrowed load cannot answer this, so the database does. */
+export async function memberTotal(db: Db): Promise<number> {
+	const [row] = await db
+		.select({ n: sql<number>`count(distinct ${table.entries.memberId})` })
+		.from(table.entries);
+	return row?.n ?? 0;
+}
+
+/** One member's newest stored value of one field - alias-mapped by
+ * hand because these rows come from raw SQL, not the query builder. */
+export type LatestRow = {
+	fieldId: string;
+	memberId: string;
+	metric: number | null;
+	imperial: number | null;
+	choice: string | null;
+};
+
+/**
+ * The newest stored value per member per field, in ONE query bounded
+ * by members × fields - the board's whole diet, however long the
+ * history grows. The window picks the same row the old walk did: the
+ * member's newest entry that carries the field at all.
+ */
+export async function latestPerMember(db: Db): Promise<LatestRow[]> {
+	const rows = await db.all<{
+		field_id: string;
+		member_id: string;
+		metric: number | null;
+		imperial: number | null;
+		choice: string | null;
+	}>(sql`
+		SELECT field_id, member_id, metric, imperial, choice FROM (
+			SELECT ev.field_id, e.member_id, ev.metric, ev.imperial, ev.choice,
+				ROW_NUMBER() OVER (
+					PARTITION BY ev.field_id, e.member_id
+					ORDER BY e.date DESC, e.seq DESC
+				) AS rn
+			FROM entry_values ev JOIN entries e ON e.id = ev.entry_id
+		) WHERE rn = 1
+	`);
+	return rows.map((r) => ({
+		fieldId: r.field_id,
+		memberId: r.member_id,
+		metric: r.metric,
+		imperial: r.imperial,
+		choice: r.choice
+	}));
+}
+
+export type WeekPoint = { week: number; metric: number; imperial: number };
+
+/**
+ * Weekly group averages per number field, aggregated in the database:
+ * each member counts once per week - their last value of that week,
+ * the same row the old in-memory walk kept. Comes back bounded by
+ * fields × weeks, not by entries. unixepoch()/86400/7 is integer
+ * division, matching weekOf() exactly.
+ */
+export async function weeklyAverages(db: Db): Promise<Map<string, WeekPoint[]>> {
+	const rows = await db.all<{ field_id: string; week: number; am: number; ai: number }>(sql`
+		SELECT field_id, week, AVG(metric) AS am, AVG(imperial) AS ai FROM (
+			SELECT ev.field_id, ev.metric, ev.imperial,
+				unixepoch(e.date) / 86400 / 7 AS week,
+				ROW_NUMBER() OVER (
+					PARTITION BY ev.field_id, e.member_id, unixepoch(e.date) / 86400 / 7
+					ORDER BY e.date DESC, e.seq DESC
+				) AS rn
+			FROM entry_values ev JOIN entries e ON e.id = ev.entry_id
+			WHERE ev.metric IS NOT NULL
+		) WHERE rn = 1
+		GROUP BY field_id, week
+		ORDER BY field_id, week
+	`);
+	const out = new Map<string, WeekPoint[]>();
+	for (const row of rows) {
+		const list = out.get(row.field_id) ?? [];
+		list.push({ week: row.week, metric: row.am, imperial: row.ai });
+		out.set(row.field_id, list);
+	}
+	return out;
 }
 
 /** Reads ?f_<choiceFieldId>=<option> params into filters, ignoring
@@ -93,7 +196,7 @@ function latestValue(entries: GroupEntry[], fieldId: string, filters: Filters): 
 	return null;
 }
 
-const numberOf = (value: EntryValue, units: Units): number | null =>
+const numberOf = (value: Pick<EntryValue, 'metric' | 'imperial'>, units: Units): number | null =>
 	units === 'imperial' ? value.imperial : value.metric;
 
 /* ---------------------------------------------------------------- */
@@ -237,44 +340,48 @@ export function buckets(
 /* ---------------------------------------------------------------- */
 /* The board                                                         */
 
-const memberCount = (group: Group): number => group.size;
-
-export function boardTiles(group: Group, fields: Field[], units: Units): TileView[] {
+/**
+ * The board of tiles, drawn from the two bounded queries instead of
+ * the whole history (hardening pass, 2026-08-26): latest values feed
+ * the headlines and the choice bars, the weekly averages feed the
+ * sparklines. Same tiles, same numbers - the database does the
+ * walking now.
+ */
+export function boardTiles(
+	latest: LatestRow[],
+	weekly: Map<string, WeekPoint[]>,
+	fields: Field[],
+	units: Units
+): TileView[] {
+	const byField = new Map<string, LatestRow[]>();
+	for (const row of latest) {
+		const list = byField.get(row.fieldId) ?? [];
+		list.push(row);
+		byField.set(row.fieldId, list);
+	}
 	const tiles: TileView[] = [];
 	for (const field of fields) {
+		const rows = byField.get(field.id) ?? [];
 		if (field.type === 'number') {
-			const latest: number[] = [];
-			for (const entries of group.values()) {
-				const value = latestValue(entries, field.id, {});
-				const n = value ? numberOf(value, units) : null;
-				if (n != null) latest.push(n);
-			}
-			const series = weeklySeries(group, field.id, {}, units);
-			const avg = latest.length ? latest.reduce((a, b) => a + b, 0) / latest.length : null;
+			const numbers = rows.map((row) => numberOf(row, units)).filter((n): n is number => n != null);
+			const series = (weekly.get(field.id) ?? [])
+				.slice(-MAX_WEEKS)
+				.map((p) => round(units === 'imperial' ? p.imperial : p.metric, 1));
+			const avg = numbers.length ? numbers.reduce((a, b) => a + b, 0) / numbers.length : null;
 			tiles.push({
 				id: field.id,
 				name: field.name,
-				poly:
-					series.length >= 2
-						? sparklinePoints(
-								series.map((p) => p.avg),
-								140,
-								36,
-								4
-							)
-						: null,
+				poly: series.length >= 2 ? sparklinePoints(series, 140, 36, 4) : null,
 				bars: [],
 				headline: avg == null ? '—' : headlineText(field, round(avg, 1), units),
-				delta: series.length >= 2 ? signed(series[series.length - 1].avg - series[0].avg) : null
+				delta: series.length >= 2 ? signed(series[series.length - 1] - series[0]) : null
 			});
 		} else {
 			// Every pick counts, so a pick-several member can sit in
 			// several bars - that is the honest shape of "pick several".
 			const counts = new Map<string, number>();
-			for (const entries of group.values()) {
-				const value = latestValue(entries, field.id, {});
-				if (!value) continue;
-				for (const pick of choicePicks(value)) counts.set(pick, (counts.get(pick) ?? 0) + 1);
+			for (const row of rows) {
+				for (const pick of choicePicks(row)) counts.set(pick, (counts.get(pick) ?? 0) + 1);
 			}
 			const sorted = [...counts.values()].sort((a, b) => b - a);
 			const top = sorted.slice(0, 4);
@@ -327,10 +434,12 @@ export function focusView(
 	field: Field,
 	filters: Filters,
 	units: Units,
-	viewerId: string
+	viewerId: string,
+	// Counted by the database (memberTotal): the group here carries
+	// only the fields this view reads, so its size answers nothing.
+	total: number
 ): FocusView {
 	const filtered = Object.keys(filters).length > 0;
-	const total = memberCount(group);
 
 	// Latest value per member under the filters. For choices, every
 	// pick counts - but a member counts once as a respondent, even one

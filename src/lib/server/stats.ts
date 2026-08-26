@@ -10,6 +10,7 @@ import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import type { FormFieldView } from '$lib/views';
 import * as table from './db/schema';
+import { runBatch, type Writes } from './db';
 import { randomToken } from './crypto';
 import { formulaInputNames, isCalculated, parseFormula, type HistoryValues } from './calc';
 
@@ -103,7 +104,7 @@ const fromCm = (cm: number) => ({ metric: round(cm, 1), imperial: round(cm / CM_
  * the option as plain text; a pick-several row holds a JSON list. A
  * field switched to pick-several keeps its old plain rows, so both
  * shapes must always read. */
-export function choicePicks(value: EntryValue): string[] {
+export function choicePicks(value: Pick<EntryValue, 'choice'>): string[] {
 	const raw = value.choice;
 	if (raw == null || raw === '') return [];
 	if (raw.startsWith('[')) {
@@ -424,9 +425,16 @@ export async function createEntry(
 		.select({ maxSeq: sql<number>`coalesce(max(${table.entries.seq}), 0)` })
 		.from(table.entries)
 		.where(eq(table.entries.memberId, memberId));
-	await db.insert(table.entries).values({ id, memberId, date, seq: maxSeq + 1 });
+	// One atomic batch (hardening pass, 2026-08-26): the entry and its
+	// values land together or not at all. Two saves racing over the
+	// same seq now trip the unique index and one of them errors -
+	// better a refused double-tap than two entries claiming one slot.
+	const statements: Writes = [
+		db.insert(table.entries).values({ id, memberId, date, seq: maxSeq + 1 })
+	];
 	const rows = Object.entries(values).map(([fieldId, v]) => ({ entryId: id, fieldId, ...v }));
-	if (rows.length) await db.insert(table.entryValues).values(rows);
+	if (rows.length) statements.push(db.insert(table.entryValues).values(rows));
+	await runBatch(db, statements);
 	return id;
 }
 
@@ -445,7 +453,9 @@ export async function memberEntry(db: Db, memberId: string, entryId: string) {
 	return { entry, values };
 }
 
-async function auditRow(
+/** The before-image as an unexecuted insert, so it can share one
+ * atomic batch with the change it records. */
+function auditQuery(
 	db: Db,
 	memberId: string,
 	action: 'edit' | 'delete',
@@ -453,7 +463,7 @@ async function auditRow(
 	values: EntryValue[],
 	auditDate: string
 ) {
-	await db.insert(table.memberAudit).values({
+	return db.insert(table.memberAudit).values({
 		id: randomToken(16),
 		memberId,
 		date: auditDate,
@@ -473,7 +483,10 @@ async function auditRow(
 
 /** Replace an entry's values (the date stays - corrections change
  * numbers, not history's shape), with the before-image kept for admin
- * review. Returns false when the entry is not this member's. */
+ * review. Audit, wipe and rewrite land as ONE batch (hardening pass,
+ * 2026-08-26) - this used to be three writes, and dying between the
+ * wipe and the rewrite left the entry empty. Returns false when the
+ * entry is not this member's. */
 export async function editEntry(
 	db: Db,
 	memberId: string,
@@ -483,10 +496,13 @@ export async function editEntry(
 ): Promise<boolean> {
 	const found = await memberEntry(db, memberId, entryId);
 	if (!found) return false;
-	await auditRow(db, memberId, 'edit', found.entry, found.values, auditDate);
-	await db.delete(table.entryValues).where(eq(table.entryValues.entryId, entryId));
+	const statements: Writes = [
+		auditQuery(db, memberId, 'edit', found.entry, found.values, auditDate),
+		db.delete(table.entryValues).where(eq(table.entryValues.entryId, entryId))
+	];
 	const rows = Object.entries(values).map(([fieldId, v]) => ({ entryId, fieldId, ...v }));
-	if (rows.length) await db.insert(table.entryValues).values(rows);
+	if (rows.length) statements.push(db.insert(table.entryValues).values(rows));
+	await runBatch(db, statements);
 	return true;
 }
 
@@ -498,9 +514,11 @@ export async function deleteEntry(
 ): Promise<boolean> {
 	const found = await memberEntry(db, memberId, entryId);
 	if (!found) return false;
-	await auditRow(db, memberId, 'delete', found.entry, found.values, auditDate);
-	await db.delete(table.entryValues).where(eq(table.entryValues.entryId, entryId));
-	await db.delete(table.entries).where(eq(table.entries.id, entryId));
+	await runBatch(db, [
+		auditQuery(db, memberId, 'delete', found.entry, found.values, auditDate),
+		db.delete(table.entryValues).where(eq(table.entryValues.entryId, entryId)),
+		db.delete(table.entries).where(eq(table.entries.id, entryId))
+	]);
 	return true;
 }
 

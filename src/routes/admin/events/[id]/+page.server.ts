@@ -127,7 +127,7 @@ export const actions: Actions = {
 		const db = getDb(env.DB);
 		const event = await eventById(db, params.id);
 		if (!event) error(404, 'No such event');
-		await deleteEvent(db, env.DB, params.id);
+		await deleteEvent(db, params.id);
 		await logAdmin(
 			db,
 			await logDate(db),

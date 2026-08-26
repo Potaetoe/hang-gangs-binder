@@ -71,7 +71,9 @@ export function parseFormula(field: Field): Formula | null {
 		if (!steps || steps.length > MAX_STEPS) return null;
 		for (const step of steps as Record<string, unknown>[]) {
 			if (typeof step !== 'object' || step === null) return null;
-			if (!(String(step.op) in OPS)) return null;
+			// Own-property on purpose: `in` would accept prototype names
+			// like "toString" as operations (hardening pass, 2026-08-26).
+			if (!Object.hasOwn(OPS, String(step.op))) return null;
 			if (!isOperand(step.value)) return null;
 		}
 		const units = raw.units === 'both' ? 'both' : 'metric';
@@ -279,7 +281,7 @@ export function parseBuilderForm(form: FormData, fields: Field[]): BuilderParse 
 	for (let i = 1; i <= MAX_STEPS; i++) {
 		const op = String(form.get(`step${i}_op`) ?? '');
 		if (!op) continue;
-		if (!(op in OPS)) {
+		if (!Object.hasOwn(OPS, op)) {
 			problems.push(`Step ${i}: pick an operation.`);
 			continue;
 		}

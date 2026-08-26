@@ -113,6 +113,15 @@ and a pass case) and runs in CI.
 7. **report-reminder** — injects the standing rules (plain speech; done
    means driven; reports are works / broken / untested) at each prompt,
    so they survive any session's context.
+8. **migration-guard** — blocks a REMOTE `d1 migrations apply` while
+   any migration file leans on a pragma that behaves differently on
+   production: `PRAGMA foreign_keys` (remote D1 refuses it) or
+   `defer_foreign_keys` (remote commits statement by statement, so
+   the deferral quietly does nothing). Born 2026-08-26, the day a
+   migration passed the whole local suite and production rolled it
+   back; the remedy is a parent-first rebuild that satisfies every
+   foreign key at every statement boundary. Local applies stay
+   unguarded on purpose — they are the test bench.
 
 Stated honestly: the rules a regex cannot hold — blunt reporting, the
 same-commit rule, never repeating an unverified claim — are enforced by
@@ -141,6 +150,11 @@ everything mechanical; the selftest proves each one fires.
   with `wrangler d1 migrations apply` — before deploying code that
   needs them. The app refuses loudly (not quietly) when the schema is
   behind.
+- **Crash lines:** when a page dies unexpectedly, the route and error
+  text land in Workers Logs (dashboard → the worker → Logs). That is
+  the ONLY thing ever logged - invocation logs are off by design
+  (wrangler.jsonc), because they would store URLs. Locally,
+  /test/boom fires the path on demand.
 - **Take-down:** delete the worker; the database survives unless the
   owner orders otherwise.
 
