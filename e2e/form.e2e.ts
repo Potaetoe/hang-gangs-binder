@@ -11,6 +11,14 @@ async function fillStable(page: Page, label: string | RegExp, value: string) {
 	}).toPass({ timeout: 10_000 });
 }
 
+/** The entries-table row carrying every given value - the table
+ * replaced the old summary line (owner ruling 2026-08-26). */
+function entryRow(page: Page, texts: string[]) {
+	let row = page.locator('.entries-table tbody tr');
+	for (const text of texts) row = row.filter({ hasText: text });
+	return row;
+}
+
 async function openPasswordFlap(page: Page) {
 	await expect(async () => {
 		await page.getByText('With a password').click();
@@ -73,7 +81,7 @@ test('THE acceptance test: an added field reaches the form and the filters', asy
 	await fillStable(page, 'Weight', '180');
 	await page.getByLabel(fieldName).selectOption('Red');
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(page.locator('.entry-summary').filter({ hasText: 'Red' })).toBeVisible();
+	await expect(entryRow(page, ['Red'])).toBeVisible();
 
 	// And the charts already know it: a tile on the board, a filter on
 	// the focused page.
@@ -112,7 +120,7 @@ test("renaming an option renames everyone's history", async ({ page }) => {
 	await page.getByLabel(fieldName).selectOption('Old Guard');
 	await fillStable(page, 'Weight', '170');
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(page.locator('.entry-summary').filter({ hasText: 'Old Guard' })).toBeVisible();
+	await expect(entryRow(page, ['Old Guard'])).toBeVisible();
 	await signOut(page);
 
 	// The admin renames the option; the member's history follows.
@@ -125,8 +133,8 @@ test("renaming an option renames everyone's history", async ({ page }) => {
 	await signOut(page);
 
 	await signIn(page, member);
-	await expect(page.locator('.entry-summary').filter({ hasText: 'Vanguard' })).toBeVisible();
-	await expect(page.locator('.entry-summary').filter({ hasText: 'Old Guard' })).not.toBeVisible();
+	await expect(entryRow(page, ['Vanguard'])).toBeVisible();
+	await expect(entryRow(page, ['Old Guard'])).not.toBeVisible();
 });
 
 test('pick-several: ticks reach history, the counts, and the all-of filter', async ({ page }) => {
@@ -162,9 +170,7 @@ test('pick-several: ticks reach history, the counts, and the all-of filter', asy
 	await page.getByRole('checkbox', { name: sour }).check();
 	await fillStable(page, 'Weight', '180');
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(
-		page.locator('.entry-summary').filter({ hasText: `${sweet}, ${sour}` })
-	).toBeVisible();
+	await expect(entryRow(page, [`${sweet}, ${sour}`])).toBeVisible();
 
 	// The charts count every pick: one member, two bars.
 	await page.goto('/charts');
@@ -190,7 +196,7 @@ test('pick-several: ticks reach history, the counts, and the all-of filter', asy
 	await page.getByRole('checkbox', { name: sweet }).uncheck();
 	await page.getByRole('checkbox', { name: sour }).uncheck();
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(page.locator('.entry-summary').first()).not.toContainText(sweet);
+	await expect(page.locator('.entries-table tbody tr').first()).not.toContainText(sweet);
 	await page.goto('/charts');
 	await page.locator('.tile').filter({ hasText: fieldName }).click();
 	await expect(page.locator('.countbar').filter({ hasText: sweet })).not.toBeVisible();
@@ -228,7 +234,7 @@ test('a choice field switches to pick-several one way, history intact', async ({
 	await page.getByLabel(fieldName).selectOption(anthems);
 	await fillStable(page, 'Weight', '170');
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(page.locator('.entry-summary').filter({ hasText: anthems })).toBeVisible();
+	await expect(entryRow(page, [anthems])).toBeVisible();
 	await signOut(page);
 
 	// The switch is one flap, and one-way: the flap does not return.
@@ -245,9 +251,7 @@ test('a choice field switches to pick-several one way, history intact', async ({
 	await expect(page.getByRole('checkbox', { name: anthems })).toBeChecked();
 	await page.getByRole('checkbox', { name: ballads }).check();
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(
-		page.locator('.entry-summary').filter({ hasText: `${anthems}, ${ballads}` })
-	).toBeVisible();
+	await expect(entryRow(page, [`${anthems}, ${ballads}`])).toBeVisible();
 	await signOut(page);
 
 	// Renaming an option rewrites BOTH shapes: the old plain answer and
@@ -260,10 +264,8 @@ test('a choice field switches to pick-several one way, history intact', async ({
 	await signOut(page);
 
 	await signIn(page, member);
-	await expect(
-		page.locator('.entry-summary').filter({ hasText: `${hymns}, ${ballads}` })
-	).toBeVisible();
-	await expect(page.locator('.entry-summary').filter({ hasText: anthems })).not.toBeVisible();
+	await expect(entryRow(page, [`${hymns}, ${ballads}`])).toBeVisible();
+	await expect(entryRow(page, [anthems])).not.toBeVisible();
 });
 
 test('the essential three cannot leave, and unused fields can', async ({ page }) => {

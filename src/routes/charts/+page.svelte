@@ -8,7 +8,7 @@
 </script>
 
 <svelte:head>
-	<title>Group Stats — {data.siteName} Binder</title>
+	<title>{data.siteName} Binder — Group Stats</title>
 </svelte:head>
 
 <Nav active="charts" />
@@ -16,7 +16,9 @@
 	<div class="page-head">
 		<div>
 			<Brand />
-			<h1>Group Stats</h1>
+			<!-- The rail already says where you are (owner ruling
+			     2026-08-26); the heading stays for screen readers only. -->
+			<h1 class="sr-only">Group Stats</h1>
 			<p class="muted">
 				{data.members === 1 ? '1 member' : `${data.members} members`} &middot; tap a tile for detail and
 				filters

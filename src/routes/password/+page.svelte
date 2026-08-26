@@ -7,7 +7,7 @@
 </script>
 
 <svelte:head>
-	<title>New password — {page.data.siteName} Binder</title>
+	<title>{page.data.siteName} Binder — New password</title>
 </svelte:head>
 
 <main>

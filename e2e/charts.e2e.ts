@@ -45,7 +45,7 @@ async function logEntry(
 	await page.getByLabel('Gender').selectOption(entry.gender);
 	await page.getByLabel('Country').selectOption(entry.country);
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(page.locator('.entry-summary').first()).toBeVisible();
+	await expect(page.locator('.entries-table tbody tr').first()).toBeVisible();
 }
 
 async function signOut(page: Page) {
@@ -74,9 +74,10 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 	await signInFreshMember(page, `chartthree${stamp}`);
 	await logEntry(page, { weight: '150', gender: 'Female', country: 'Iceland' });
 
-	// The rail carries them to the board.
+	// The rail carries them to the board. The page title is for screen
+	// readers only - the rail says where you are (owner, 2026-08-26).
 	await page.locator('.rail').getByRole('link', { name: 'Group Stats' }).click();
-	await expect(page.getByRole('heading', { name: 'Group Stats' })).toBeVisible();
+	await expect(page.getByText(/\d+ members/)).toBeVisible();
 	await expect(page.locator('.tile').filter({ hasText: 'Weight' })).toBeVisible();
 
 	// Into the focused field.
@@ -93,9 +94,9 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 	await expect(page.getByText(/you are here/)).not.toBeVisible();
 
 	// The same member in the other system: both were stored.
-	await page.getByRole('button', { name: 'Metric' }).click();
+	await page.getByRole('link', { name: 'Metric' }).click();
 	await expect(page.locator('.stat').filter({ hasText: '90.7 kg' })).toBeVisible();
-	await page.getByRole('button', { name: /imperial/i }).click();
+	await page.getByRole('link', { name: /imperial/i }).click();
 
 	// Loosen to everyone from Iceland: two members averaged, and the
 	// viewer is one of them - now the marker may speak.

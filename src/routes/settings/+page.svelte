@@ -17,14 +17,15 @@
 </script>
 
 <svelte:head>
-	<title>Settings — {page.data.siteName} Binder</title>
+	<title>{page.data.siteName} Binder — Settings</title>
 </svelte:head>
 
 <Nav active="settings" />
 <main class="with-rail">
 	<Brand />
-	<h1>Settings</h1>
-	<p class="muted">Yours, on this device. A tap saves it.</p>
+	<!-- The rail already says where you are (owner ruling 2026-08-26);
+	     the heading stays for screen readers only. -->
+	<h1 class="sr-only">Settings</h1>
 
 	<div class="settings-list">
 		<section class="setting">

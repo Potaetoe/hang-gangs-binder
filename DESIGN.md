@@ -87,7 +87,12 @@ decisions.
 
 1. **Core loop** — sign in, enter stats, your page (history, corrections),
    group charts with trend and distribution views, filtered by the
-   categorical fields, with unit choice.
+   categorical fields, with unit choice. The Settings choice is the
+   units DEFAULT and the rule of law: a page's units toggle changes
+   the view for that one page look only - any reload or fresh visit
+   renders the default again, and nothing a toggle does is ever
+   stored (owner ruling 2026-08-26; a small script tidies the URL -
+   the owner lifted the no-script rule for it).
 2. **Admin surface** — site settings (name, welcome text, timezone,
    default theme), member management (approvals, roles, resets), a
    change log, departed-member cleanup.
@@ -119,9 +124,42 @@ decisions.
 4. **Combined filters** — multi-filter charts (landed with the core
    loop's charts; floorless by the ruling above).
 
-**Later** (named so they are not forgotten): a calendar/events page, a
-socials-links page, admin-defined calculated fields (BMI is the only
-computed field in 1.0, wired in code; the door stays open).
+5. **Calendar and events** (owner rulings, 2026-08-26) — the group's
+   events live on the home page, not a separate page. An event is a
+   title and a day (required), a start time, a place, notes, and a
+   gallery of images (all optional). A time always brings its own
+   timezone, picked by the admin — never assumed; the admin pages
+   show the time in that zone, while members see it converted to
+   their own clock (a page script converts; the no-script fallback
+   names the zone). An event without a time is all-day — which is
+   what every event from before times existed reads as. No end
+   date — the chat handles logistics. Images are stored in the database with a size
+   cap per image, so a fork still needs nothing beyond D1 — the cap
+   is the price of keeping the fork one database. Admins manage
+   events in their own admin section: add, edit, delete, every action
+   in the change log. The home page is a tri-fold on the desktop
+   (owner rulings 2026-08-26): three weighted columns filling the
+   page — the calendar card on the left (a month grid with event days
+   marked and that month's events under it, flipping months back and
+   forward), the entry form in the middle, and trends above the
+   member's entries on the right, the entries a real table with one
+   column per active field and the widest share of the page. The
+   phone stacks the same pieces in one column — events, form, trends,
+   entries — every card full width. The month's events sit under the
+   grid as wide stacked rows, three at a time with a pager — each row
+   the words on the left, the gallery at its side; a day on the grid
+   links to the page its event is on. A gallery shows three
+   thumbnails, and the rest fold
+   into a "+N more" tile. Tapping any of it opens the image in a
+   preview overlay with previous/next arrows and a close — built from
+   plain links, because member pages ship no JavaScript. The entries
+   page by fifty, and the entries card caps its own height — a deep
+   page scrolls inside it, headers pinned. The admin's date field is
+   the browser's own date box: calendar flyout and typing both work.
+
+**Later** (named so they are not forgotten): a socials-links page,
+admin-defined calculated fields (BMI is the only computed field in
+1.0, wired in code; the door stays open).
 
 ## Stack
 
@@ -137,7 +175,11 @@ computed field in 1.0, wired in code; the door stays open).
 The identity carries over: the wordmark, the four palettes, the fonts,
 phone-first layout with the bottom bar. Member-facing pages serve the
 phone and the desktop equally; admin-facing pages are designed for
-desktop only (owner ruling 2026-08-24). Layout and detail are free to
+desktop only (owner ruling 2026-08-24). A page never restates the
+rail (owner ruling 2026-08-26): the highlighted rail item says where
+you are, so titles like "Admin" are screen-reader-only — a visible
+title must say something the rail does not, like "Hello, Marcus" or
+a field's name. Layout and detail are free to
 improve as pages are rebuilt as components. The rebuild changes the
 machinery, not the face.
 

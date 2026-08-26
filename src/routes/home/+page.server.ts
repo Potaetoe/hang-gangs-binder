@@ -12,21 +12,37 @@ import {
 	formatValue,
 	formFieldViews,
 	latestValues,
+	formUnits,
 	loadFields,
 	memberHistory,
 	memberTrends,
+	memberUnits,
 	parseEntryForm,
 	sparklinePoints,
-	today,
-	type Units
+	today
 } from '$lib/server/stats';
+import {
+	calendarGrid,
+	eventEpoch,
+	EVENTS_PER_PAGE,
+	eventTimeLabel,
+	imageIdsByEvent,
+	monthEvents,
+	monthOf,
+	validMonth
+} from '$lib/server/events';
 import { loadSettings } from '$lib/server/settings';
-import type { HistoryRow, TrendView } from '$lib/views';
+import type {
+	CalendarView,
+	EntryTableView,
+	EventsPagerView,
+	EventView,
+	TrendView
+} from '$lib/views';
 
-const PAGE_SIZE = 10;
-
-const unitsOf = (cookie: string | undefined): Units =>
-	cookie === 'metric' ? 'metric' : 'imperial';
+// Entries page by fifty (owner ruling 2026-08-26) - the card caps its
+// own height and scrolls, so a page can afford to be deep.
+const PAGE_SIZE = 50;
 
 /** Everything a submitted form's fields said, echoed back on failure
  * so a typo never costs the rest of what was typed. Checkboxes repeat
@@ -45,25 +61,69 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 	const env = platform!.env;
 	const db = getDb(env.DB);
 	const memberId = locals.member.memberId;
-	const units = unitsOf(cookies.get('units'));
+	const units = memberUnits(cookies, url);
 
 	const identity = await identityOf(db, env as unknown as Secrets, memberId);
 	const fields = await loadFields(db);
 	const latest = await latestValues(db, memberId);
+	const todayIso = today((await loadSettings(db)).timezone);
+
+	// The calendar card's month: today's unless the member flipped it.
+	const calParam = url.searchParams.get('cal') ?? '';
+	const month = validMonth(calParam) ? calParam : monthOf(todayIso);
+	const eventRows = await monthEvents(db, month);
+	const grid = calendarGrid(month, todayIso, eventRows);
+	const calendar: CalendarView = {
+		label: grid.label,
+		prev: grid.prev,
+		next: grid.next,
+		weekdays: grid.weekdays,
+		weeks: grid.weeks
+	};
+
+	// The events row shows three at a time (owner ruling 2026-08-26);
+	// `ev` picks which three, and the day links carry it.
+	const eventPages = Math.max(1, Math.ceil(eventRows.length / EVENTS_PER_PAGE));
+	const eventPage = Math.min(Math.max(1, Number(url.searchParams.get('ev')) || 1), eventPages);
+	const pageRows = eventRows.slice((eventPage - 1) * EVENTS_PER_PAGE, eventPage * EVENTS_PER_PAGE);
+	const eventsPager: EventsPagerView = {
+		page: eventPage,
+		pages: eventPages,
+		from: eventRows.length ? (eventPage - 1) * EVENTS_PER_PAGE + 1 : 0,
+		to: (eventPage - 1) * EVENTS_PER_PAGE + pageRows.length,
+		total: eventRows.length
+	};
+	const imageIds = await imageIdsByEvent(
+		db,
+		pageRows.map((e) => e.id)
+	);
+	const events: EventView[] = pageRows.map((e) => ({
+		id: e.id,
+		date: e.date,
+		dateLabel: formatDate(e.date),
+		timeLabel: e.time && e.tz ? eventTimeLabel(e.date, e.time, e.tz) : null,
+		epoch: e.time && e.tz ? eventEpoch(e.date, e.time, e.tz) : null,
+		title: e.title,
+		place: e.place,
+		notes: e.notes,
+		imageIds: imageIds[e.id] ?? []
+	}));
 
 	const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
 	const { entries, hasOlder } = await memberHistory(db, memberId, page, PAGE_SIZE);
-	const history: HistoryRow[] = entries.map(({ entry, values }) => ({
-		id: entry.id,
-		dateLabel: formatDate(entry.date),
-		summary: fields
-			.map((field) => {
+	// The entries as a real table (owner ruling 2026-08-26): one column
+	// per active field, so a row reads like the form that made it.
+	const entryTable: EntryTableView = {
+		columns: fields.map((f) => f.name),
+		rows: entries.map(({ entry, values }) => ({
+			id: entry.id,
+			dateLabel: formatDate(entry.date),
+			cells: fields.map((field) => {
 				const value = values.find((v) => v.fieldId === field.id);
 				return value ? formatValue(field, value, units) : '';
 			})
-			.filter(Boolean)
-			.join(' · ')
-	}));
+		}))
+	};
 
 	const trends: TrendView[] = (await memberTrends(db, fields, memberId, units)).map((t) => ({
 		name: t.field.name,
@@ -87,10 +147,13 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 		isAdmin: locals.member.isAdmin,
 		pendingCount,
 		units,
-		todayLabel: formatDate(today((await loadSettings(db)).timezone)),
 		formFields: formFieldViews(fields, latest, units),
 		trends,
-		history,
+		calendar,
+		events,
+		eventsPager,
+		month,
+		entryTable,
 		page,
 		hasOlder
 	};
@@ -102,7 +165,7 @@ export const actions: Actions = {
 		const env = platform!.env;
 		const db = getDb(env.DB);
 		const form = await request.formData();
-		const units = unitsOf(cookies.get('units'));
+		const units = formUnits(form, cookies);
 
 		const fields = await loadFields(db);
 		const { values, problems } = parseEntryForm(fields, form, units);
@@ -120,20 +183,8 @@ export const actions: Actions = {
 
 		computeBmi(fields, values);
 		await createEntry(db, locals.member.memberId, today((await loadSettings(db)).timezone), values);
-		redirect(303, '/home');
-	},
-
-	units: async ({ request, cookies, locals }) => {
-		if (!locals.member) redirect(303, '/');
-		const form = await request.formData();
-		const choice = form.get('units') === 'metric' ? 'metric' : 'imperial';
-		cookies.set('units', choice, {
-			path: '/',
-			httpOnly: true,
-			sameSite: 'lax',
-			secure: true,
-			maxAge: 400 * 86_400
-		});
-		redirect(303, '/home');
+		// The confirmation shows in the units just typed in; the script
+		// strips ?u=, so the next load is the default again.
+		redirect(303, `/home?u=${units}`);
 	}
 };

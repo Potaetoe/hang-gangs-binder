@@ -13,7 +13,7 @@
 </script>
 
 <svelte:head>
-	<title>Not signed in — {page.data.siteName} Binder</title>
+	<title>{page.data.siteName} Binder — Not signed in</title>
 </svelte:head>
 
 <main>

@@ -6,7 +6,7 @@
 </script>
 
 <svelte:head>
-	<title>Sign in — {data.siteName} Binder</title>
+	<title>{data.siteName} Binder — Sign in</title>
 </svelte:head>
 
 <main>

@@ -42,6 +42,13 @@
 }
 
 :root {
+	/* Native widgets (the date picker's button, dropdowns, scrollbars)
+	   follow the palette. The pinned palettes carry their own
+	   color-scheme (settings.ts); this pair covers 'auto'. Without it
+	   the date box's calendar button painted black on midnight - an
+	   invisible control (owner report, 2026-08-26). */
+	color-scheme: light;
+
 	--font-text: 'DM Sans', system-ui, sans-serif;
 	--font-display: 'Playfair Display', Georgia, serif;
 	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -63,6 +70,7 @@
 @media (prefers-color-scheme: dark) {
 	:root {
 		/* midnight */
+		color-scheme: dark;
 		--color-bg: #120d10;
 		--color-surface: #1c1417;
 		--color-accent: #c73743;
@@ -131,6 +139,13 @@ h2 {
 .wordmark + h1 {
 	font-style: italic;
 	font-size: 2rem;
+}
+
+/* An admin's greeting carries their standing in the name itself -
+   the accent is the one bright color every palette ships (owner
+   ruling 2026-08-26). */
+.admin-name {
+	color: var(--color-accent);
 }
 
 .card {
@@ -243,7 +258,8 @@ select {
 	border-radius: var(--radius);
 }
 
-/* A number and the unit it belongs to; must never wrap apart. */
+/* A number and the unit it belongs to; must never wrap apart. Also
+   holds a time beside its timezone on the admin event forms. */
 .row {
 	display: flex;
 	align-items: center;
@@ -252,6 +268,11 @@ select {
 .row input {
 	flex: 1;
 	min-width: 0;
+}
+.row select {
+	flex: 1.6;
+	min-width: 0;
+	width: auto;
 }
 .suffix {
 	flex: none;
@@ -302,22 +323,30 @@ select {
 	margin: 0;
 }
 
-/* Imperial | Metric: one form, two submit buttons, the active one
-   filled in. */
+/* Imperial | Metric: two controls, the active one filled in. On the
+   member pages they are one-view links (?u=); Settings keeps them as
+   the buttons that write the default. */
 .units {
 	display: flex;
 	gap: 0.5rem;
 	margin-bottom: 1rem;
 }
-.units button {
+.units button,
+.units a {
+	display: inline-flex;
+	align-items: center;
 	min-height: 2.25rem;
 	padding: 0.25rem 0.9rem;
 	font-size: 0.9rem;
+	font-weight: 600;
 	color: var(--color-text-muted);
 	background: transparent;
 	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius);
+	text-decoration: none;
 }
-.units button.on {
+.units button.on,
+.units a.on {
 	color: var(--color-on-accent);
 	background: var(--color-accent);
 	border-color: var(--color-accent);
@@ -332,10 +361,12 @@ select {
 	margin: 0 0 0.75rem;
 }
 
-/* Trends: small server-drawn lines, latest value underneath. */
+/* Trends: small server-drawn lines, latest value underneath. On the
+   phone every card takes the full column (owner ruling 2026-08-26);
+   the desktop media query packs them tighter. */
 .trends {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+	grid-template-columns: 1fr;
 	gap: 0.75rem;
 }
 .trend {
@@ -364,7 +395,8 @@ select {
 	font-size: 0.9rem;
 }
 
-/* History: a dated row of numbers, the edit link at its side. */
+/* Card-row lists (the member roster, a field's options): a name and
+   its small print, an action at the row's side. */
 .history {
 	list-style: none;
 	margin: 0;
@@ -385,6 +417,26 @@ select {
 	font-family: var(--font-mono);
 	font-size: 0.85rem;
 	overflow-wrap: anywhere;
+}
+
+/* The entries table: one column per field, the edit link at the row's
+   end. Cells hold their line; a wide row scrolls inside its card. The
+   card also caps its height (owner ruling 2026-08-26) - a deep page
+   scrolls in place, headers pinned, instead of stretching the fold. */
+.entries-table td {
+	white-space: nowrap;
+}
+.entries-scroll {
+	max-height: 34rem;
+	overflow-y: auto;
+	padding-top: 0;
+}
+.entries-scroll thead th {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background: var(--color-surface);
+	padding-top: 0.6rem;
 }
 .pager {
 	display: flex;
@@ -467,15 +519,270 @@ main.with-rail {
 	padding-bottom: 6rem;
 }
 
-/* Your page: one column on the phone, the form beside its results on
-   desktop (the media query below). */
-.home-layout {
+/* ------------------------------------------------------------------ */
+/* The calendar card (DESIGN.md feature 5): month grid, event list.   */
+
+.cal-head {
 	display: flex;
-	flex-direction: column;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	margin-bottom: 0.5rem;
 }
-.home-rest {
+.cal-label {
+	margin: 0;
+	font-family: var(--font-display);
+	font-weight: 600;
+	font-size: 1.05rem;
+}
+.cal-arrow {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2.25rem;
+	min-height: 2.25rem;
+	border: 1px solid var(--color-border-strong);
+	border-radius: 999px;
+	color: var(--color-text-muted);
+	text-decoration: none;
+}
+.cal-table {
+	width: 100%;
+	border-collapse: collapse;
+	table-layout: fixed;
+}
+.cal-table th {
+	font-size: 0.65rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--color-text-muted);
+	padding-bottom: 0.35rem;
+	text-align: center;
+}
+.cal-table td {
+	padding: 1px;
+	text-align: center;
+}
+.cal-day {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	min-height: 2.2rem;
+	border-radius: 0.55rem;
+	border: 1px solid transparent;
+	font-family: var(--font-mono);
+	font-size: 0.85rem;
+	color: var(--color-text-muted);
+}
+.cal-day.today {
+	border-color: var(--color-border-strong);
+	color: var(--color-text);
+}
+a.cal-day.has-event {
+	background: var(--color-accent);
+	border-color: var(--color-accent);
+	color: var(--color-on-accent);
+	font-weight: 600;
+	text-decoration: none;
+}
+a.cal-day.has-event.today {
+	border-color: var(--color-text);
+}
+
+/* The month's events under the grid: wide rows, three at a time
+   (owner ruling 2026-08-26, reshaped on the drive) - each event gets
+   the fold's full width, the words left and the gallery at the side. */
+.events-empty {
+	margin: 1rem 0 0;
+}
+.events-row {
 	display: flex;
 	flex-direction: column;
+	gap: 0.75rem;
+	margin-top: 1rem;
+}
+.event {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 0.9rem;
+	margin-block: 0;
+	background: var(--color-bg);
+}
+.event-body {
+	min-width: 0;
+}
+.event-date {
+	margin: 0;
+	font-size: 0.8rem;
+}
+.event-title {
+	margin: 0.1rem 0 0.25rem;
+	font-size: 1.05rem;
+}
+.event-place {
+	margin: 0 0 0.25rem;
+	font-weight: 600;
+	font-size: 0.9rem;
+}
+/* Long notes hold to a few lines - the card stays a card. */
+.event-notes {
+	margin: 0;
+	font-size: 0.9rem;
+	white-space: pre-line;
+	display: -webkit-box;
+	-webkit-line-clamp: 4;
+	line-clamp: 4;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+.events-pager {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 1rem;
+	margin-top: 0.75rem;
+}
+.events-pager p {
+	margin: 0;
+	font-family: var(--font-mono);
+	font-size: 0.8rem;
+	color: var(--color-text-muted);
+}
+span.cal-arrow.off {
+	opacity: 0.35;
+}
+.gallery {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-top: 0.6rem;
+}
+.gallery img {
+	display: block;
+	width: 6rem;
+	height: 6rem;
+	object-fit: cover;
+	border-radius: 0.5rem;
+	border: 1px solid var(--color-border);
+}
+/* In an event row the thumbs shrink and stack two to a line at the
+   row's side; the overflow folds into a "+N more" tile that opens
+   the preview. */
+.event .gallery {
+	flex: none;
+	margin-top: 0;
+	justify-content: flex-end;
+	max-width: calc(2 * 3.6rem + 0.5rem);
+}
+.event .gallery img {
+	width: 3.6rem;
+	height: 3.6rem;
+}
+.gallery-more {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 3.6rem;
+	height: 3.6rem;
+	padding: 0.2rem;
+	border: 1px dashed var(--color-border-strong);
+	border-radius: 0.5rem;
+	color: var(--color-text-muted);
+	font-size: 0.7rem;
+	text-align: center;
+	text-decoration: none;
+}
+.gallery-slot {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+.gallery-slot form {
+	margin: 0;
+}
+button.gallery-remove {
+	min-height: 1.9rem;
+	padding: 0.1rem 0.55rem;
+	font-size: 0.8rem;
+}
+
+/* The image preview overlay (owner ruling 2026-08-26): CSS :target
+   does the opening, plain links do the rest - no JavaScript. The
+   backdrop is a close link; arrows step through the gallery. */
+.lightbox {
+	display: none;
+	position: fixed;
+	inset: 0;
+	z-index: 40;
+	background: rgba(10, 6, 8, 0.88);
+}
+.lightbox:target {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+}
+.lightbox-shut {
+	position: absolute;
+	inset: 0;
+}
+.lightbox-x {
+	position: absolute;
+	top: 0.5rem;
+	right: 0.75rem;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2.75rem;
+	min-height: 2.75rem;
+	font-size: 1.8rem;
+	color: #fff;
+	text-decoration: none;
+}
+.lightbox-body {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 0.6rem;
+	max-width: min(64rem, 94vw);
+}
+.lightbox-body img {
+	max-width: 100%;
+	max-height: calc(94svh - 5rem);
+	object-fit: contain;
+	border-radius: var(--radius);
+}
+.lightbox-bar {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 1.25rem;
+}
+.lightbox-bar p {
+	margin: 0;
+	color: #fff;
+	font-family: var(--font-mono);
+	font-size: 0.85rem;
+}
+.lightbox-step {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2.75rem;
+	min-height: 2.75rem;
+	border: 1px solid rgba(255, 255, 255, 0.55);
+	border-radius: 999px;
+	color: #fff;
+	text-decoration: none;
+	font-size: 1.1rem;
+}
+span.lightbox-step.off {
+	opacity: 0.3;
 }
 
 /* ------------------------------------------------------------------ */
@@ -855,19 +1162,42 @@ main.with-rail {
 	main.with-rail {
 		padding-bottom: 3rem;
 	}
-	/* Your page on desktop: the entry form keeps its phone width on
-	   the left; trends and history breathe on the right. */
-	.home-layout {
+	/* Your page on desktop is a tri-fold (owner ruling 2026-08-26):
+	   the calendar on the left, the entry form in the middle, trends
+	   and the entries on the right, filling the page. The DOM keeps
+	   the phone's reading order; the grid areas do the folding. */
+	/* Beats main.wide's 72rem cap (same specificity alone, and that
+	   rule sits later in this file) - the tri-fold gets the whole
+	   screen. */
+	main.wide.home-main {
+		max-width: none;
+	}
+	.home-folds {
 		display: grid;
-		grid-template-columns: 27rem minmax(0, 1fr);
-		gap: 1.5rem;
+		/* Weighted, not equal thirds (owner correction on the drive):
+		   the entries table earns the most width, the form the least. */
+		grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr) minmax(0, 1.5fr);
+		grid-template-rows: auto 1fr;
+		grid-template-areas:
+			'events entry trends'
+			'events entry entries';
+		gap: 0 1.5rem;
 		align-items: start;
 	}
-	.home-entry {
-		margin-block: var(--space) 0;
+	.fold-trends {
+		grid-area: trends;
 	}
-	.home-rest section:first-child h2 {
-		margin-top: var(--space);
+	.fold-events {
+		grid-area: events;
+	}
+	.fold-entry {
+		grid-area: entry;
+	}
+	.fold-entries {
+		grid-area: entries;
+	}
+	.trends {
+		grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
 	}
 	/* The top bar already wears the brand - the in-page eyebrow would
 	   say it twice (owner, 2026-08-24). The phone rail carries no
@@ -961,6 +1291,13 @@ textarea {
 	border: 1px solid var(--color-border-strong);
 	border-radius: var(--radius);
 	resize: vertical;
+}
+
+/* The date box keeps the browser's own flyout and typing (owner
+   ruling 2026-08-26); its calendar button just has to be seen. */
+input[type='date']::-webkit-calendar-picker-indicator {
+	cursor: pointer;
+	opacity: 0.85;
 }
 
 .badge {

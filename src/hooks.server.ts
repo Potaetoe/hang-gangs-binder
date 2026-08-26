@@ -3,9 +3,11 @@ import { getDb } from '$lib/server/db';
 import { sessionMember } from '$lib/server/auth';
 
 /**
- * What a browser is allowed to load. The pages ship no JavaScript of
- * their own, so the only script anywhere is Telegram's sign-in widget
- * and the frame it opens - everything else is refused outright.
+ * What a browser is allowed to load. The pages ship almost no
+ * JavaScript of their own - one static script (units-view.js, served
+ * same-origin under 'self') tidies the units-view parameter, and the
+ * only other script anywhere is Telegram's sign-in widget and the
+ * frame it opens. Everything else is refused outright.
  *
  * Styles are the one loose thread: the palette arrives as an inline
  * <style> in the layout head, so inline styles have to be allowed.
@@ -65,9 +67,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 	// A signed-in page is one member's data and belongs in no shared
 	// cache, ever - not a proxy's, not a future CDN rule's. Static
-	// assets are fingerprinted and left alone.
+	// assets are fingerprinted and left alone. Event images are the one
+	// signed-in exception: group data under a random immutable id, so
+	// the member's own browser may keep them - still `private`, so no
+	// shared cache ever holds a byte.
 	if (event.locals.member && !event.url.pathname.startsWith('/_app/')) {
-		response.headers.set('Cache-Control', 'private, no-store');
+		response.headers.set(
+			'Cache-Control',
+			event.url.pathname.startsWith('/events/image/')
+				? 'private, max-age=31536000, immutable'
+				: 'private, no-store'
+		);
 	}
 	return response;
 };

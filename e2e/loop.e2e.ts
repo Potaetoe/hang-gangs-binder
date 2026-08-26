@@ -19,6 +19,14 @@ async function openPasswordFlap(page: Page) {
 	}).toPass({ timeout: 10_000 });
 }
 
+/** The entries-table row carrying every given value - the table
+ * replaced the old summary line (owner ruling 2026-08-26). */
+function entryRow(page: Page, texts: string[]) {
+	let row = page.locator('.entries-table tbody tr');
+	for (const text of texts) row = row.filter({ hasText: text });
+	return row;
+}
+
 /** Register, approve through the test hook, sign in - the shortest
  * legitimate path to a member on their page. */
 async function signInFreshMember(page: Page, username: string) {
@@ -55,7 +63,9 @@ test('a member logs stats, reads them back, corrects and deletes, leaving a trai
 
 	// The entry reads back in the units it was typed in, with BMI
 	// worked out (185 lb at 5 ft 10 in is 26.5).
-	await expect(page.getByText('5 ft 10 in · 185 lb · 26.5 · Male · United States')).toBeVisible();
+	await expect(
+		entryRow(page, ['5 ft 10 in', '185 lb', '26.5', 'Male', 'United States'])
+	).toBeVisible();
 
 	// The form pre-fills what it already knows.
 	expect(await page.getByLabel(/height, feet/i).inputValue()).toBe('5');
@@ -64,34 +74,26 @@ test('a member logs stats, reads them back, corrects and deletes, leaving a trai
 	// A second entry gives every number a trend.
 	await fillStable(page, 'Weight', '187');
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(page.getByText('Trends')).toBeVisible();
+	await expect(page.getByText('Your trends')).toBeVisible();
 	await expect(page.locator('.trend').filter({ hasText: 'Weight' })).toBeVisible();
 
 	// Metric shows the same entry in the other system.
-	await page.getByRole('button', { name: 'Metric' }).click();
+	await page.getByRole('link', { name: 'Metric' }).click();
 	await expect(page.getByText('84.8 kg').first()).toBeVisible();
-	await page.getByRole('button', { name: /imperial/i }).click();
+	await page.getByRole('link', { name: /imperial/i }).click();
 
 	// A correction: 187 was a typo for 186.
-	await page
-		.locator('.history li')
-		.filter({ hasText: '187 lb' })
-		.getByRole('link', { name: 'Edit' })
-		.click();
+	await entryRow(page, ['187 lb']).getByRole('link', { name: 'Edit' }).click();
 	await expect(page.getByRole('heading', { name: /entry from/i })).toBeVisible();
 	await fillStable(page, 'Weight', '186');
 	await page.getByRole('button', { name: 'Save changes' }).click();
-	await expect(page.locator('.entry-summary').filter({ hasText: '186 lb' })).toBeVisible();
+	await expect(entryRow(page, ['186 lb'])).toBeVisible();
 
 	// A deletion: the first entry goes, from behind its flap.
-	await page
-		.locator('.history li')
-		.filter({ hasText: '185 lb' })
-		.getByRole('link', { name: 'Edit' })
-		.click();
+	await entryRow(page, ['185 lb']).getByRole('link', { name: 'Edit' }).click();
 	await page.getByText('Delete this entry').click();
 	await page.getByRole('button', { name: /yes, delete it/i }).click();
-	await expect(page.locator('.entry-summary').filter({ hasText: '185 lb' })).not.toBeVisible();
+	await expect(entryRow(page, ['185 lb'])).not.toBeVisible();
 
 	// Both corrections left their trail for admin review. Same-day
 	// rows have no stored order (the no-timestamp privacy rule), so
@@ -106,15 +108,15 @@ test('a metric member types kilograms and centimeters', async ({ page }) => {
 	const username = `metric${Date.now()}`;
 	await signInFreshMember(page, username);
 
-	await page.getByRole('button', { name: 'Metric' }).click();
+	await page.getByRole('link', { name: 'Metric' }).click();
 	await fillStable(page, 'Height', '178');
 	await fillStable(page, 'Weight', '84');
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(page.getByText('178 cm · 84 kg · 26.5')).toBeVisible();
+	await expect(entryRow(page, ['178 cm', '84 kg', '26.5'])).toBeVisible();
 
 	// The same entry back in American: both systems were stored.
-	await page.getByRole('button', { name: /imperial/i }).click();
-	await expect(page.getByText('5 ft 10.1 in · 185.2 lb · 26.5')).toBeVisible();
+	await page.getByRole('link', { name: /imperial/i }).click();
+	await expect(entryRow(page, ['5 ft 10.1 in', '185.2 lb', '26.5'])).toBeVisible();
 });
 
 test('a broken number is refused without losing the rest of the form', async ({ page }) => {
@@ -147,7 +149,7 @@ test('a number too big to be real is refused, and the charts survive', async ({ 
 	// A real weight saves, and the board still draws.
 	await fillStable(page, 'Weight', '205');
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(page.locator('.entry-summary').first()).toBeVisible();
+	await expect(page.locator('.entries-table tbody tr').first()).toBeVisible();
 	await page.locator('.rail').getByRole('link', { name: 'Group Stats' }).click();
 	await expect(page.locator('.tile').filter({ hasText: 'Weight' })).toBeVisible();
 });
@@ -168,9 +170,7 @@ test('a cleared field keeps its last value on a new entry', async ({ page }) => 
 	await fillStable(page, /height, inches/i, '');
 	await fillStable(page, 'Weight', '190');
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(
-		page.locator('.entry-summary').filter({ hasText: '5 ft 10 in · 190 lb · 27.3 · Male' })
-	).toBeVisible();
+	await expect(entryRow(page, ['5 ft 10 in', '190 lb', '27.3', 'Male'])).toBeVisible();
 });
 
 test('six foot nothing is a height, and America leads the country list', async ({ page }) => {
@@ -182,9 +182,7 @@ test('six foot nothing is a height, and America leads the country list', async (
 	await fillStable(page, /height, inches/i, '0');
 	await fillStable(page, 'Weight', '240');
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(
-		page.locator('.entry-summary').filter({ hasText: '6 ft 0 in · 240 lb' })
-	).toBeVisible();
+	await expect(entryRow(page, ['6 ft 0 in', '240 lb'])).toBeVisible();
 
 	// The country list leads with the group's actual countries.
 	await expect(page.getByLabel('Country').locator('option').nth(1)).toHaveText('United States');
@@ -197,6 +195,42 @@ test('an empty submit saves nothing and says so', async ({ page }) => {
 	await signInFreshMember(page, username);
 	await page.getByRole('button', { name: 'Save entry' }).click();
 	await expect(page.getByText(/nothing to save yet/i)).toBeVisible();
+});
+
+test('the settings units default survives a page toggle', async ({ page }) => {
+	const username = `unitary${Date.now()}`;
+	await signInFreshMember(page, username);
+
+	// Metric becomes the DEFAULT, chosen in Settings.
+	await page.locator('.rail').getByRole('link', { name: 'Settings' }).click();
+	const unitsSetting = page.locator('.setting').filter({ hasText: 'Units' });
+	await unitsSetting.getByRole('button', { name: 'Metric' }).click();
+	await expect(unitsSetting.getByRole('button', { name: 'Metric' })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+
+	// The home form arrives metric.
+	await page.goto('/home');
+	await expect(page.getByText('cm', { exact: true })).toBeVisible();
+
+	// The page toggle flips the VIEW to imperial - for this one look
+	// only. A reload renders the default again: the Settings choice is
+	// the rule of law (owner ruling 2026-08-26).
+	await page.getByRole('link', { name: /imperial/i }).click();
+	await expect(page.getByLabel(/height, feet/i)).toBeVisible();
+	// The page script strips ?u= after render; wait for that before
+	// reloading, or the reload can race it and keep the parameter.
+	await expect(page).not.toHaveURL(/u=imperial/);
+	await page.reload();
+	await expect(page.getByText('cm', { exact: true })).toBeVisible();
+
+	// And Settings still says Metric throughout.
+	await page.locator('.rail').getByRole('link', { name: 'Settings' }).click();
+	await expect(unitsSetting.getByRole('button', { name: 'Metric' })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
 });
 
 test('the shown name can be changed by its member', async ({ page }) => {

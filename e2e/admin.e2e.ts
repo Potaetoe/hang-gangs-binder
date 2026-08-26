@@ -100,7 +100,7 @@ test('the admin sees everything, and the passphrase walls the member off', async
 	await signIn(page, pat);
 	await fillStable(page, 'Weight', '200');
 	await page.getByRole('button', { name: 'Save entry' }).click();
-	await expect(page.locator('.entry-summary').first()).toBeVisible();
+	await expect(page.locator('.entries-table tbody tr').first()).toBeVisible();
 	await signOut(page);
 
 	// The admin opens the member and sees the number.

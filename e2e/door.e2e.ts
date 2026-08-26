@@ -101,8 +101,10 @@ test('a group member signs in through the Telegram door', async ({ page }) => {
 	});
 	await page.goto(`/auth/telegram?${query}`);
 	await expect(page.getByRole('heading', { name: /hello, tel member/i })).toBeVisible();
-	// The allow-list marks the operator as admin.
-	await expect(page.getByText(/as an admin/i)).toBeVisible();
+	// The allow-list marks the operator as admin: the name wears the
+	// accent and the rail carries the Admin door (owner, 2026-08-26).
+	await expect(page.locator('h1 .admin-name')).toBeVisible();
+	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).toBeVisible();
 });
 
 test('a forged Telegram payload is refused', async ({ page }) => {
