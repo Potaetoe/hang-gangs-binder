@@ -237,6 +237,13 @@
 						<p class="muted">
 							The field leaves the form and the charts. Its history stays, and it can come back.
 						</p>
+						{#if data.readBy.length}
+							<p class="error">
+								Careful: {data.readBy.join(', ')}
+								{data.readBy.length === 1 ? 'reads' : 'read'} this field — new entries there go blank
+								until it returns.
+							</p>
+						{/if}
 						<button>Yes, take it off</button>
 					</form>
 				</details>
@@ -252,6 +259,13 @@
 					<summary>Delete it</summary>
 					<form method="POST" action="?/delete">
 						<p class="muted">It never collected a value, so it can go completely.</p>
+						{#if data.readBy.length}
+							<p class="error">
+								Careful: {data.readBy.join(', ')}
+								{data.readBy.length === 1 ? 'reads' : 'read'} this field — those recipes go blank for
+								good.
+							</p>
+						{/if}
 						<button>Yes, delete it</button>
 					</form>
 				</details>

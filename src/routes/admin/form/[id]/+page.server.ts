@@ -18,6 +18,7 @@ import {
 } from '$lib/server/form';
 import {
 	describeFormula,
+	formulaReads,
 	isCalculated,
 	MAX_STEPS,
 	OPS,
@@ -49,10 +50,21 @@ export const load: PageServerLoad = async ({ platform, params }) => {
 			.limit(1)
 	)[0];
 
+	const fields = await allFields(db);
+
+	// The recipes that read THIS field, for the leaving-the-form
+	// warnings (owner ruling 2026-08-26): they go blank without it.
+	const readBy = fields
+		.filter((f) => {
+			if (!isCalculated(f) || f.id === field.id) return false;
+			const formula = parseFormula(f);
+			return formula !== null && formulaReads(formula).includes(field.id);
+		})
+		.map((f) => f.name);
+
 	// The guided builder's furniture, for calculated fields only.
 	let calc = null;
 	if (isCalculated(field)) {
-		const fields = await allFields(db);
 		const formula = parseFormula(field);
 		const inputs = fields.filter(
 			(f) => f.type === 'number' && !isCalculated(f) && f.status === 'active'
@@ -88,6 +100,7 @@ export const load: PageServerLoad = async ({ platform, params }) => {
 			options: fieldOptions(field),
 			used: Boolean(used)
 		},
+		readBy,
 		calc
 	};
 };

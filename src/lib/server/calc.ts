@@ -192,6 +192,18 @@ const operandName = (operand: Operand, fields: Field[]): string => {
 	return name;
 };
 
+/** Every field id a formula reads, however it reads it - for the
+ * "this will go blank" warnings when an input leaves the form. */
+export function formulaReads(formula: Formula): string[] {
+	const ids: string[] = [];
+	const add = (operand: Operand) => {
+		if (operand.kind !== 'const' && !ids.includes(operand.id)) ids.push(operand.id);
+	};
+	add(formula.start);
+	for (const step of formula.steps) add(step.value);
+	return ids;
+}
+
 /** The unique FIELD names a formula reads - the member-facing
  * "worked out from" note names inputs, never the math. */
 export function formulaInputNames(formula: Formula, fields: Field[]): string[] {

@@ -194,7 +194,10 @@ decisions.
    the form (inputs named, math private), the entries table, trends,
    and the full charts treatment. **BMI migrates into this system**
    as its first field: still essential, still un-retirable, and its
-   formula is locked — renameable, never rewritable.
+   formula is locked — renameable, never rewritable. Taking an input
+   off the form warns the admin which recipes read it (owner ruling
+   2026-08-26); while it is gone their new values are blank, and the
+   moment it returns they compute again.
 
 **Later**: (nothing — the 1.0 list is built).
 
