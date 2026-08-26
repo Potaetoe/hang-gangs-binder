@@ -8,7 +8,7 @@
 
 	const sections = [
 		{ path: '/admin/members', name: 'Members' },
-		{ path: '/admin/form', name: 'The form' },
+		{ path: '/admin/form', name: 'Modify Stats Form' },
 		{ path: '/admin/events', name: 'Events' },
 		{ path: '/admin/settings', name: 'Settings' },
 		{ path: '/admin/log', name: 'Change log' },

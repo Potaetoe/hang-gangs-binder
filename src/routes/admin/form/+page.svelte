@@ -6,7 +6,7 @@
 </script>
 
 <section>
-	<h2>The form</h2>
+	<h2>Modify Stats Form</h2>
 	<p class="muted">
 		What the form asks, in the order it asks it. A field you add reaches the member form and the
 		chart filters on its own.
