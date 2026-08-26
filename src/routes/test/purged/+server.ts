@@ -3,17 +3,19 @@ import { eq, sql } from 'drizzle-orm';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
 import * as table from '$lib/server/db/schema';
+import { requireTestHooks } from '$lib/server/test-hooks';
 
 /**
- * TEST HOOK, dead in production (TEST_HOOKS is only set in .dev.vars,
- * like /test/approve): counts every row still tied to a member id, so
- * the purge test can prove the departed cleanup left NOTHING - the
- * worst failure this app could have is a purge that only looked
- * complete.
+ * TEST HOOK, absent from production: a plain build tree-shakes the
+ * handler away (`__TEST_HOOKS__`, vite.config.ts) and only the 404
+ * below remains; in test builds the runtime TEST_HOOKS guard still
+ * gates it. Counts every row still tied to a member id, so the purge
+ * test can prove the departed cleanup left NOTHING - the worst
+ * failure this app could have is a purge that only looked complete.
  */
-export async function GET({ url, platform }: RequestEvent) {
+async function countLeftovers({ url, platform }: RequestEvent) {
 	const env = platform!.env;
-	if (env.TEST_HOOKS !== '1') error(404, 'Not found');
+	requireTestHooks(env);
 
 	const id = url.searchParams.get('id') ?? '';
 	if (!id) error(400, 'Which member?');
@@ -75,3 +77,5 @@ export async function GET({ url, platform }: RequestEvent) {
 	};
 	return json(counts);
 }
+
+export const GET = __TEST_HOOKS__ ? countLeftovers : () => error(404, 'Not found');

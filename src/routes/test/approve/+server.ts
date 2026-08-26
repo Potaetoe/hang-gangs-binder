@@ -4,17 +4,18 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
 import { logins, members } from '$lib/server/db/schema';
 import { hmacHex } from '$lib/server/crypto';
+import { requireTestHooks } from '$lib/server/test-hooks';
 
 /**
- * TEST HOOK, dead in production: exists only when TEST_HOOKS="1" is in
- * the environment, which .dev.vars sets locally and nothing sets on a
- * deployment. The e2e approval loop needs a way to play the admin
- * before the admin surface exists; once that surface ships, this file
- * goes with it.
+ * TEST HOOK, absent from production: a plain build tree-shakes the
+ * handler away (`__TEST_HOOKS__`, vite.config.ts) and only the 404
+ * below remains; in test builds the runtime TEST_HOOKS guard still
+ * gates it. Approves a registration so the e2e loop can play the
+ * admin without the admin surface.
  */
-export async function POST({ url, platform }: RequestEvent) {
+async function approve({ url, platform }: RequestEvent) {
 	const env = platform!.env;
-	if (env.TEST_HOOKS !== '1') error(404, 'Not found');
+	requireTestHooks(env);
 
 	const username = url.searchParams.get('username')?.toLowerCase() ?? '';
 	const db = getDb(env.DB);
@@ -24,3 +25,5 @@ export async function POST({ url, platform }: RequestEvent) {
 	await db.update(members).set({ status: 'approved' }).where(eq(members.id, login.memberId));
 	return json({ ok: true });
 }
+
+export const POST = __TEST_HOOKS__ ? approve : () => error(404, 'Not found');

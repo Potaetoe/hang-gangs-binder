@@ -137,19 +137,43 @@ with tempfile.TemporaryDirectory() as tmp:
     os.makedirs(mig, exist_ok=True)
     with open(os.path.join(mig, "0001_first.sql"), "w") as f:
         f.write("-- fixture")
+    # Every deploy_gate case pins BINDER_BUNDLE to a fixture, so the
+    # selftest never reads the real .svelte-kit build - a developer
+    # whose last local build was a test build would otherwise see the
+    # migration cases fail on the bundle rule instead.
+    clean_bundle = os.path.join(tmp, "worker-clean.js")
+    with open(clean_bundle, "w") as f:
+        f.write("export default { fetch() {} };")
+    hooked_bundle = os.path.join(tmp, "worker-hooked.js")
+    with open(hooked_bundle, "w") as f:
+        f.write('error(404, "BINDER-TEST-HOOKS-COMPILED-IN");')
     env_mig = dict(state_env({"migrations_applied": "0000_older.sql"}))
     env_mig["BINDER_MIGRATIONS_DIR"] = mig
+    env_mig["BINDER_BUNDLE"] = clean_bundle
     check("deploy with unapplied migration", "deploy_gate.py",
           bash("npx wrangler deploy"), True, env_mig)
     env_ok = dict(state_env({"migrations_applied": "0001_first.sql"}))
     env_ok["BINDER_MIGRATIONS_DIR"] = mig
+    env_ok["BINDER_BUNDLE"] = clean_bundle
     check("deploy with migrations current", "deploy_gate.py",
           bash("npx wrangler deploy"), False, env_ok)
+    env_hooked = dict(state_env({"migrations_applied": "0001_first.sql"}))
+    env_hooked["BINDER_MIGRATIONS_DIR"] = mig
+    env_hooked["BINDER_BUNDLE"] = hooked_bundle
+    check("deploy of a bundle with test hooks compiled in",
+          "deploy_gate.py", bash("npx wrangler deploy"), True, env_hooked)
+    env_missing = dict(state_env({"migrations_applied": "0001_first.sql"}))
+    env_missing["BINDER_MIGRATIONS_DIR"] = mig
+    env_missing["BINDER_BUNDLE"] = os.path.join(tmp, "no-such-worker.js")
+    check("a missing bundle is wrangler's problem, not the gate's",
+          "deploy_gate.py", bash("npx wrangler deploy"), False,
+          env_missing)
     # state_env writes ONE shared file, so behind-state is rebuilt
     # before each case that needs it - the first version of these two
     # reused a dict whose file a later case had already overwritten.
     env_behind = dict(state_env({"migrations_applied": "0000_older.sql"}))
     env_behind["BINDER_MIGRATIONS_DIR"] = mig
+    env_behind["BINDER_BUNDLE"] = clean_bundle
     check("record-migration && deploy in ONE chain passes",
           "deploy_gate.py",
           bash("py -3 hooks/record.py migrations-applied "
@@ -157,6 +181,7 @@ with tempfile.TemporaryDirectory() as tmp:
           False, env_behind)
     env_behind = dict(state_env({"migrations_applied": "0000_older.sql"}))
     env_behind["BINDER_MIGRATIONS_DIR"] = mig
+    env_behind["BINDER_BUNDLE"] = clean_bundle
     check("record ; deploy (not &&) is still denied", "deploy_gate.py",
           bash("py -3 hooks/record.py migrations-applied "
                "0001_first.sql ; npx wrangler deploy"),

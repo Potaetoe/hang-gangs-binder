@@ -109,7 +109,12 @@ and a pass case) and runs in CI.
    an unmerged-quality change through.
 3. **deploy-gate** — blocks `wrangler deploy` when the newest migration
    file has not been recorded as applied. The schema goes first, as a
-   machine rule, from day one.
+   machine rule, from day one. Since 2026-08-26 it also refuses to
+   deploy a bundle that still contains the `/test/*` hooks: a plain
+   production build erases them at build time (they exist only in
+   `vite dev` and in builds run with `TEST_HOOKS=1`, which is how the
+   e2e suite gets them), and a bundle carrying their marker string is
+   a test build that must not reach production.
 4. **git-guard** — blocks force-pushes to the default branch, pushes to
    the frozen old branches, and `--no-verify`. Since 2026-08-26 (owner
    order, after PowerShell 5.1 mangled inline prose into git errors
