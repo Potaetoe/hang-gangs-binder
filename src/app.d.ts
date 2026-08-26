@@ -10,6 +10,9 @@ declare global {
 
 		interface Locals {
 			member: { memberId: string; isAdmin: boolean; mustChange: boolean } | null;
+			/** Per-request CSP nonce; the layout stamps it on the one
+			 * inline <style> (security review finding 7). */
+			cspNonce: string;
 		}
 	}
 }

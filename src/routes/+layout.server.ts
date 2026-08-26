@@ -14,6 +14,7 @@ export const load: LayoutServerLoad = async ({ platform, locals, cookies }) => {
 		welcomeText: settings.welcomeText,
 		theme,
 		themeCss: themeCss(theme),
+		cspNonce: locals.cspNonce,
 		isAdmin: locals.member?.isAdmin ?? false,
 		// Desktop mode (owner ruling 2026-08-26): an admin can call the
 		// Admin door onto the phone rail for one sitting - a session

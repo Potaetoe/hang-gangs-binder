@@ -1,4 +1,4 @@
-// The door's feature loops (DESIGN.md, "Sign-in: two doors"), driven
+﻿// The door's feature loops (DESIGN.md, "Sign-in: two doors"), driven
 // the way a person drives them. The Telegram loop signs a real payload
 // with the local test bot token from .dev.vars; membership comes from
 // TELEGRAM_ALLOW_IDS, so no test ever calls Telegram.
@@ -38,6 +38,18 @@ function signedTelegramQuery(fields: Record<string, string>): string {
 	const secret = createHash('sha256').update(TEST_BOT_TOKEN).digest();
 	const hash = createHmac('sha256', secret).update(dataCheck).digest('hex');
 	return new URLSearchParams({ ...fields, hash }).toString();
+}
+
+/** Walk the door the way the widget does (finding 3, 2026-08-26): the
+ * door page sets the state cookie and bakes the same value into the
+ * widget's return URL; Telegram sends the person back through that
+ * URL with its signed fields appended. The state is read from the
+ * widget markup, exactly where Telegram would read it. */
+async function throughTelegramDoor(page: Page, query: string) {
+	await page.goto('/');
+	const authUrl = await page.locator('script[data-telegram-login]').getAttribute('data-auth-url');
+	const state = new URL(authUrl!, 'http://door').searchParams.get('state');
+	await page.goto(`/auth/telegram?state=${state}&${query}`);
 }
 
 test('a stranger asks for an account, an admin approves, they sign in, they sign out', async ({
@@ -99,7 +111,7 @@ test('a group member signs in through the Telegram door', async ({ page }) => {
 		username: 'tel_member',
 		auth_date: String(Math.floor(Date.now() / 1000))
 	});
-	await page.goto(`/auth/telegram?${query}`);
+	await throughTelegramDoor(page, query);
 	await expect(page.getByRole('heading', { name: /hello, tel member/i })).toBeVisible();
 	// The allow-list marks the operator as admin: the name wears the
 	// accent and the rail carries the Admin door (owner, 2026-08-26).
@@ -133,7 +145,7 @@ test('an admin removed by an admin stays removed, and the operator allow-list st
 		username: `hatch${stamp}`,
 		auth_date: String(Math.floor(Date.now() / 1000))
 	});
-	await page.goto(`/auth/telegram?${query}`);
+	await throughTelegramDoor(page, query);
 	await expect(page.getByRole('heading', { name: /hello, hatch/i })).toBeVisible();
 	await page.getByRole('button', { name: 'Sign out' }).click();
 
@@ -163,7 +175,7 @@ test('an admin removed by an admin stays removed, and the operator allow-list st
 		username: `hatch${stamp}`,
 		auth_date: String(Math.floor(Date.now() / 1000))
 	});
-	await page.goto(`/auth/telegram?${again}`);
+	await throughTelegramDoor(page, again);
 	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).toBeVisible();
 });
 
@@ -173,7 +185,7 @@ test('a forged Telegram payload is refused', async ({ page }) => {
 		first_name: 'Forged',
 		auth_date: String(Math.floor(Date.now() / 1000))
 	});
-	await page.goto(`/auth/telegram?${query.replace(/hash=\w{8}/, 'hash=00000000')}`);
+	await throughTelegramDoor(page, query.replace(/hash=\w{8}/, 'hash=00000000'));
 	await expect(page.getByText(/could not be verified/i)).toBeVisible();
 });
 
@@ -189,11 +201,15 @@ test('a Telegram sign-in link works once and is dead after that', async ({ page 
 		auth_date: String(Math.floor(Date.now() / 1000))
 	});
 
-	await page.goto(`/auth/telegram?${query}`);
+	await throughTelegramDoor(page, query);
 	await expect(page.getByRole('heading', { name: /hello, replay target/i })).toBeVisible();
 
-	// The same link again buys nothing - the payload is spent.
-	await page.goto(`/auth/telegram?${query}`);
+	// The same link again buys nothing - the payload is spent. Signed
+	// out first: a captured link is tried from a browser that is not
+	// already in, and the door page only offers its widget (and mints
+	// its state) to the signed-out.
+	await page.getByRole('button', { name: 'Sign out' }).click();
+	await throughTelegramDoor(page, query);
 	await expect(page.getByText(/could not be verified/i)).toBeVisible();
 });
 
@@ -203,8 +219,27 @@ test('a stale Telegram payload is refused even though it is signed', async ({ pa
 		first_name: 'Stale',
 		auth_date: String(Math.floor(Date.now() / 1000) - 3600)
 	});
-	await page.goto(`/auth/telegram?${query}`);
+	await throughTelegramDoor(page, query);
 	await expect(page.getByText(/could not be verified/i)).toBeVisible();
+});
+
+test('a signed Telegram link without the door state is refused', async ({ page }) => {
+	// The login-CSRF closure (finding 3): a crafted link can carry a
+	// perfectly signed payload, but it cannot know the door cookie.
+	// The state pair is checked before the signature is even looked at.
+	const query = signedTelegramQuery({
+		id: ALLOWED_TELEGRAM_ID,
+		first_name: 'Crafted',
+		auth_date: String(Math.floor(Date.now() / 1000))
+	});
+	await page.goto(`/auth/telegram?${query}`);
+	await expect(page.getByText(/took too long or started somewhere else/i)).toBeVisible();
+
+	// A wrong state is the same refusal: visiting the door first sets
+	// the cookie, but the crafted link still cannot name its value.
+	await page.goto('/');
+	await page.goto(`/auth/telegram?state=notthecookievalue&${query}`);
+	await expect(page.getByText(/took too long or started somewhere else/i)).toBeVisible();
 });
 
 test('every response carries the security headers', async ({ page }) => {
@@ -212,6 +247,11 @@ test('every response carries the security headers', async ({ page }) => {
 	const headers = response!.headers();
 	expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
 	expect(headers['content-security-policy']).toContain('https://telegram.org');
+	// Inline styles are refused wholesale now; only the layout's
+	// nonce-stamped palette block gets through (finding 7). The plum
+	// drive in admin.e2e proves the browser really applies it.
+	expect(headers['content-security-policy']).not.toContain('unsafe-inline');
+	expect(headers['content-security-policy']).toMatch(/style-src 'self' 'nonce-[0-9a-f]{32}'/);
 	expect(headers['x-content-type-options']).toBe('nosniff');
 	expect(headers['x-robots-tag']).toContain('noindex');
 	expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin');

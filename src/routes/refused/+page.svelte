@@ -8,7 +8,9 @@
 			? 'This binder is for members of the group. Your Telegram account is not in it.'
 			: why === 'bad-signature'
 				? 'That sign-in could not be verified. Go back and try again.'
-				: 'Telegram could not be reached to check membership. Try again in a minute.'
+				: why === 'stale-door'
+					? 'That sign-in took too long or started somewhere else. Go back and sign in again.'
+					: 'Telegram could not be reached to check membership. Try again in a minute.'
 	);
 </script>
 

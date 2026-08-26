@@ -1,6 +1,7 @@
 import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
 import { SESSION_COOKIE, sessionMember } from '$lib/server/auth';
+import { randomToken } from '$lib/server/crypto';
 
 /**
  * The ONE logging call in the app (owner OK 2026-08-26, after an
@@ -36,30 +37,30 @@ export const handleError: HandleServerError = ({ error, event, status }) => {
  * only other script anywhere is Telegram's sign-in widget and the
  * frame it opens. Everything else is refused outright.
  *
- * Styles are the one loose thread: the palette arrives as an inline
- * <style> in the layout head, so inline styles have to be allowed.
- * That block is built from the shipped palette map and never from
- * anything a person typed, and a style cannot execute code, so the
- * trade is small and deliberate.
+ * Styles used to be the one loose thread: the palette arrives as an
+ * inline <style> in the layout head, which needed 'unsafe-inline'.
+ * Since 2026-08-26 (security review finding 7) that block carries a
+ * per-request nonce instead - the layout stamps it on the tag, and
+ * only THAT inline style is allowed, not any a page might smuggle.
  */
-const CSP = [
-	"default-src 'self'",
-	"script-src 'self' https://telegram.org",
-	'frame-src https://oauth.telegram.org',
-	"style-src 'self' 'unsafe-inline'",
-	"font-src 'self'",
-	"img-src 'self' data: https://telegram.org",
-	"connect-src 'self'",
-	// Forms post to this site and nowhere else - a stolen page cannot
-	// be made to send a member's entry somewhere off-site.
-	"form-action 'self'",
-	"frame-ancestors 'none'",
-	"base-uri 'self'",
-	"object-src 'none'"
-].join('; ');
+const cspWith = (nonce: string) =>
+	[
+		"default-src 'self'",
+		"script-src 'self' https://telegram.org",
+		'frame-src https://oauth.telegram.org',
+		`style-src 'self' 'nonce-${nonce}'`,
+		"font-src 'self'",
+		"img-src 'self' data: https://telegram.org",
+		"connect-src 'self'",
+		// Forms post to this site and nowhere else - a stolen page cannot
+		// be made to send a member's entry somewhere off-site.
+		"form-action 'self'",
+		"frame-ancestors 'none'",
+		"base-uri 'self'",
+		"object-src 'none'"
+	].join('; ');
 
 const SECURITY_HEADERS: Record<string, string> = {
-	'Content-Security-Policy': CSP,
 	// A private group's binder belongs in no search index. robots.txt
 	// turns away crawlers that read it; this turns away the rest.
 	'X-Robots-Tag': 'noindex, nofollow',
@@ -75,6 +76,9 @@ const SECURITY_HEADERS: Record<string, string> = {
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const env = event.platform?.env;
+	// A fresh nonce per request, for the one inline <style> the layout
+	// renders. 128 bits, same coinage as a session token.
+	event.locals.cspNonce = randomToken(16);
 	event.locals.member = env
 		? await sessionMember(getDb(env.DB), event.cookies.get(SESSION_COOKIE))
 		: null;
@@ -89,6 +93,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		redirect(303, '/password');
 	}
 	const response = await resolve(event);
+	response.headers.set('Content-Security-Policy', cspWith(event.locals.cspNonce));
 	for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
 		response.headers.set(name, value);
 	}

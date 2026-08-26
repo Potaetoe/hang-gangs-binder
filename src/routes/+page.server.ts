@@ -1,16 +1,34 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
-import { SESSION_COOKIE, signInPassword, type Secrets } from '$lib/server/auth';
+import { SESSION_COOKIE, signInPassword, TG_STATE_COOKIE, type Secrets } from '$lib/server/auth';
+import { randomToken } from '$lib/server/crypto';
 import { TOO_MANY_MESSAGE, tooManyAttempts } from '$lib/server/throttle';
 
-export const load: PageServerLoad = async ({ locals, platform }) => {
+export const load: PageServerLoad = async ({ locals, platform, cookies }) => {
 	if (locals.member) redirect(303, '/home');
+	const telegramBot = platform?.env.TELEGRAM_BOT_USERNAME ?? null;
+	// The state pair (finding 3): a fresh random value on every door
+	// render, in a short-lived cookie AND in the widget's return URL.
+	// SameSite lax on purpose - the return from oauth.telegram.org is a
+	// cross-site top-level navigation, and Lax cookies ride on those.
+	let tgState: string | null = null;
+	if (telegramBot) {
+		tgState = randomToken(16);
+		cookies.set(TG_STATE_COOKIE, tgState, {
+			path: '/',
+			httpOnly: true,
+			sameSite: 'lax',
+			secure: true,
+			maxAge: 600
+		});
+	}
 	return {
 		// The widget needs the bot's public username; without it the
 		// Telegram door renders as "not set up yet" instead of a broken
 		// button.
-		telegramBot: platform?.env.TELEGRAM_BOT_USERNAME ?? null
+		telegramBot,
+		tgState
 	};
 };
 

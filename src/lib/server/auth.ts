@@ -161,6 +161,13 @@ export async function setDisplayName(db: Db, secrets: Secrets, memberId: string,
  * review finding 8, 2026-08-26). Renaming signed everyone out once. */
 export const SESSION_COOKIE = '__Host-session';
 
+/** The Telegram door's state pair (security review finding 3, login
+ * CSRF): the door page sets this cookie to a random value and puts
+ * the same value in the widget's return URL. The return compares the
+ * two, so a crafted /auth/telegram link - which cannot know the
+ * cookie - cannot land a victim in an attacker's account. */
+export const TG_STATE_COOKIE = '__Host-tg-state';
+
 /** A session says WHO, never what they may do (fix pass 2026-08-25).
  * It used to carry an is_admin snapshot too, which meant two places
  * could disagree about the same power - the member row is the only
