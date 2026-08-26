@@ -137,6 +137,6 @@ test('the rail is a bottom bar on the phone and wears the brand on desktop', asy
 	await expect(page.locator('.rail').getByRole('button', { name: 'Sign out' })).not.toBeVisible();
 	await page.locator('.rail').getByRole('link', { name: 'Settings' }).click();
 	await expect(page.getByRole('button', { name: 'Sign out on this device' })).toBeVisible();
-	// Desktop mode is the admin's escape hatch - a member never sees it.
-	await expect(page.getByRole('heading', { name: 'Desktop mode' })).not.toBeVisible();
+	// Mobile Admin Mode is the admin's escape hatch - a member never sees it.
+	await expect(page.getByRole('heading', { name: 'Mobile Admin Mode' })).not.toBeVisible();
 });

@@ -148,21 +148,22 @@
 		{/if}
 
 		{#if page.data.isAdmin}
-			<!-- Desktop mode (owner ruling 2026-08-26): the phone rail keeps
-			     its four stops, but an admin can call the Admin door onto it
-			     for one sitting - the cookie dies with the browser. Desktop
-			     widths already carry the door, so the section is phone-only. -->
+			<!-- Mobile Admin Mode (owner ruling 2026-08-26): the phone rail
+			     keeps its four stops, but an admin can call the Admin door
+			     onto it for one sitting - the cookie dies with the browser.
+			     Desktop widths already carry the door, so the section is
+			     phone-only. -->
 			<section class="setting phone-only">
-				<h2>Desktop mode</h2>
+				<h2>Mobile Admin Mode</h2>
 				<p class="muted">
 					Puts the Admin door on this phone's rail until the browser closes. Admin pages are built
 					for the desktop — expect a squeeze.
 				</p>
 				<form method="POST" action="?/desk">
 					{#if page.data.adminDoor}
-						<button class="quiet" name="door" value="shut">Back to the phone rail</button>
+						<button class="quiet" name="door" value="shut">Turn off Mobile Admin Mode</button>
 					{:else}
-						<button class="quiet" name="door" value="open">Switch to desktop mode</button>
+						<button class="quiet" name="door" value="open">Turn on Mobile Admin Mode</button>
 					{/if}
 				</form>
 			</section>

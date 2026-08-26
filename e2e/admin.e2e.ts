@@ -324,11 +324,11 @@ test('an admin calls the Admin door onto the phone rail for one sitting', async 
 	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).toBeVisible();
 
 	// The phone rail runs four stops - no Admin - but Settings offers
-	// desktop mode to an admin (owner ruling 2026-08-26).
+	// Mobile Admin Mode to an admin (owner ruling 2026-08-26).
 	await page.setViewportSize({ width: 375, height: 812 });
 	await page.goto('/settings');
 	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).not.toBeVisible();
-	await page.getByRole('button', { name: 'Switch to desktop mode' }).click();
+	await page.getByRole('button', { name: 'Turn on Mobile Admin Mode' }).click();
 
 	// The door is on the rail now, and it opens.
 	await page.locator('.rail').getByRole('link', { name: 'Admin' }).click();
@@ -337,10 +337,10 @@ test('an admin calls the Admin door onto the phone rail for one sitting', async 
 	// The desktop width already carries the door, so the section hides.
 	await page.goto('/settings');
 	await page.setViewportSize({ width: 1280, height: 800 });
-	await expect(page.getByRole('heading', { name: 'Desktop mode' })).not.toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Mobile Admin Mode' })).not.toBeVisible();
 	await page.setViewportSize({ width: 375, height: 812 });
 
 	// Shut it by hand; closing the browser would have done the same.
-	await page.getByRole('button', { name: 'Back to the phone rail' }).click();
+	await page.getByRole('button', { name: 'Turn off Mobile Admin Mode' }).click();
 	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).not.toBeVisible();
 });

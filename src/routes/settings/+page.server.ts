@@ -86,9 +86,9 @@ export const actions: Actions = {
 		return { socialsSaved: true };
 	},
 
-	/** Desktop mode (owner ruling 2026-08-26): an admin calls the Admin
-	 * door onto the phone rail for one sitting. The cookie carries no
-	 * age, so closing the browser puts the phone view back on its own. */
+	/** Mobile Admin Mode (owner ruling 2026-08-26): an admin calls the
+	 * Admin door onto the phone rail for one sitting. The cookie carries
+	 * no age, so closing the browser puts the phone view back on its own. */
 	desk: async ({ request, locals, cookies }) => {
 		if (!locals.member) redirect(303, '/');
 		const open = (await request.formData()).get('door') === 'open';
