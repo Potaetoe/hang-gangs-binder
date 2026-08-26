@@ -1108,6 +1108,11 @@ span.lightbox-step.off {
 /* desktop layouts, not a stretched phone column.                     */
 
 @media (min-width: 900px) {
+	/* Things the desktop face already covers - like the desktop-mode
+	   switch, whose door is on this width's rail anyway. */
+	.phone-only {
+		display: none;
+	}
 	.rail {
 		position: sticky;
 		top: 0;

@@ -14,6 +14,10 @@ export const load: LayoutServerLoad = async ({ platform, locals, cookies }) => {
 		welcomeText: settings.welcomeText,
 		theme,
 		themeCss: themeCss(theme),
-		isAdmin: locals.member?.isAdmin ?? false
+		isAdmin: locals.member?.isAdmin ?? false,
+		// Desktop mode (owner ruling 2026-08-26): an admin can call the
+		// Admin door onto the phone rail for one sitting - a session
+		// cookie, gone when the browser closes.
+		adminDoor: (locals.member?.isAdmin ?? false) && cookies.get('admin_door') === 'here'
 	};
 };

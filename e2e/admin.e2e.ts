@@ -315,3 +315,32 @@ test('settings shape the site', async ({ page }) => {
 	await page.getByRole('button', { name: 'Save settings' }).click();
 	await expect(page.getByText('Saved.')).toBeVisible();
 });
+
+test('an admin calls the Admin door onto the phone rail for one sitting', async ({ page }) => {
+	const boss = `deskboss${Date.now()}`;
+	await register(page, boss);
+	await makeAdmin(page, boss);
+	await signIn(page, boss);
+	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).toBeVisible();
+
+	// The phone rail runs four stops - no Admin - but Settings offers
+	// desktop mode to an admin (owner ruling 2026-08-26).
+	await page.setViewportSize({ width: 375, height: 812 });
+	await page.goto('/settings');
+	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).not.toBeVisible();
+	await page.getByRole('button', { name: 'Switch to desktop mode' }).click();
+
+	// The door is on the rail now, and it opens.
+	await page.locator('.rail').getByRole('link', { name: 'Admin' }).click();
+	await expect(page).toHaveURL(/\/admin/);
+
+	// The desktop width already carries the door, so the section hides.
+	await page.goto('/settings');
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await expect(page.getByRole('heading', { name: 'Desktop mode' })).not.toBeVisible();
+	await page.setViewportSize({ width: 375, height: 812 });
+
+	// Shut it by hand; closing the browser would have done the same.
+	await page.getByRole('button', { name: 'Back to the phone rail' }).click();
+	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).not.toBeVisible();
+});

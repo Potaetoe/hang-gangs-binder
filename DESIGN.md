@@ -229,7 +229,11 @@ title must say something the rail does not, like "Hello, Marcus" or
 a field's name. The phone rail runs four stops — Home, Group Stats,
 Socials, Settings (owner ruling 2026-08-26, after an iPhone drive):
 Sign out lives in Settings there, and the Admin door is desktop's
-alone, matching the desktop-only admin ruling. The page never
+alone, matching the desktop-only admin ruling — though an admin can
+call the door onto the phone rail for one sitting from a phone-only
+Settings switch (owner ruling 2026-08-26): a session cookie, gone
+when the browser closes, and the admin pages come as the squeeze
+they are. The page never
 rubber-bands, and a scrolling card keeps its own momentum. Layout and detail are free to
 improve as pages are rebuilt as components. The rebuild changes the
 machinery, not the face.

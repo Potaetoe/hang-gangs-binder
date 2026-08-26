@@ -86,6 +86,25 @@ export const actions: Actions = {
 		return { socialsSaved: true };
 	},
 
+	/** Desktop mode (owner ruling 2026-08-26): an admin calls the Admin
+	 * door onto the phone rail for one sitting. The cookie carries no
+	 * age, so closing the browser puts the phone view back on its own. */
+	desk: async ({ request, locals, cookies }) => {
+		if (!locals.member) redirect(303, '/');
+		const open = (await request.formData()).get('door') === 'open';
+		if (open && locals.member.isAdmin) {
+			cookies.set('admin_door', 'here', {
+				path: '/',
+				httpOnly: true,
+				sameSite: 'lax',
+				secure: true
+			});
+		} else {
+			cookies.delete('admin_door', { path: '/' });
+		}
+		redirect(303, '/settings');
+	},
+
 	units: async ({ request, locals, cookies }) => {
 		if (!locals.member) redirect(303, '/');
 		const form = await request.formData();

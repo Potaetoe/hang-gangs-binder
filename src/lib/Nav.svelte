@@ -4,6 +4,7 @@
 
 	let { active }: { active: 'home' | 'charts' | 'socials' | 'admin' | 'settings' } = $props();
 	const isAdmin = $derived(Boolean(page.data.isAdmin));
+	const adminDoor = $derived(Boolean(page.data.adminDoor));
 	const siteName = $derived(String(page.data.siteName ?? 'Hang Gang'));
 </script>
 
@@ -96,9 +97,11 @@
 		<span>Settings</span>
 	</a>
 	{#if isAdmin}
+		<!-- Desktop's alone - unless the admin called the door onto the
+		     phone rail for this sitting (owner ruling 2026-08-26). -->
 		<a
 			href={resolve('/admin')}
-			class="rail-wide"
+			class:rail-wide={!adminDoor}
 			class:on={active === 'admin'}
 			aria-current={active === 'admin' ? 'page' : undefined}
 		>

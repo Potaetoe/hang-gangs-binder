@@ -121,9 +121,8 @@
 							<article class="event card" id={'ev-' + event.id}>
 								<div class="event-body">
 									<p class="muted event-date">
-										{event.dateLabel}{#if event.timeLabel}{' '}&middot;
-											<span data-epoch={event.epoch} data-date={event.date}
-												>{event.timeLabel}</span
+										{event.dateLabel}{#if event.timeLabel}&nbsp;&middot;
+											<span data-epoch={event.epoch} data-date={event.date}>{event.timeLabel}</span
 											>{/if}
 									</p>
 									<h3 class="event-title">{event.title}</h3>
