@@ -114,7 +114,13 @@ and a pass case) and runs in CI.
    production build erases them at build time (they exist only in
    `vite dev` and in builds run with `TEST_HOOKS=1`, which is how the
    e2e suite gets them), and a bundle carrying their marker string is
-   a test build that must not reach production.
+   a test build that must not reach production. Since 2026-08-27 its
+   bundle rule and the migration-guard's pragma scan also re-fire in
+   the release pipeline (hooks/ci_gate.py, imported from the hooks so
+   each rule keeps one home) - GitHub's runner has no hooks. The
+   migrations-applied record stays local-only: the pipeline applies
+   migrations itself before every deploy, so the record guards just
+   the break-glass path.
 4. **git-guard** — blocks force-pushes to the default branch, pushes to
    the frozen old branches, and `--no-verify`. Since 2026-08-26 (owner
    order, after PowerShell 5.1 mangled inline prose into git errors
@@ -153,15 +159,26 @@ everything mechanical; the selftest proves each one fires.
 
 ## Ops runbook
 
-- **Deploy:** `wrangler deploy` of the SvelteKit app.
-- **Releases (owner ruling 2026-08-24):** until launch, production IS
-  the test site - features deploy straight to the one URL and the
-  owner test-drives there, since no member is affected. AT LAUNCH this
-  flips to preview versions: feature work goes up with
-  `wrangler versions upload`, the owner drives the version's own
-  preview URL, and production moves only when Claude promotes after
-  the sign-off. A preview version shares production's database, so a
-  schema-changing feature gets flagged before its preview goes up.
+- **Deploy:** the pipeline deploys, not the laptop (owner OK
+  2026-08-27, replacing the 2026-08-24 straight-to-prod ruling - the
+  flip planned for launch, taken early). Merging to main runs the
+  deploy job in .github/workflows/ci.yml: rebuild, re-fire the
+  deploy-gate and migration-guard rules (hooks/ci_gate.py), apply
+  pending D1 migrations (schema first), `wrangler deploy`, then a
+  smoke check of the live URL. A manual `wrangler deploy` from a
+  machine is break-glass only - for when GitHub or the pipeline itself
+  is down - and the local hooks still gate it.
+- **Releases:** every PR uploads a preview version at a stable URL
+  (`<branch>-hang-gangs-binder.sorcererbiggz.workers.dev`), posted as
+  a PR comment. Preview URLs sit behind Cloudflare Access (previews
+  only; the owner's email, one-time PIN; a dashboard setting, made
+  2026-08-27) - production stays public. Test-drives happen on the
+  preview; production moves only by the merge, after sign-off. A
+  preview shares production's database, so a PR carrying migrations
+  gets a loud warning in its preview comment and its schema-needing
+  routes wait for the merge. Rollback is `npx wrangler rollback` -
+  code only. Migrations never roll back, so every migration must
+  leave the previous code able to run.
 - **Secrets:** six of them — the bot token, the bot username, the group
   chat ID, the admin allow-list of Telegram IDs (how a fork's first
   admin is made), the identity-scramble secret, the directory-seal
@@ -169,6 +186,10 @@ everything mechanical; the selftest proves each one fires.
   no secret — they are random tokens stored hashed in the database.)
   Losing the directory-seal secret makes every stored identity
   permanently unreadable; the stats survive, the names do not.
+  The pipeline holds a seventh: `CLOUDFLARE_API_TOKEN`, a GitHub
+  Actions repo secret (Workers Scripts edit + D1 edit) that lets the
+  deploy job apply migrations and deploy. It lives in GitHub's secret
+  store, set by the owner, never in a file.
 - **Database:** D1, schema changes only through migration files applied
   with `wrangler d1 migrations apply` — before deploying code that
   needs them. The app refuses loudly (not quietly) when the schema is
