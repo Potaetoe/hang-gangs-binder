@@ -276,6 +276,16 @@ test('the admin curates which fields carry trend lines', async ({ page }) => {
 	await expect(page.locator('.trend').filter({ hasText: 'BMI' })).not.toBeVisible();
 	await page.goto('/admin/log');
 	await expect(page.getByText('changed the trend graphs').first()).toBeVisible();
+
+	// Put the singleton back (flake hunt, 2026-08-26): the trend set is
+	// site-wide, and leaving it flipped is a trap for any future test
+	// in another file that assumes the default. Writers stay serial in
+	// this file; this keeps the state they hand each other the default.
+	await page.goto('/admin/settings');
+	await page.getByRole('checkbox', { name: 'Height' }).uncheck();
+	await page.getByRole('checkbox', { name: 'BMI' }).check();
+	await page.getByRole('button', { name: 'Save settings' }).click();
+	await expect(page.getByText('Saved.')).toBeVisible();
 });
 
 test('settings shape the site', async ({ page }) => {
