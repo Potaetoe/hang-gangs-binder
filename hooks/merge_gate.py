@@ -17,7 +17,7 @@ import re
 from _common import (read_input, read_state, write_state, command_of,
                      chained, current_branch, strip_quoted, deny)
 
-DEFAULT = "v1"
+DEFAULT = "main"
 
 
 def signoff_for(state, target):

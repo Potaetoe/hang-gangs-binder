@@ -64,7 +64,8 @@ with tempfile.TemporaryDirectory() as tmp:
           bash("git push origin feature-x && gh api -X PATCH x -f a=b"),
           False, state_env())
     check("push to a frozen branch", "git_guard.py",
-          bash("git push origin old-accounts"), True, state_env())
+          bash("git push origin attempt_for_custom_crypto"), True,
+          state_env())
     check("--no-verify", "git_guard.py",
           bash("git commit --no-verify -m x"), True, state_env())
     check("inline commit message (-m) - PS 5.1 mangles prose",
@@ -103,32 +104,32 @@ with tempfile.TemporaryDirectory() as tmp:
     check("pr merge with sign-off", "merge_gate.py",
           bash("gh pr merge feature-x --merge"), False,
           state_env({"signoff": {"target": "feature-x"}}))
-    check("push to v1 without sign-off", "merge_gate.py",
-          bash("git push origin v1"), True, state_env())
-    check("push to v1 with sign-off", "merge_gate.py",
-          bash("git push origin v1"), False,
-          state_env({"signoff": {"target": "v1"}}))
+    check("push to main without sign-off", "merge_gate.py",
+          bash("git push origin main"), True, state_env())
+    check("push to main with sign-off", "merge_gate.py",
+          bash("git push origin main"), False,
+          state_env({"signoff": {"target": "main"}}))
     check("feature-branch push needs no sign-off", "merge_gate.py",
           bash("git push origin feature-x"), False, state_env())
     check("record-signoff && push in ONE chain passes - a failed "
           "record stops the chain anyway", "merge_gate.py",
-          bash('py -3 hooks/record.py signoff v1 "ok" && '
-               'git push origin v1'),
+          bash('py -3 hooks/record.py signoff main "ok" && '
+               'git push origin main'),
           False, state_env())
     check("record ; push (not &&) is still denied - a failed record "
           "would not stop it", "merge_gate.py",
-          bash('py -3 hooks/record.py signoff v1 "ok" ; '
-               'git push origin v1'),
+          bash('py -3 hooks/record.py signoff main "ok" ; '
+               'git push origin main'),
           True, state_env())
     check("push && record-AFTER is still denied - too late",
           "merge_gate.py",
-          bash('git push origin v1 && '
-               'py -3 hooks/record.py signoff v1 "ok"'),
+          bash('git push origin main && '
+               'py -3 hooks/record.py signoff main "ok"'),
           True, state_env())
     check("a QUOTED mention of a push is not a push - a commit "
           "message or a fixture string never trips the gate",
           "merge_gate.py",
-          bash('git commit -m "the gate denies git push origin v1 '
+          bash('git commit -m "the gate denies git push origin main '
                'without a signoff"'),
           False, state_env())
 
