@@ -1,3 +1,7 @@
+# The release pipeline (WORKING.md, "Releases"): CI proves the change,
+# a PR gets a locked preview version, and main - and only main - gets
+# deployed, schema first. The pipeline releases, not the laptop.
+
 name: CI
 
 on:
@@ -6,9 +10,19 @@ on:
   pull_request:
     branches: [main]
 
+# A superseded PR run cancels itself - a push to main never does (the
+# deploy job additionally holds its own never-cancel group).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: cc79f1736c32acd8025d6cd33680fdbc
+
 jobs:
   ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,8 +38,119 @@ jobs:
         run: npm run check
       - name: Build
         run: npm run build
+      # The browser download (~150MB) was a third of this job's time.
+      # Cache it keyed on the Playwright version; on a hit only the
+      # system deps get installed, on a miss the download happens once.
+      - name: Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browser
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ steps.playwright-version.outputs.version }}
+      - name: Install Playwright browser
+        run: |
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
       - name: Feature-loop tests
         run: |
           cp .dev.vars.example .dev.vars
-          npx playwright install --with-deps chromium
           npx playwright test
+
+  # Every PR gets a preview version at a stable branch URL, behind
+  # Cloudflare Access (previews only - production stays public). A
+  # preview shares production's database, so a PR carrying migrations
+  # gets a loud warning instead of a broken silence.
+  preview:
+    if: github.event_name == 'pull_request'
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build (production build - no test hooks)
+        run: npm run build
+      - name: CI gate (deploy-gate + migration-guard rules)
+        run: python3 hooks/ci_gate.py
+      - name: Upload preview version
+        run: |
+          ALIAS=$(echo "$GITHUB_HEAD_REF" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//' \
+            | cut -c1-45 | sed -E 's/-+$//')
+          case "$ALIAS" in [a-z]*) ;; *) ALIAS="b-$ALIAS" ;; esac
+          echo "PREVIEW_URL=https://$ALIAS-hang-gangs-binder.sorcererbiggz.workers.dev" >> "$GITHUB_ENV"
+          npx wrangler versions upload --preview-alias "$ALIAS"
+      - name: Check for migrations production has not applied
+        run: |
+          PENDING=$(npx wrangler d1 migrations list binder-db --remote | grep -c '\.sql' || true)
+          echo "PENDING_MIGRATIONS=$PENDING" >> "$GITHUB_ENV"
+      - name: Comment the preview URL on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Preview version uploaded: $PREVIEW_URL"
+            echo ""
+            echo "Sign-in wall first (Cloudflare Access, previews only). The preview shares production's database."
+            if [ "$PENDING_MIGRATIONS" != "0" ]; then
+              echo ""
+              echo "**WARNING: this branch carries $PENDING_MIGRATIONS migration(s) production has not applied.** The preview will refuse routes that need the new schema until the migration lands (schema goes first, on merge)."
+            fi
+          } > preview-comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --edit-last --body-file preview-comment.md \
+            || gh pr comment "${{ github.event.pull_request.number }}" --body-file preview-comment.md
+
+  # The only path to production: main moved (which the merge-gate and
+  # branch protection already guard), its own CI run is green, the
+  # gates re-fired, and the schema went first.
+  deploy:
+    if: github.event_name == 'push'
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build (production build - no test hooks)
+        run: npm run build
+      - name: CI gate (deploy-gate + migration-guard rules)
+        run: python3 hooks/ci_gate.py
+      - name: Apply migrations (schema goes first)
+        run: npx wrangler d1 migrations apply binder-db --remote
+      - name: Deploy
+        run: npx wrangler deploy
+      - name: Smoke check production
+        run: |
+          for i in 1 2 3; do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' https://hang-gangs-binder.sorcererbiggz.workers.dev/)
+            echo "GET / -> HTTP $CODE (attempt $i)"
+            [ "$CODE" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "Production did not answer 200 after deploy - roll back with: npx wrangler rollback"
+          exit 1

@@ -46,9 +46,9 @@ def strip_sql_comments(sql):
     return sql
 
 
-payload = read_input()
-command = strip_quoted(command_of(payload))
-if re.search(r"\bd1\s+migrations\s+apply\b.*--remote", command):
+def check_migration_files():
+    """The scan itself, callable without a hook payload - the CI gate
+    (hooks/ci_gate.py) runs it before applying migrations remotely."""
     for path in migration_files():
         try:
             with open(path, encoding="utf-8") as f:
@@ -69,3 +69,14 @@ if re.search(r"\bd1\s+migrations\s+apply\b.*--remote", command):
                  "fails production (learned 2026-08-26). Reorder the rebuild "
                  "parent-first instead; drizzle/0010_the-hardening.sql shows "
                  "the shape." % name)
+
+
+def main():
+    payload = read_input()
+    command = strip_quoted(command_of(payload))
+    if re.search(r"\bd1\s+migrations\s+apply\b.*--remote", command):
+        check_migration_files()
+
+
+if __name__ == "__main__":
+    main()

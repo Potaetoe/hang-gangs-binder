@@ -225,6 +225,22 @@ with tempfile.TemporaryDirectory() as tmp:
     check("unrelated commands pass", "migration_guard.py",
           bash("npx wrangler deploy"), False, env_mig2)
 
+    # ci_gate - the same two rules, re-fired from the release pipeline
+    # where no hook intercepts wrangler. It reads no payload; only the
+    # fixture env matters. mig2 is comment-only (clean) at this point.
+    check("ci-gate denies a bundle with test hooks compiled in",
+          "ci_gate.py", {}, True,
+          {"BINDER_BUNDLE": hooked_bundle, "BINDER_MIGRATIONS_DIR": mig2})
+    mig3 = os.path.join(tmp, "mig3")
+    os.makedirs(mig3, exist_ok=True)
+    with open(os.path.join(mig3, "0001_pragma.sql"), "w") as f:
+        f.write("PRAGMA foreign_keys=OFF;\nDROP TABLE x;\n")
+    check("ci-gate denies a pragma migration", "ci_gate.py", {}, True,
+          {"BINDER_BUNDLE": clean_bundle, "BINDER_MIGRATIONS_DIR": mig3})
+    check("ci-gate passes a clean build and clean migrations",
+          "ci_gate.py", {}, False,
+          {"BINDER_BUNDLE": clean_bundle, "BINDER_MIGRATIONS_DIR": mig2})
+
     # secret_guard
     def write(path, content):
         return {"tool_name": "Write",

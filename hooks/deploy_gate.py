@@ -98,10 +98,15 @@ def check_migrations(parts, index):
              "deploy again." % (newest, applied, newest))
 
 
-payload = read_input()
-parts = chained(strip_quoted(command_of(payload)))
-for index, (seg, _joiner) in enumerate(parts):
-    if not re.search(r"\bwrangler\s+(deploy|versions\s+upload)\b", seg):
-        continue
-    check_bundle()
-    check_migrations(parts, index)
+def main():
+    payload = read_input()
+    parts = chained(strip_quoted(command_of(payload)))
+    for index, (seg, _joiner) in enumerate(parts):
+        if not re.search(r"\bwrangler\s+(deploy|versions\s+upload)\b", seg):
+            continue
+        check_bundle()
+        check_migrations(parts, index)
+
+
+if __name__ == "__main__":
+    main()
