@@ -176,7 +176,12 @@ everything mechanical; the selftest proves each one fires.
   preview; production moves only by the merge, after sign-off. A
   preview shares production's database, so a PR carrying migrations
   gets a loud warning in its preview comment and its schema-needing
-  routes wait for the merge. Rollback is `npx wrangler rollback` -
+  routes wait for the merge. The Telegram door is DEAD on previews
+  and stays that way: BotFather links the widget to exactly one
+  hostname (the production one - linking the parent domain kills the
+  widget everywhere; tried 2026-08-27). Preview drives use the
+  password door; the Telegram door gets its drive on production
+  after merge. Rollback is `npx wrangler rollback` -
   code only. Migrations never roll back, so every migration must
   leave the previous code able to run.
 - **Secrets:** six of them — the bot token, the bot username, the group
