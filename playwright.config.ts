@@ -11,7 +11,12 @@ export default defineConfig({
 		port: 4173,
 		timeout: 180_000
 	},
-	use: { baseURL: 'http://localhost:4173' },
+	// retain-on-failure: a one-off flake on 2026-08-26 left nothing to
+	// read because test-results was overwritten by the next run. A
+	// trace survives to name the failing line and what the page held.
+	// No retries, on purpose - a flaky test should fail loudly, not
+	// quietly pass on the second try.
+	use: { baseURL: 'http://localhost:4173', trace: 'retain-on-failure' },
 	projects: [
 		// The purge test runs FIRST and ALONE (hardening pass,
 		// 2026-08-26): mid-test its member holds a socials row, and the
