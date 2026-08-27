@@ -21,9 +21,11 @@ for seg in segments(command):
              "rebase truly needs one, use --force-with-lease and say so "
              "in the report.")
 
-    if is_git_push and re.search(r"\b(old-accounts|old-main)\b", seg):
-        deny("old-accounts and old-main are frozen history (the "
-             "2026-08-24 reset). Nothing is pushed there, ever.")
+    if is_git_push and re.search(
+            r"\b(single_use_scenario|attempt_for_custom_crypto)\b", seg):
+        deny("single_use_scenario and attempt_for_custom_crypto are "
+             "frozen history (the 2026-08-24 reset; renamed by owner "
+             "order 2026-08-27). Nothing is pushed there, ever.")
 
     if re.search(r"\bgit\s+(commit|push|merge)\b", seg) and \
             "--no-verify" in seg:
