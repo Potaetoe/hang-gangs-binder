@@ -29,12 +29,24 @@ tier.
   form and the chart filters immediately, with no code change. That is
   the app's central promise to its admins, and it has a test that
   proves it.
+- **Calculated fields.** Admins define computed numbers with a guided
+  builder — no typed formulas — and BMI is the first of them. A recipe
+  locks the moment it has stored a value, so one field's history keeps
+  to one formula.
+- **A calendar.** The group's events live on the home page: a month
+  grid, event days marked, times shown in each member's own timezone,
+  and photo galleries with a plain-links viewer.
+- **A socials page.** The group's official links up top, then a roster
+  of members who have listed theirs. Links are sealed exactly like
+  names — a leaked database shows none of it.
 - **An admin surface.** Site settings, member approvals and roles,
   password resets, a change log, and a full erase for members who
   leave.
-- **No page JavaScript.** Every page is drawn on the server. Charts are
-  server-rendered SVG, menus are plain HTML. It works on a bad phone on
-  bad signal, and there is no client bundle to leak anything.
+- **Almost no page JavaScript.** Every page is drawn on the server.
+  Charts are server-rendered SVG, menus are plain HTML, and the only
+  scripts a member's page ships are two tiny helpers (tidying a units
+  toggle, showing event times in their clock). It works on a bad phone
+  on bad signal, and there is no client bundle to leak anything.
 
 ## The privacy promise
 
@@ -58,7 +70,9 @@ hidden.
 
 The full model, including what it deliberately does _not_ protect
 against, is in [DESIGN.md](DESIGN.md). Read it before you trust it with
-anyone's data.
+anyone's data. The pre-launch security review — every finding and what
+was done about it — is in
+[docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md).
 
 ## Run your own copy
 
@@ -123,7 +137,9 @@ Run that twice — once for `ID_SECRET`, once for `DIRECTORY_SECRET`.
 **If you lose `DIRECTORY_SECRET`, every stored identity becomes
 unreadable forever.** The stats survive; the names do not.
 
-Then set all six values. Each command prompts you to paste the value:
+Then set all six values. Each command prompts you to paste the value.
+On the very first one, wrangler notices the Worker does not exist yet
+and offers to create it — say yes:
 
 ```bash
 npx wrangler secret put ID_SECRET
@@ -173,8 +189,8 @@ Wrangler prints your address. Go back to BotFather and finish
 Open the site and sign in with Telegram. Because your id is in
 `TELEGRAM_ALLOW_IDS`, you arrive approved and an admin. Go to
 **Admin → Settings** and set the site name, the welcome text, your
-timezone, and a default theme. Then **Admin → The form** to shape what
-the form asks.
+timezone, and a default theme. Then **Admin → Modify Stats Form** to
+shape what the form asks.
 
 Your members can now sign in with Telegram on their own. Anyone who
 registers with a username and password instead waits in
@@ -218,10 +234,11 @@ values in it are fake and safe, and the tests expect them exactly:
 cp .dev.vars.example .dev.vars
 ```
 
-Set up the local database once:
+Set up the local database once (this addresses the database by its
+binding, so it works whatever you named yours):
 
 ```bash
-npx wrangler d1 migrations apply my-binder-db --local
+npm run db:apply:local
 ```
 
 Useful commands:
