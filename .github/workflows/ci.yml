@@ -10,6 +10,12 @@ on:
   pull_request:
     branches: [main]
 
+# A superseded PR run cancels itself - a push to main never does (the
+# deploy job additionally holds its own never-cancel group).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CLOUDFLARE_ACCOUNT_ID: cc79f1736c32acd8025d6cd33680fdbc
 
@@ -32,10 +38,28 @@ jobs:
         run: npm run check
       - name: Build
         run: npm run build
+      # The browser download (~150MB) was a third of this job's time.
+      # Cache it keyed on the Playwright version; on a hit only the
+      # system deps get installed, on a miss the download happens once.
+      - name: Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browser
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ steps.playwright-version.outputs.version }}
+      - name: Install Playwright browser
+        run: |
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
       - name: Feature-loop tests
         run: |
           cp .dev.vars.example .dev.vars
-          npx playwright install --with-deps chromium
           npx playwright test
 
   # Every PR gets a preview version at a stable branch URL, behind
