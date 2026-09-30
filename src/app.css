@@ -1614,6 +1614,14 @@ button.nudge-off {
 .socials-message a {
 	font-weight: 600;
 }
+/* A link the cleaner took the address from reads as the plain words
+   it now is - never a red link that goes nowhere. */
+.socials-message a:not([href]) {
+	color: inherit;
+	font-weight: inherit;
+	text-decoration: none;
+	cursor: text;
+}
 .socials-message hr {
 	border: 0;
 	border-top: 1px solid var(--color-border-strong);

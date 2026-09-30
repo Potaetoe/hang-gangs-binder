@@ -262,6 +262,9 @@ test('members tap interested, see only the count, and the admin sees who', async
 	// RSVP (owner rulings 2026-09-30): one "interested" toggle, a count
 	// for members, names on the admin event page, and the admin picks
 	// the last day it is open.
+	// Three accounts and many sign-ins: ~11s alone, past the 30s budget
+	// when the whole suite shares a laptop.
+	test.slow();
 	const stamp = Date.now();
 	const boss = `host${stamp}`;
 	const first = `keen${stamp}`;

@@ -370,6 +370,9 @@ test('the Socials panel is admin HTML, cut down to the safe allowlist', async ({
 	// The javascript: link lost its address; its words stay as words.
 	await expect(panel.getByText('Sneaky')).toBeVisible();
 	expect(await panel.getByText('Sneaky').getAttribute('href')).toBeNull();
+	// ...and it looks like words too, not a red link that goes nowhere.
+	const ink = (sel: string) => panel.locator(sel).evaluate((el) => getComputedStyle(el).color);
+	expect(await ink('a:not([href])')).toBe(await ink('p'));
 	// Nothing that runs, loads or styles reached the page.
 	await expect(panel.locator('script, img, [style], [onclick], [onerror]')).toHaveCount(0);
 	expect(await page.title()).not.toBe('pwned');
