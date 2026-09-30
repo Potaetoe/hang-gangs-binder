@@ -268,23 +268,38 @@ npm run db:generate
 
 That reads `src/lib/server/db/schema.ts` and writes a migration into
 `drizzle/`. Apply it locally, then remotely, and only then deploy code
-that needs it. The app is built to fail loudly, not quietly, when the
-schema is behind.
+that needs it. Code running ahead of its schema fails outright, with a
+crash line naming the missing table or column; it never half-works.
 
 ### Where things live
 
+The server code is sorted into feature modules. Each folder's
+`index.ts` is its front door, and routes import from there.
+
 | Path                       | What is in it                                      |
 | -------------------------- | -------------------------------------------------- |
-| `src/routes/`              | Pages, one folder per URL                          |
-| `src/lib/server/`          | Everything that touches data or secrets            |
-| `src/lib/server/auth.ts`   | Both sign-in doors, sessions, the sealed directory |
-| `src/lib/server/stats.ts`  | Entries, unit conversion, history                  |
-| `src/lib/server/charts.ts` | The board, filters, distributions                  |
-| `src/lib/server/form.ts`   | The form builder's rules                           |
+| `src/routes/(public)/`     | The sign-in door, registration, sign-out           |
+| `src/routes/(member)/`     | Every signed-in page; `admin/` inside is admins'   |
+| `src/hooks.server.ts`      | Sessions, the access gate, security headers        |
+| `src/lib/server/auth/`     | Both sign-in doors, sessions, brakes on guessing   |
+| `src/lib/server/identity`  | The sealed directory: the one place ids meet names |
+| `src/lib/server/fields/`   | Field rules, calculated recipes, the form builder  |
+| `src/lib/server/entries/`  | Reading the form, saving and correcting entries    |
+| `src/lib/server/charts/`   | The board, focused charts, filters                 |
+| `src/lib/server/events/`   | The calendar, RSVPs, image galleries               |
+| `src/lib/server/socials/`  | Sealed member links and the group's own panel      |
+| `src/lib/server/admin/`    | The roster, approvals, roles, the full erase       |
+| `src/lib/server/settings/` | Site settings and the four palettes                |
+| `src/lib/server/db/`       | The schema and the one-batch write helper          |
+| `src/lib/components/`      | Components more than one page uses                 |
 | `src/app.css`              | The whole look, including the four themes          |
 | `drizzle/`                 | Migration files                                    |
 | `e2e/`                     | Playwright tests                                   |
 | `hooks/`                   | Repo rules, enforced automatically                 |
+
+Who can reach a page depends on the folder it sits in. The hook checks
+every request, form posts included, so a page added under `(member)`
+is locked without writing a check.
 
 Nothing in `src/lib/server/` ever reaches the browser. That separation
 is load-bearing for the privacy model, not a style preference.

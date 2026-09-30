@@ -4,31 +4,11 @@
 // TELEGRAM_ALLOW_IDS, so no test ever calls Telegram.
 import { createHash, createHmac } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
+import { fillStable, openPasswordFlap } from './helpers';
 
 // Matches .dev.vars, which the preview server reads.
 const TEST_BOT_TOKEN = 'local-test-bot-token';
 const ALLOWED_TELEGRAM_ID = '7000001';
-
-/** Hydration replays a page's initial state, wiping anything typed
- * before it finished - real users on slow phones included. Until the
- * app carries a hydration marker, fill-and-verify keeps the loops
- * honest without racing. */
-async function fillStable(page: Page, label: string | RegExp, value: string) {
-	await expect(async () => {
-		await page.getByLabel(label).fill(value);
-		expect(await page.getByLabel(label).inputValue()).toBe(value);
-	}).toPass({ timeout: 10_000 });
-}
-
-async function openPasswordFlap(page: Page) {
-	// Hydration replays the flap's initial closed state over a click
-	// that beat it - the same replay that wipes early-filled inputs -
-	// so opening retries until it sticks.
-	await expect(async () => {
-		await page.getByText('With a password').click();
-		await expect(page.getByLabel('Username')).toBeVisible({ timeout: 1000 });
-	}).toPass({ timeout: 10_000 });
-}
 
 function signedTelegramQuery(fields: Record<string, string>): string {
 	const dataCheck = Object.keys(fields)
@@ -40,8 +20,7 @@ function signedTelegramQuery(fields: Record<string, string>): string {
 	return new URLSearchParams({ ...fields, hash }).toString();
 }
 
-/** Walk the door the way the widget does (finding 3, 2026-08-26): the
- * door page sets the state cookie and bakes the same value into the
+/** Walk the door the way the widget does: the door page sets the state cookie and bakes the same value into the
  * widget's return URL; Telegram sends the person back through that
  * URL with its signed fields appended. The state is read from the
  * widget markup, exactly where Telegram would read it. */
@@ -114,7 +93,7 @@ test('a group member signs in through the Telegram door', async ({ page }) => {
 	await throughTelegramDoor(page, query);
 	await expect(page.getByRole('heading', { name: /hello, tel member/i })).toBeVisible();
 	// The allow-list marks the operator as admin: the name wears the
-	// accent and the rail carries the Admin door (owner, 2026-08-26).
+	// accent and the rail carries the Admin door.
 	await expect(page.locator('h1 .admin-name')).toBeVisible();
 	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).toBeVisible();
 });
@@ -123,12 +102,10 @@ test('an admin removed by an admin stays removed, and the operator allow-list st
 	page,
 	request
 }) => {
-	// Two halves of one rule (defensive review, 2026-08-26). The Telegram
-	// door used to re-grant admin on EVERY sign-in to anyone the group
-	// called an administrator, which quietly undid the admin page's
-	// "Remove admin". Only the operator's allow-list - a secret, and the
-	// runbook's way back in - re-grants now. This walks the half the test
-	// bench can reach: the allow-list still works after a demotion.
+	// Only the operator's allow-list re-grants admin on a later sign-in;
+	// the group's own administrators do not, or "Remove admin" would
+	// never stick. This walks the half the test bench can reach: the
+	// allow-list still works after a demotion.
 	const stamp = Date.now();
 	const boss = `chair${stamp}`;
 	await page.goto('/register');
@@ -190,9 +167,8 @@ test('a forged Telegram payload is refused', async ({ page }) => {
 });
 
 test('a Telegram sign-in link works once and is dead after that', async ({ page }) => {
-	// The signed payload rides in a URL, so a captured link used to be a
-	// working key for as long as its window lasted. It is spent on first
-	// use now (security pass, 2026-08-24).
+	// The signed payload rides in a URL, so it is spent on first use: a
+	// captured link must not be a working key.
 	const query = signedTelegramQuery({
 		id: '7000002',
 		first_name: 'Replay',
@@ -224,7 +200,7 @@ test('a stale Telegram payload is refused even though it is signed', async ({ pa
 });
 
 test('a signed Telegram link without the door state is refused', async ({ page }) => {
-	// The login-CSRF closure (finding 3): a crafted link can carry a
+	// Login CSRF: a crafted link can carry a
 	// perfectly signed payload, but it cannot know the door cookie.
 	// The state pair is checked before the signature is even looked at.
 	const query = signedTelegramQuery({
@@ -247,8 +223,8 @@ test('every response carries the security headers', async ({ page }) => {
 	const headers = response!.headers();
 	expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
 	expect(headers['content-security-policy']).toContain('https://telegram.org');
-	// Inline styles are refused wholesale now; only the layout's
-	// nonce-stamped palette block gets through (finding 7). The plum
+	// Inline styles are refused wholesale; only the layout's
+	// nonce-stamped palette block gets through. The plum
 	// drive in admin.e2e proves the browser really applies it.
 	expect(headers['content-security-policy']).not.toContain('unsafe-inline');
 	expect(headers['content-security-policy']).toMatch(/style-src 'self' 'nonce-[0-9a-f]{32}'/);
@@ -297,8 +273,7 @@ test('repeated misses put an account on a slow clock, and the right password wip
 	page,
 	request
 }) => {
-	// The global backoff (security review finding 9, owner ruling
-	// 2026-08-26): three misses are free, the fourth starts a clock -
+	// The global backoff: three misses are free, the fourth starts a clock -
 	// 10 seconds, doubling, capped. Kept in the database, so it holds
 	// across every edge, unlike the per-edge limiter around it. It is
 	// backoff, never lockout: the member's own success wipes the slate.
@@ -342,8 +317,7 @@ test('a fourth sign-in quietly drops the oldest session', async ({
 	playwright,
 	baseURL
 }) => {
-	// The cap is 3 (security review finding 6; owner picked the number,
-	// 2026-08-26). A fourth device signing in silently signs out the
+	// The cap is 3 live sessions. A fourth device signing in silently signs out the
 	// oldest one - a forgotten library computer, not the phone in hand.
 	const username = `capped${Date.now()}`;
 	await page.goto('/register');

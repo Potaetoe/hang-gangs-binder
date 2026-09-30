@@ -51,7 +51,7 @@ refuses to let an admin demote themselves and refuses to let the site
 lose its last admin, and all of that could be undone by simply signing
 in again.
 
-**Fixed** in `auth.ts`: Telegram group standing now grants admin only
+**Fixed** in `auth/telegram.ts`: Telegram group standing now grants admin only
 when the member record is first created. Only the operator's
 `TELEGRAM_ALLOW_IDS` allow-list re-grants on later sign-ins — that list
 is a secret only the person holding the Cloudflare account can set, and
@@ -176,7 +176,7 @@ no Domain. Lax stays, for the reason above — that half is accepted.
 
 ### 9. Rate limiting is per edge location, not global — FIXED
 
-**Severity: low, already documented.** `throttle.ts` says this plainly:
+**Severity: low, already documented.** `auth/throttle.ts` says this plainly:
 six tries a minute is six _per edge_, measured against production. It
 turns password guessing from a script's work into a crawl; it is not a
 global cap and nothing should be planned as though it were.
@@ -224,10 +224,13 @@ Listed because it is the honest half of the picture.
   — stored only as SHA-256, so a leaked table holds no usable
   credential. Cookies are `HttpOnly`, `Secure`, path-scoped. Sign-out
   deletes the row server-side, not just the cookie.
-- **Authorization.** Every admin action across all seven admin route
-  files re-checks `isAdmin` itself rather than trusting the layout, and
-  there are no `+server.ts` endpoints under `/admin` (a layout would not
-  protect those). Authority is read fresh from the member row on every
+- **Authorization.** Admin routes never rely on a layout, which would
+  not guard form actions or endpoints. At the review, every admin
+  action re-checked `isAdmin` itself. Since the module refactor the
+  check lives once, in `src/hooks.server.ts`: every request to a route
+  under `src/routes/(member)/` needs a member, and every request under
+  `(member)/admin/` needs an admin, form actions and endpoints
+  included. Authority is read fresh from the member row on every
   request and is never cached in the session, so a role change takes
   effect on the next click in either direction.
 - **Injection.** Every query goes through Drizzle's parameter binding.

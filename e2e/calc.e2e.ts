@@ -1,50 +1,8 @@
-// Calculated fields (DESIGN.md feature 7, owner rulings 2026-08-26):
-// an admin builds a recipe with the guided builder, previews it, puts
+// Calculated fields (DESIGN.md feature 7): an admin builds a recipe with the guided builder, previews it, puts
 // it on the form - and every member surface carries the number with
 // no code change. BMI rides the same engine now, recipe locked.
 import { expect, test, type Page } from '@playwright/test';
-
-async function fillStable(page: Page, label: string | RegExp, value: string) {
-	await expect(async () => {
-		await page.getByLabel(label).fill(value);
-		expect(await page.getByLabel(label).inputValue()).toBe(value);
-	}).toPass({ timeout: 10_000 });
-}
-
-async function openPasswordFlap(page: Page) {
-	await expect(async () => {
-		await page.getByText('With a password').click();
-		await expect(page.getByLabel('Username')).toBeVisible({ timeout: 1000 });
-	}).toPass({ timeout: 10_000 });
-}
-
-async function register(page: Page, username: string) {
-	await page.goto('/register');
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', 'a-decent-password');
-	await page.getByRole('button', { name: /ask for the account/i }).click();
-	await expect(page.getByText(/an admin has to approve/i)).toBeVisible();
-}
-
-async function signIn(page: Page, username: string) {
-	await page.goto('/');
-	await openPasswordFlap(page);
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', 'a-decent-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-}
-
-async function signOut(page: Page) {
-	await page.goto('/home');
-	await page.getByRole('button', { name: 'Sign out' }).click();
-	await expect(page.getByRole('heading', { name: 'Hang Gang' })).toBeVisible();
-}
-
-function entryRow(page: Page, texts: string[]) {
-	let row = page.locator('.entries-table tbody tr');
-	for (const text of texts) row = row.filter({ hasText: text });
-	return row;
-}
+import { fillStable, register, signIn, signOut, entryRow } from './helpers';
 
 async function addCalculatedField(page: Page, name: string) {
 	await page.goto('/admin/form');
@@ -210,8 +168,7 @@ test('a recipe locks the moment its field holds a value', async ({ page }) => {
 	await expect(page.getByText('Now: Weight × 2')).toBeVisible();
 	await page.getByRole('button', { name: 'Put it on the form' }).click();
 
-	// The change log kept the rewrite, old → new (owner ruling
-	// 2026-08-26).
+	// The change log kept the rewrite, old → new.
 	await page.goto('/admin/log');
 	await expect(page.getByText('Weight → Weight × 2').first()).toBeVisible();
 

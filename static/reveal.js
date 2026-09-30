@@ -1,8 +1,7 @@
-// Show / Hide for a password box (owner ask 2026-09-29): the admin's
-// temporary passphrase types as dots, and one tap shows it so a typo
-// gets caught before it locks a member out. Each button names its
-// input in data-reveal; without this script the buttons stay hidden
-// and the box simply stays dots.
+// Show / Hide for a password box, so a typo in an admin's temporary
+// passphrase is caught before it locks a member out. Each button names
+// its input in data-reveal. Without this script the buttons stay hidden
+// and the box stays dots.
 (function () {
 	var buttons = document.querySelectorAll('[data-reveal]');
 	for (var i = 0; i < buttons.length; i++) {

@@ -1,51 +1,7 @@
-// The core loop (DESIGN.md, "Core loop"; owner rulings 2026-08-24),
-// driven the way a person drives it: sign in, put numbers in, read
+// The core loop (DESIGN.md, "Core loop"), driven the way a person drives it: sign in, put numbers in, read
 // them back, correct them, and watch the corrections leave a trail.
-import { expect, test, type Page } from '@playwright/test';
-
-/** Same guard as the door suite: fill-and-verify beats hydration
- * replay without racing it. */
-async function fillStable(page: Page, label: string | RegExp, value: string) {
-	await expect(async () => {
-		await page.getByLabel(label).fill(value);
-		expect(await page.getByLabel(label).inputValue()).toBe(value);
-	}).toPass({ timeout: 10_000 });
-}
-
-async function openPasswordFlap(page: Page) {
-	await expect(async () => {
-		await page.getByText('With a password').click();
-		await expect(page.getByLabel('Username')).toBeVisible({ timeout: 1000 });
-	}).toPass({ timeout: 10_000 });
-}
-
-/** The entries-table row carrying every given value - the table
- * replaced the old summary line (owner ruling 2026-08-26). */
-function entryRow(page: Page, texts: string[]) {
-	let row = page.locator('.entries-table tbody tr');
-	for (const text of texts) row = row.filter({ hasText: text });
-	return row;
-}
-
-/** Register, approve through the test hook, sign in - the shortest
- * legitimate path to a member on their page. */
-async function signInFreshMember(page: Page, username: string) {
-	await page.goto('/register');
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', 'a-decent-password');
-	await page.getByRole('button', { name: /ask for the account/i }).click();
-	await expect(page.getByText(/an admin has to approve/i)).toBeVisible();
-	const approved = await page.request.post(`/test/approve?username=${username}`);
-	expect(approved.ok()).toBeTruthy();
-	await page.goto('/');
-	await openPasswordFlap(page);
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', 'a-decent-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-	await expect(
-		page.getByRole('heading', { name: new RegExp(`hello, ${username}`, 'i') })
-	).toBeVisible();
-}
+import { expect, test } from '@playwright/test';
+import { fillStable, signInFreshMember, entryRow } from './helpers';
 
 test('a member logs stats, reads them back, corrects and deletes, leaving a trail', async ({
 	page
@@ -139,8 +95,8 @@ test('a number too big to be real is refused, and the charts survive', async ({ 
 
 	// Twenty digits of weight. The ceiling matters twice: once for the
 	// member's own page, and once because the histogram sizes itself
-	// from the spread of stored values - one absurd number used to be
-	// able to break Group Stats for everyone (fix pass 2026-08-25).
+	// from the spread of stored values, so one absurd number must not be
+	// able to break Group Stats for everyone.
 	await fillStable(page, 'Weight', '99999999999999999999');
 	await page.getByRole('button', { name: 'Save entry' }).click();
 	await expect(page.getByText(/weight: enter a number above zero, below a million/i)).toBeVisible();
@@ -177,7 +133,7 @@ test('six foot nothing is a height, and America leads the country list', async (
 	const username = `sixfoot${Date.now()}`;
 	await signInFreshMember(page, username);
 
-	// The owner's drive found the zero: 6 ft 0 in must save.
+	// Either box may be zero: 6 ft 0 in must save.
 	await fillStable(page, /height, feet/i, '6');
 	await fillStable(page, /height, inches/i, '0');
 	await fillStable(page, 'Weight', '240');
@@ -216,7 +172,7 @@ test('the settings units default survives a page toggle', async ({ page }) => {
 
 	// The page toggle flips the VIEW to imperial - for this one look
 	// only. A reload renders the default again: the Settings choice is
-	// the rule of law (owner ruling 2026-08-26).
+	// the rule.
 	await page.getByRole('link', { name: /imperial/i }).click();
 	await expect(page.getByLabel(/height, feet/i)).toBeVisible();
 	// The page script strips ?u= after render; wait for that before

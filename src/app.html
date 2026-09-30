@@ -6,8 +6,8 @@
 		     always zero and the rail sits under the home indicator. -->
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="text-scale" content="scale" />
-		<!-- The PWA shell (owner ruling 2026-08-26): installable from
-		     the share sheet. No service worker - the pages stay no-JS. -->
+		<!-- Installable from the share sheet. No service worker: the pages
+		     ship no JavaScript to run one. -->
 		<link rel="manifest" href="/manifest.webmanifest" />
 		<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
 		<!-- iOS reads these once, when the app is added to the home
@@ -17,10 +17,8 @@
 		<meta name="mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-		<!-- Every navigation is a full page load (the pages ship no
-		     JavaScript), so the fonts must win the race to first paint
-		     on every page. Preloading pins them; without it the swap
-		     from the fallback font is the flicker the owner saw. -->
+		<!-- Every navigation is a full page load, so the fonts must win the
+		     race to first paint each time or the page flickers as they swap. -->
 		<link
 			rel="preload"
 			href="/fonts/playfair-display-600-latin.woff2"

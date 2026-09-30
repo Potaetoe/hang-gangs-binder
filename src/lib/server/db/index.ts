@@ -3,22 +3,27 @@ import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import type { BatchItem } from 'drizzle-orm/batch';
 import * as schema from './schema';
 
-export const getDb = (d1: D1Database) => drizzle(d1, { schema });
+export type Db = DrizzleD1Database<typeof schema>;
 
-/** Unexecuted statements headed for one atomic batch. */
+export type Field = typeof schema.fields.$inferSelect;
+export type Entry = typeof schema.entries.$inferSelect;
+export type EntryValue = typeof schema.entryValues.$inferSelect;
+/** An entry's values before they are stored, keyed by field id. */
+export type NewValues = Record<string, Omit<EntryValue, 'entryId' | 'fieldId'>>;
+export type EventRow = typeof schema.events.$inferSelect;
+export type EventImageRow = typeof schema.eventImages.$inferSelect;
+
+export const getDb = (d1: D1Database): Db => drizzle(d1, { schema });
+
+/** Unexecuted statements headed for one batch. */
 export type Writes = BatchItem<'sqlite'>[];
 
 /**
- * Every multi-statement mutation goes through here (hardening pass,
- * 2026-08-26). D1 runs a batch as one transaction: all of it lands or
- * none of it does. Before this, a purge or an entry edit was a row of
- * separate writes, and a failure in the middle left half a change
- * behind.
+ * D1 runs a batch as one transaction. Any change that touches more than
+ * one row goes through here, so a failure halfway can never leave half
+ * a change behind.
  */
-export async function runBatch(
-	db: DrizzleD1Database<typeof schema>,
-	statements: Writes
-): Promise<void> {
+export async function runBatch(db: Db, statements: Writes): Promise<void> {
 	if (!statements.length) return;
 	await db.batch(statements as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]);
 }

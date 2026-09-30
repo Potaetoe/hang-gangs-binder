@@ -1,44 +1,8 @@
-// The departed cleanup (DESIGN.md "Admin surface"; owner ruling: full
-// purge), proven to the row. The worst failure this app could have is
+// The departed cleanup, a full purge, proven to the row. The worst failure this app could have is
 // a purge that only LOOKED complete - so after the admin sweeps, the
 // test counts what is left, table by table, and demands zero.
-import { expect, test, type Page } from '@playwright/test';
-
-async function fillStable(page: Page, label: string | RegExp, value: string) {
-	await expect(async () => {
-		await page.getByLabel(label).fill(value);
-		expect(await page.getByLabel(label).inputValue()).toBe(value);
-	}).toPass({ timeout: 10_000 });
-}
-
-async function openPasswordFlap(page: Page) {
-	await expect(async () => {
-		await page.getByText('With a password').click();
-		await expect(page.getByLabel('Username')).toBeVisible({ timeout: 1000 });
-	}).toPass({ timeout: 10_000 });
-}
-
-async function register(page: Page, username: string) {
-	await page.goto('/register');
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', 'a-decent-password');
-	await page.getByRole('button', { name: /ask for the account/i }).click();
-	await expect(page.getByText(/an admin has to approve/i)).toBeVisible();
-}
-
-async function signIn(page: Page, username: string) {
-	await page.goto('/');
-	await openPasswordFlap(page);
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', 'a-decent-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-}
-
-function entryRow(page: Page, texts: string[]) {
-	let row = page.locator('.entries-table tbody tr');
-	for (const text of texts) row = row.filter({ hasText: text });
-	return row;
-}
+import { expect, test } from '@playwright/test';
+import { fillStable, register, signIn, entryRow } from './helpers';
 
 test('a purged member leaves nothing behind but the unlinkable log line', async ({
 	page,
