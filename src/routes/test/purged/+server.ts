@@ -73,6 +73,12 @@ async function countLeftovers({ url, platform }: RequestEvent) {
 				.select({ n: sql<number>`count(*)` })
 				.from(table.memberAudit)
 				.where(eq(table.memberAudit.memberId, id))
+		),
+		rsvps: await count(
+			db
+				.select({ n: sql<number>`count(*)` })
+				.from(table.eventRsvps)
+				.where(eq(table.eventRsvps.memberId, id))
 		)
 	};
 	return json(counts);

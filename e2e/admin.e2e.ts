@@ -326,25 +326,61 @@ test('settings shape the site', async ({ page }) => {
 	await expect(page.getByText('Saved.')).toBeVisible();
 });
 
-test('the group links come from admin settings, and the Socials page carries them', async ({
-	page
-}) => {
-	// Moved here from socials.e2e.ts (2026-08-26): saving admin
-	// settings writes the WHOLE settings form, so a save in another
-	// file running in parallel wiped the group links this test had just
-	// set - the same shared-singleton care as the site name above.
-	// Tests in one file run in order; every settings writer lives here.
-	const boss = `linkboss${Date.now()}`;
+test('the Socials panel is admin HTML, cut down to the safe allowlist', async ({ page }) => {
+	// Lives here, not in socials.e2e.ts (2026-08-26): saving admin
+	// settings writes the WHOLE settings form, so every settings writer
+	// shares this file and runs in order.
+	const boss = `msgboss${Date.now()}`;
 	await register(page, boss);
 	await makeAdmin(page, boss);
 	await signIn(page, boss);
 	await page.goto('/admin/settings');
-	await fillStable(page, 'Group link 1 name', 'The group chat');
-	await fillStable(page, 'Group link 1 address', 'https://t.me/example');
+	// What an admin might paste, good parts and hostile parts together
+	// (owner rulings 2026-09-30: safe allowlist, no styling).
+	await fillStable(
+		page,
+		/the group's panel on the socials page/i,
+		[
+			'<h2>Find the gang</h2>',
+			'<p style="color:red" onclick="alert(1)">Chat <strong>daily</strong>.</p>',
+			'<ul><li><a href="https://t.me/example">The group chat</a></li>',
+			'<li><a href="javascript:alert(1)">Sneaky</a></li></ul>',
+			'<script>document.title="pwned"</script>',
+			'<img src="https://example.com/x.png" onerror="alert(1)">'
+		].join('\n')
+	);
 	await page.getByRole('button', { name: 'Save settings' }).click();
 	await expect(page.getByText('Saved.')).toBeVisible();
+
+	// The box now holds what members see: the allowlist already applied.
+	const saved = await page.getByLabel(/the group's panel on the socials page/i).inputValue();
+	expect(saved).toContain('<h2>Find the gang</h2>');
+	expect(saved).not.toMatch(/script|onclick|onerror|style=|javascript:|<img/i);
+	// The new-tab attributes are added on render, not typed into the box.
+	expect(saved).not.toContain('target=');
+
 	await page.locator('.rail').getByRole('link', { name: 'Socials' }).click();
-	await expect(page.getByRole('link', { name: 'The group chat' })).toBeVisible();
+	const panel = page.locator('section.socials-message');
+	await expect(panel.getByRole('heading', { name: 'Find the gang' })).toBeVisible();
+	await expect(panel.locator('strong')).toHaveText('daily');
+	const chat = panel.getByRole('link', { name: 'The group chat' });
+	await expect(chat).toHaveAttribute('href', 'https://t.me/example');
+	await expect(chat).toHaveAttribute('target', '_blank');
+	await expect(chat).toHaveAttribute('rel', 'noreferrer noopener');
+	// The javascript: link lost its address; its words stay as words.
+	await expect(panel.getByText('Sneaky')).toBeVisible();
+	expect(await panel.getByText('Sneaky').getAttribute('href')).toBeNull();
+	// Nothing that runs, loads or styles reached the page.
+	await expect(panel.locator('script, img, [style], [onclick], [onerror]')).toHaveCount(0);
+	expect(await page.title()).not.toBe('pwned');
+
+	// Emptied, the panel leaves the page (and the old link slots stay retired).
+	await page.goto('/admin/settings');
+	await fillStable(page, /the group's panel on the socials page/i, '');
+	await page.getByRole('button', { name: 'Save settings' }).click();
+	await expect(page.getByText('Saved.')).toBeVisible();
+	await page.goto('/socials');
+	await expect(page.locator('section.socials-message')).toHaveCount(0);
 });
 
 test('an admin calls the Admin door onto the phone rail for one sitting', async ({ page }) => {

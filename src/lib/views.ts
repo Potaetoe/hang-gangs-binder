@@ -46,6 +46,14 @@ export type EventView = {
 	place: string | null;
 	notes: string | null;
 	imageIds: string[];
+	/** How many members are interested - the only RSVP number members see. */
+	rsvpCount: number;
+	/** Whether the viewer is one of them. */
+	rsvpMine: boolean;
+	/** Whether the RSVP is still open today. */
+	rsvpOpen: boolean;
+	/** "Open through Fri, Jun 13" - null when it ends with the day itself. */
+	rsvpUntilLabel: string | null;
 };
 
 /** The month grid, painted as-is; null cells pad the edges. */

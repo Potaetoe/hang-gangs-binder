@@ -16,9 +16,15 @@ export type SiteSettings = {
 	timezone: string;
 	theme: string;
 	/** JSON [{label, url}] — the group's own links on the Socials page
-	 * (owner ruling 2026-08-26). Group data, nothing personal, so a
-	 * plain setting is the right home. */
+	 * (owner ruling 2026-08-26). Retired by socialsMessage (2026-09-30):
+	 * still read, so a site that set links before the message existed
+	 * keeps them, and cleared the first time the message is saved. */
 	socialLinks: string;
+	/** The group's panel on the Socials page (owner rulings
+	 * 2026-09-30): admin-written HTML, stored already cleaned to the
+	 * allowlist in rich.ts and cleaned again on render. Group data, so a
+	 * plain setting is the right home. */
+	socialsMessage: string;
 	/** JSON string[] of field ids that carry trend LINES (owner ruling
 	 * 2026-08-26): the home trend cards, the board sparklines, and the
 	 * focused trend charts. Everything else about a field stays. */
@@ -31,6 +37,7 @@ export const DEFAULTS: SiteSettings = {
 	timezone: 'America/Chicago',
 	theme: 'auto',
 	socialLinks: '[]',
+	socialsMessage: '',
 	// Weight and BMI move; adult height does not (owner ruling
 	// 2026-08-26). Admins tick more in Settings if their group wants.
 	trendFields: '["weight","bmi"]'
@@ -42,6 +49,7 @@ const KEYS: Record<keyof SiteSettings, string> = {
 	timezone: 'timezone',
 	theme: 'theme',
 	socialLinks: 'social_links',
+	socialsMessage: 'socials_message',
 	trendFields: 'trend_fields'
 };
 

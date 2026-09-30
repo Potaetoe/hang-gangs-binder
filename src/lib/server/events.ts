@@ -69,6 +69,7 @@ export type EventFields = {
 	title: string;
 	place: string | null;
 	notes: string | null;
+	rsvpUntil: string | null;
 };
 
 /** Reads the shared title/date/time/place/notes inputs; every fault
@@ -85,6 +86,7 @@ export function parseEventFields(
 	const tz = String(form.get('tz') ?? '').trim();
 	const place = String(form.get('place') ?? '').trim();
 	const notes = String(form.get('notes') ?? '').trim();
+	const rsvpUntil = String(form.get('rsvp_until') ?? '').trim();
 	if (!title) problems.push('An event needs a title.');
 	if (title.length > TITLE_MAX) problems.push(`The title tops out at ${TITLE_MAX} characters.`);
 	if (!validDay(date)) problems.push('Pick a real day for it.');
@@ -92,6 +94,7 @@ export function parseEventFields(
 	if (time && !validTimezone(tz)) problems.push('A time needs its timezone.');
 	if (place.length > PLACE_MAX) problems.push(`The place tops out at ${PLACE_MAX} characters.`);
 	if (notes.length > NOTES_MAX) problems.push(`The notes top out at ${NOTES_MAX} characters.`);
+	if (rsvpUntil && !validDay(rsvpUntil)) problems.push('Pick a real day for the RSVP to close.');
 	if (problems.length) return { ok: false, problems };
 	return {
 		ok: true,
@@ -101,7 +104,8 @@ export function parseEventFields(
 			tz: time ? tz : null,
 			title,
 			place: place || null,
-			notes: notes || null
+			notes: notes || null,
+			rsvpUntil: rsvpUntil || null
 		}
 	};
 }
@@ -201,8 +205,8 @@ export async function monthEvents(db: Db, month: string): Promise<EventRow[]> {
 		.orderBy(asc(table.events.date), asc(table.events.time), asc(sql`rowid`));
 }
 
-/** The whole event leaves at once - bytes, gallery rows, the row, in
- * ONE atomic batch (hardening pass, 2026-08-26). Chunks go by
+/** The whole event leaves at once - bytes, gallery rows, RSVPs, the
+ * row, in ONE atomic batch (hardening pass, 2026-08-26). Chunks go by
  * subquery so a full gallery cannot near D1's bound-parameter cap. */
 export async function deleteEvent(db: Db, id: string): Promise<boolean> {
 	const found = await eventById(db, id);
@@ -220,9 +224,70 @@ export async function deleteEvent(db: Db, id: string): Promise<boolean> {
 				)
 			),
 		db.delete(table.eventImages).where(eq(table.eventImages.eventId, id)),
+		db.delete(table.eventRsvps).where(eq(table.eventRsvps.eventId, id)),
 		db.delete(table.events).where(eq(table.events.id, id))
 	]);
 	return true;
+}
+
+/* ---------------------------------------------------------------- */
+/* RSVPs (owner rulings 2026-09-30)                                  */
+
+/** The last day an event takes RSVPs: the admin's pick, else the
+ * event's own day. */
+export const rsvpLastDay = (event: Pick<EventRow, 'date' | 'rsvpUntil'>): string =>
+	event.rsvpUntil ?? event.date;
+
+/** Open through its last day, inclusive, by the site's calendar. ISO
+ * days compare as strings. */
+export const rsvpOpen = (event: Pick<EventRow, 'date' | 'rsvpUntil'>, todayIso: string): boolean =>
+	todayIso <= rsvpLastDay(event);
+
+/** Interested counts for a set of events; an event nobody picked is
+ * absent (read it as 0). */
+export async function rsvpCounts(db: Db, eventIds: string[]): Promise<Record<string, number>> {
+	const out: Record<string, number> = {};
+	if (!eventIds.length) return out;
+	const rows = await db
+		.select({ eventId: table.eventRsvps.eventId, n: sql<number>`count(*)` })
+		.from(table.eventRsvps)
+		.where(inArray(table.eventRsvps.eventId, eventIds))
+		.groupBy(table.eventRsvps.eventId);
+	for (const row of rows) out[row.eventId] = row.n;
+	return out;
+}
+
+/** Which of these events the member is interested in. */
+export async function rsvpsOf(db: Db, memberId: string, eventIds: string[]): Promise<Set<string>> {
+	if (!eventIds.length) return new Set();
+	const rows = await db
+		.select({ eventId: table.eventRsvps.eventId })
+		.from(table.eventRsvps)
+		.where(
+			and(eq(table.eventRsvps.memberId, memberId), inArray(table.eventRsvps.eventId, eventIds))
+		);
+	return new Set(rows.map((r) => r.eventId));
+}
+
+/** Joins or leaves. Idempotent both ways, so a double tap is harmless. */
+export async function setRsvp(db: Db, eventId: string, memberId: string, on: boolean) {
+	if (on) {
+		await db.insert(table.eventRsvps).values({ eventId, memberId }).onConflictDoNothing();
+	} else {
+		await db
+			.delete(table.eventRsvps)
+			.where(and(eq(table.eventRsvps.eventId, eventId), eq(table.eventRsvps.memberId, memberId)));
+	}
+}
+
+/** The member ids interested in one event - the admin page turns them
+ * into names. */
+export async function rsvpMemberIds(db: Db, eventId: string): Promise<string[]> {
+	const rows = await db
+		.select({ memberId: table.eventRsvps.memberId })
+		.from(table.eventRsvps)
+		.where(eq(table.eventRsvps.eventId, eventId));
+	return rows.map((r) => r.memberId);
 }
 
 /* ---------------------------------------------------------------- */

@@ -232,9 +232,35 @@ export const events = sqliteTable(
 		tz: text('tz'),
 		title: text('title').notNull(),
 		place: text('place'),
-		notes: text('notes')
+		notes: text('notes'),
+		// The last day members can RSVP, inclusive (owner ruling
+		// 2026-09-30: the admin who makes the event picks it). Null
+		// means the event's own day.
+		rsvpUntil: text('rsvp_until')
 	},
 	(t) => [index('events_date').on(t.date)]
+);
+
+/**
+ * Who is interested in an event (owner rulings 2026-09-30): one row
+ * per member per event, present = interested. Members see only the
+ * count; names are for the admin event page. No timestamp at all -
+ * when someone tapped is an activity clock the binder does not keep.
+ */
+export const eventRsvps = sqliteTable(
+	'event_rsvps',
+	{
+		eventId: text('event_id')
+			.notNull()
+			.references(() => events.id),
+		memberId: text('member_id')
+			.notNull()
+			.references(() => members.id)
+	},
+	(t) => [
+		primaryKey({ columns: [t.eventId, t.memberId] }),
+		index('event_rsvps_member').on(t.memberId)
+	]
 );
 
 /** An event's gallery, one row per image; the bytes live in chunks. */
