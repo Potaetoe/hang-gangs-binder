@@ -2,10 +2,24 @@
 	import Brand from '$lib/components/Brand.svelte';
 	import { resolve } from '$app/paths';
 	import Nav from '$lib/components/Nav.svelte';
+	import NonceStyle from '$lib/components/NonceStyle.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	const barCss = $derived(
+		data.tiles
+			.flatMap((tile, t) =>
+				tile.bars.map(
+					(pct, i) =>
+						`.board > :nth-child(${t + 1}) .tile-bars > :nth-child(${i + 1}) { height: ${Number(pct)}%; }`
+				)
+			)
+			.join('\n')
+	);
 </script>
+
+<NonceStyle css={barCss} />
 
 <svelte:head>
 	<title>{data.siteName} Binder — Group Stats</title>
@@ -38,8 +52,8 @@
 						</svg>
 					{:else if tile.bars.length}
 						<div class="tile-bars" aria-hidden="true">
-							{#each tile.bars as pct, i (i)}
-								<div style={`height: ${pct}%`}></div>
+							{#each tile.bars, i (i)}
+								<div></div>
 							{/each}
 						</div>
 					{/if}

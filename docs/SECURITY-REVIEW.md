@@ -162,6 +162,13 @@ layout on that one block. `'unsafe-inline'` is gone; nothing else
 inline gets through. Driven on production: a palette renders through
 the nonce with the exact expected colors.
 
+**Side effect, fixed later:** the chart bars sized themselves with
+inline `style` attributes, which the stricter policy refuses, so every
+bar rendered at zero size. The bars now take their sizes from the same
+kind of nonce'd block (`src/lib/components/NonceStyle.svelte`), and the
+charts test fails if a bar measures zero or a page trips the CSP. The
+policy itself is unchanged.
+
 ### 8. Session cookie is `SameSite=Lax`, not `Strict` — HALF FIXED, HALF ACCEPTED
 
 **Severity: low.** Strict is the stronger setting, but the Telegram door
