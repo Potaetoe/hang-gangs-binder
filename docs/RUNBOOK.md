@@ -189,17 +189,20 @@ matters if you are scripting.
 
 The one thing to think about first: **code and schema roll back
 separately.** Rolling code back past a migration leaves newer tables
-in the database — harmless here, since the app only refuses when the
-schema is _behind_ the code, never ahead. Rolling the _database_ back
-past a migration while keeping new code is the dangerous direction;
-that is a schema-behind state, and the app will refuse loudly until
-you re-apply migrations (section 6).
+and columns in the database. That is harmless, because every
+migration must leave the previous code able to run (WORKING.md).
+Rolling the _database_ back past a migration while keeping new code
+is the dangerous direction: the code asks for tables or columns that
+are not there, and those pages fail until you re-apply migrations
+(section 6).
 
 ## 6. A behind-schema recovery
 
-The symptom: pages fail loudly saying the schema is behind. The app
-does this on purpose instead of limping — it means code that expects
-a migration is running against a database that has not had it.
+The symptom: pages that need a new table or column show the generic
+"Something broke on our side" page, and Workers Logs (dashboard → the
+worker → Logs) shows a crash line naming it, such as `no such column`.
+Code that expects a migration is running against a database that has
+not had it. A query never quietly half-works; it fails.
 
 The fix is to apply what is missing:
 
@@ -214,8 +217,7 @@ Then tell the repo's deploy-gate the truth, naming the newest file in
 py -3 hooks/record.py migrations-applied <newest-file-name>.sql
 ```
 
-If the apply itself fails partway, know how remote D1 behaves — this
-was learned the expensive way on 2026-08-26:
+If the apply itself fails partway, know how remote D1 behaves:
 
 - Remote D1 commits **statement by statement**. A migration that
   passed the whole local suite can still die mid-file in production,
@@ -265,7 +267,15 @@ binder-db` for the bookmark, and a full export (section 1). If the
 
 ## 8. The normal upgrade sequence
 
-The boring path, in order. Steps 3 and 4 are the seatbelts.
+On this repo, merging to `main` runs the release pipeline
+(`.github/workflows/ci.yml`): it re-runs the tests, applies pending
+migrations, deploys, and smoke-checks the live URL. Taking the backup
+and the bookmark (steps 3 and 4) is still on you before you merge
+anything with a migration in it.
+
+The manual sequence below is the break-glass path for when GitHub or
+the pipeline is down, and the whole path for a fork that runs without
+a pipeline. Steps 3 and 4 are the seatbelts.
 
 1. `git pull` the release you are moving to, then `npm ci`.
 2. `npm test` — the full Playwright suite against a local throwaway
@@ -280,11 +290,6 @@ The boring path, in order. Steps 3 and 4 are the seatbelts.
 6. `npm run build`, then `npx wrangler deploy`.
 7. Open the site in a real browser and click through what changed.
    A deploy is not done because wrangler said success.
-
-(Repo policy note, WORKING.md: until launch, production is the test
-site and deploys go straight to the one URL. At launch this flips to
-`wrangler versions upload` previews, with production moving only on
-promotion after sign-off.)
 
 ## 9. Ownership transfer
 
