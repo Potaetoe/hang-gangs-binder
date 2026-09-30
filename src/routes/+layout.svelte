@@ -1,5 +1,6 @@
 <script lang="ts">
 	import favicon from '$lib/assets/favicon.svg';
+	import NonceStyle from '$lib/components/NonceStyle.svelte';
 	import '../app.css';
 	import type { LayoutData } from './$types';
 
@@ -8,11 +9,7 @@
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	{#if data.themeCss}
-		<!-- The nonce is what lets this one inline style past the CSP. -->
-		<!-- eslint-disable-next-line svelte/no-at-html-tags -- built from the shipped palettes, never from input -->
-		{@html `<style nonce="${data.cspNonce}">${data.themeCss}</style>`}
-	{/if}
 </svelte:head>
+<NonceStyle css={data.themeCss} />
 
 {@render children()}

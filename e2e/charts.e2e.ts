@@ -1,6 +1,6 @@
 // The charts: the board, a focused field, combined filters - floorless - and units,
 // walked the way a person walks them.
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { fillStable, signOut, signInFreshMember } from './helpers';
 
 async function logEntry(
@@ -16,7 +16,16 @@ async function logEntry(
 	await expect(page.locator('.entries-table tbody tr').first()).toBeVisible();
 }
 
+/** A drawn bar's size on screen. The CSP refuses style attributes, so a
+ * bar sized the wrong way renders at zero. */
+const drawnSize = (locator: Locator, side: 'width' | 'height') =>
+	locator.evaluate((el, s) => el.getBoundingClientRect()[s], side);
+
 test('three members chart, and one filter finds the average', async ({ page }) => {
+	const refused: string[] = [];
+	page.on('console', (message) => {
+		if (message.text().includes('Content Security Policy')) refused.push(message.text());
+	});
 	const stamp = Date.now();
 	// The suite's own little group. Every test's data lives in the same
 	// database, so all assertions filter down to THESE members' country
@@ -41,6 +50,8 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 	await page.locator('.rail').getByRole('link', { name: 'Group Stats' }).click();
 	await expect(page.getByText(/\d+ members/)).toBeVisible();
 	await expect(page.locator('.tile').filter({ hasText: 'Weight' })).toBeVisible();
+	const genderBar = page.locator('.tile').filter({ hasText: 'Gender' }).locator('.tile-bars > div');
+	expect(await drawnSize(genderBar.first(), 'height')).toBeGreaterThan(0);
 
 	// Into the focused field.
 	await page.locator('.tile').filter({ hasText: 'Weight' }).click();
@@ -73,6 +84,7 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 		'data-label',
 		'140–160 lb · 1 member'
 	);
+	expect(await drawnSize(page.locator('.dist-bar').first(), 'height')).toBeGreaterThan(0);
 
 	// A choice field focuses into counts.
 	await page.locator('.fieldlist').getByRole('link', { name: 'Gender' }).click();
@@ -80,6 +92,10 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 	// Exact text: hasText is case-insensitive, and "Female" hides a
 	// "male" inside it.
 	await expect(page.locator('.countbar-label').filter({ hasText: /^Male$/ })).toBeVisible();
+	expect(await drawnSize(page.locator('.countbar-fill').first(), 'width')).toBeGreaterThan(0);
+
+	// Nothing on any of these pages tripped the CSP.
+	expect(refused).toEqual([]);
 });
 
 test('the rail is a bottom bar on the phone and wears the brand on desktop', async ({ page }) => {

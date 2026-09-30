@@ -4,9 +4,22 @@
 	import { resolve } from '$app/paths';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import Nav from '$lib/components/Nav.svelte';
+	import NonceStyle from '$lib/components/NonceStyle.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	const barCss = $derived(
+		[
+			...data.focus.counts.map(
+				(row, i) =>
+					`.countbars > :nth-child(${i + 1}) .countbar-fill { width: ${Number(row.pct)}%; }`
+			),
+			...(data.focus.dist?.bars ?? []).map(
+				(bar, i) => `.dist > :nth-child(${i + 1}) { height: ${Number(bar.pct)}%; }`
+			)
+		].join('\n')
+	);
 
 	// The units toggle carries ?u= for one view, filters intact; a static
 	// script strips it after render.
@@ -22,6 +35,7 @@
 	<script src="/units-view.js" defer></script>
 </svelte:head>
 
+<NonceStyle css={barCss} />
 <Nav active="charts" />
 <main class="wide with-rail">
 	<div class="page-head">
@@ -118,7 +132,7 @@
 							<div class="countbar">
 								<p class="countbar-label">{row.label}</p>
 								<div class="countbar-track">
-									<div class="countbar-fill" style={`width: ${row.pct}%`}></div>
+									<div class="countbar-fill"></div>
 								</div>
 								<p class="countbar-n">{row.count}</p>
 							</div>
@@ -171,7 +185,6 @@
 							<div
 								class="dist-bar"
 								class:on={bar.on}
-								style={`height: ${bar.pct}%`}
 								tabindex="0"
 								role="img"
 								aria-label={bar.label}
