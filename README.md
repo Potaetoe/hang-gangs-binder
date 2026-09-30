@@ -35,8 +35,10 @@ tier.
   to one formula.
 - **A calendar.** The group's events live on the home page: a month
   grid, event days marked, times shown in each member's own timezone,
-  and photo galleries with a plain-links viewer.
-- **A socials page.** The group's official links up top, then a roster
+  photo galleries with a plain-links viewer, and an "I'm interested"
+  button with a count (admins see who).
+- **A socials page.** The group's own panel up top — a message the
+  admins write in (safely filtered) HTML — then a roster
   of members who have listed theirs. Links are sealed exactly like
   names — a leaked database shows none of it.
 - **An admin surface.** Site settings, member approvals and roles,

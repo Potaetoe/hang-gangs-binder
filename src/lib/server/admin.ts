@@ -303,6 +303,7 @@ export async function purgeMember(db: Db, date: string, actorId: string, id: str
 			),
 		db.delete(table.logins).where(eq(table.logins.memberId, id)),
 		db.delete(table.socials).where(eq(table.socials.memberId, id)),
+		db.delete(table.eventRsvps).where(eq(table.eventRsvps.memberId, id)),
 		db.delete(table.directory).where(eq(table.directory.memberId, id)),
 		db.delete(table.members).where(eq(table.members.id, id)),
 		logAdminQuery(

@@ -110,6 +110,9 @@
 						{/each}
 					</tbody>
 				</table>
+				{#if form?.rsvpProblem}
+					<p class="error">{form.rsvpProblem}</p>
+				{/if}
 				{#if !data.events.length}
 					<p class="muted events-empty">Nothing on the calendar this month.</p>
 				{:else}
@@ -132,6 +135,35 @@
 									{#if event.notes}
 										<p class="event-notes">{event.notes}</p>
 									{/if}
+									<!-- RSVP (owner rulings 2026-09-30): one "interested"
+									     toggle, a count for everyone, names for admins
+									     only. A plain form - member pages ship no script. -->
+									<div class="event-rsvp">
+										<p class="rsvp-count">
+											{event.rsvpCount === 0
+												? event.rsvpOpen
+													? 'No one yet'
+													: 'No one was interested'
+												: `${event.rsvpCount} interested`}{#if event.rsvpMine}&nbsp;&middot;
+												including you{/if}
+										</p>
+										{#if event.rsvpOpen}
+											<form method="POST" action="?/rsvp">
+												<input type="hidden" name="event" value={event.id} />
+												<input type="hidden" name="on" value={event.rsvpMine ? '0' : '1'} />
+												<input type="hidden" name="ev" value={data.eventsPager.page} />
+												<input type="hidden" name="page" value={data.page} />
+												<button class:rsvp-on={event.rsvpMine} aria-pressed={event.rsvpMine}
+													>{event.rsvpMine ? 'Interested ✓' : "I'm interested"}</button
+												>
+											</form>
+											{#if event.rsvpUntilLabel}
+												<p class="muted rsvp-until">RSVP open through {event.rsvpUntilLabel}</p>
+											{/if}
+										{:else}
+											<p class="muted rsvp-until">RSVP closed</p>
+										{/if}
+									</div>
 								</div>
 								{#if event.imageIds.length}
 									<EventGallery

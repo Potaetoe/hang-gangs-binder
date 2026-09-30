@@ -9,7 +9,8 @@ import {
 	eventTimeLabel,
 	imageIdsByEvent,
 	parseEventFields,
-	pickedFiles
+	pickedFiles,
+	rsvpCounts
 } from '$lib/server/events';
 import { loadSettings, TIMEZONE_CHOICES } from '$lib/server/settings';
 import { formatDate, today } from '$lib/server/stats';
@@ -17,10 +18,9 @@ import { formatDate, today } from '$lib/server/stats';
 export const load: PageServerLoad = async ({ platform }) => {
 	const db = getDb(platform!.env.DB);
 	const events = await allEvents(db);
-	const imageIds = await imageIdsByEvent(
-		db,
-		events.map((e) => e.id)
-	);
+	const ids = events.map((e) => e.id);
+	const imageIds = await imageIdsByEvent(db, ids);
+	const counts = await rsvpCounts(db, ids);
 	const settings = await loadSettings(db);
 	return {
 		events: events.map((e) => ({
@@ -31,7 +31,8 @@ export const load: PageServerLoad = async ({ platform }) => {
 			timeLabel: e.time && e.tz ? eventTimeLabel(e.date, e.time, e.tz) : 'all day',
 			title: e.title,
 			place: e.place ?? '',
-			imageCount: (imageIds[e.id] ?? []).length
+			imageCount: (imageIds[e.id] ?? []).length,
+			rsvpCount: counts[e.id] ?? 0
 		})),
 		timezoneChoices: TIMEZONE_CHOICES,
 		siteTz: settings.timezone

@@ -29,6 +29,7 @@
 						<th>Event</th>
 						<th>Place</th>
 						<th>Images</th>
+						<th>Interested</th>
 						<th></th>
 					</tr>
 				</thead>
@@ -40,6 +41,7 @@
 							<td>{event.title}</td>
 							<td>{event.place || '—'}</td>
 							<td>{event.imageCount || '—'}</td>
+							<td>{event.rsvpCount || '—'}</td>
 							<td><a href={resolve('/admin/events/[id]', { id: event.id })}>Open</a></td>
 						</tr>
 					{/each}
@@ -71,6 +73,14 @@
 			<input id="event-place" name="place" autocomplete="off" maxlength="120" />
 			<label for="event-notes">Notes (optional)</label>
 			<textarea id="event-notes" name="notes" rows="3" maxlength="2000"></textarea>
+			<label for="event-rsvp-until"
+				>RSVP open through (optional — blank means the event's day)</label
+			>
+			<input id="event-rsvp-until" name="rsvp_until" type="date" />
+			<p class="muted">
+				Members can tap "I'm interested" through this day. Pick an earlier day to close it sooner,
+				or a past day to close it now.
+			</p>
 			<label for="event-images">Images (optional)</label>
 			<input id="event-images" name="images" type="file" accept="image/*" multiple />
 			<p class="muted">Up to 8 images, each 2 MB at most — flyers, not photo dumps.</p>

@@ -60,28 +60,31 @@
 			{/each}
 		</fieldset>
 
-		<p class="official-title">
-			Group links on the Socials page — the group chat, a Discord, whatever the group runs. Blank
-			rows stay off the page.
+		<label for="socials-message">The group's panel on the Socials page (HTML)</label>
+		<textarea
+			id="socials-message"
+			name="socials_message"
+			rows="10"
+			maxlength={data.messageMax}
+			spellcheck="false">{data.socialsMessage}</textarea
+		>
+		<p class="muted">
+			Allowed: {data.allowedTags.map((t) => `<${t}>`).join(' ')}. Links must be whole https
+			addresses and open in a new tab. Anything else — scripts, images, styles, classes — is removed
+			when you save. Leave it empty to hide the panel.
 		</p>
-		{#each [...Array(data.officialSlots).keys()] as i (i)}
-			<div class="row">
-				<input
-					name={`official_label_${i + 1}`}
-					aria-label={`Group link ${i + 1} name`}
-					placeholder="Name"
-					maxlength="24"
-					value={data.officialLinks[i]?.label ?? ''}
-				/>
-				<input
-					name={`official_url_${i + 1}`}
-					aria-label={`Group link ${i + 1} address`}
-					placeholder="https://…"
-					value={data.officialLinks[i]?.url ?? ''}
-				/>
-			</div>
-		{/each}
 
 		<button>Save settings</button>
 	</form>
+
+	{#if data.socialsPreview}
+		<div class="card">
+			<h3>How the Socials panel reads</h3>
+			<!-- Cleaned server-side to the rich.ts allowlist, on save and on load. -->
+			<div class="socials-message">
+				<!-- eslint-disable-next-line svelte/no-at-html-tags -- allowlist-sanitized in rich.ts -->
+				{@html data.socialsPreview}
+			</div>
+		</div>
+	{/if}
 </section>

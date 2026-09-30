@@ -2,6 +2,7 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import { logAdmin } from '$lib/server/admin';
+import { allIdentities, type Secrets } from '$lib/server/auth';
 import {
 	addEventImage,
 	deleteEvent,
@@ -10,18 +11,34 @@ import {
 	eventImageList,
 	parseEventFields,
 	pickedFiles,
+	rsvpLastDay,
+	rsvpMemberIds,
+	rsvpOpen,
 	updateEvent
 } from '$lib/server/events';
 import { loadSettings, TIMEZONE_CHOICES } from '$lib/server/settings';
-import { today } from '$lib/server/stats';
+import { formatDate, today } from '$lib/server/stats';
 
 export const load: PageServerLoad = async ({ params, platform, url }) => {
-	const db = getDb(platform!.env.DB);
+	const env = platform!.env;
+	const db = getDb(env.DB);
 	const event = await eventById(db, params.id);
 	if (!event) error(404, 'No such event');
 	const images = await eventImageList(db, event.id);
 	const skipped = Math.max(0, Number(url.searchParams.get('skipped')) || 0);
 	const settings = await loadSettings(db);
+	// Who is interested (owner ruling 2026-09-30): names for admins
+	// only. One directory read however long the list is.
+	const rsvpIds = await rsvpMemberIds(db, event.id);
+	const identities = rsvpIds.length
+		? await allIdentities(db, env as unknown as Secrets)
+		: new Map();
+	const interested = rsvpIds
+		.map((id) => {
+			const who = identities.get(id) ?? {};
+			return { id, name: who.displayName || who.handle || who.username || '(no name on file)' };
+		})
+		.sort((a, b) => a.name.localeCompare(b.name));
 	return {
 		event: {
 			id: event.id,
@@ -30,8 +47,12 @@ export const load: PageServerLoad = async ({ params, platform, url }) => {
 			tz: event.tz ?? '',
 			title: event.title,
 			place: event.place ?? '',
-			notes: event.notes ?? ''
+			notes: event.notes ?? '',
+			rsvpUntil: event.rsvpUntil ?? ''
 		},
+		interested,
+		rsvpOpen: rsvpOpen(event, today(settings.timezone)),
+		rsvpLastDayLabel: formatDate(rsvpLastDay(event)),
 		images: images.map((i) => ({ id: i.id })),
 		skipped,
 		timezoneChoices: TIMEZONE_CHOICES,

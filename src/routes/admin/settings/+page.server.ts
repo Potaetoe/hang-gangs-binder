@@ -9,11 +9,15 @@ import {
 	TIMEZONE_CHOICES,
 	type SiteSettings
 } from '$lib/server/settings';
-import { parseOfficialLinks, type OfficialLink } from '$lib/server/socials';
+import {
+	ALLOWED_TAGS,
+	cleanMessage,
+	MESSAGE_MAX,
+	renderMessage,
+	socialsMessageOf
+} from '$lib/server/rich';
 import { loadFields, today } from '$lib/server/stats';
 import { trendSet } from '$lib/server/settings';
-
-const OFFICIAL_SLOTS = 4;
 
 export const load: PageServerLoad = async ({ platform }) => {
 	const db = getDb(platform!.env.DB);
@@ -25,8 +29,12 @@ export const load: PageServerLoad = async ({ platform }) => {
 		trendChoices: (await loadFields(db))
 			.filter((f) => f.type === 'number')
 			.map((f) => ({ id: f.id, name: f.name, on: chosen.has(f.id) })),
-		officialLinks: parseOfficialLinks(settings.socialLinks),
-		officialSlots: OFFICIAL_SLOTS,
+		// The box holds exactly what members see - already cleaned, so
+		// the admin sees at once what the allowlist kept.
+		socialsMessage: socialsMessageOf(settings),
+		socialsPreview: renderMessage(socialsMessageOf(settings)),
+		allowedTags: ALLOWED_TAGS,
+		messageMax: MESSAGE_MAX,
 		themeChoices: THEME_CHOICES,
 		timezoneChoices: TIMEZONE_CHOICES
 	};
@@ -47,24 +55,16 @@ export const actions: Actions = {
 		const db = getDb(platform!.env.DB);
 		const form = await request.formData();
 
-		// The group's own links for the Socials page: four label+link
-		// slots, blanks dropped, https only (owner ruling 2026-08-26).
-		const official: OfficialLink[] = [];
-		for (let slot = 1; slot <= OFFICIAL_SLOTS; slot++) {
-			const label = String(form.get(`official_label_${slot}`) ?? '')
-				.trim()
-				.slice(0, 24);
-			const url = String(form.get(`official_url_${slot}`) ?? '').trim();
-			if (!label && !url) continue;
-			try {
-				if (!label || new URL(url).protocol !== 'https:') throw new Error();
-			} catch {
-				return fail(400, {
-					message: `Group link ${slot} needs both a short name and a whole https link.`
-				});
-			}
-			official.push({ label, url });
+		// The group's panel on the Socials page (owner rulings
+		// 2026-09-30): admin HTML, cleaned to the allowlist before it is
+		// stored. Too long is refused whole, never silently cut.
+		const rawMessage = String(form.get('socials_message') ?? '');
+		if (rawMessage.length > MESSAGE_MAX) {
+			return fail(400, {
+				message: `The Socials message tops out at ${MESSAGE_MAX} characters.`
+			});
 		}
+		const socialsMessage = cleanMessage(rawMessage);
 
 		// The trend checkboxes: only real number fields count, kept in
 		// the form's own order (owner ruling 2026-08-26).
@@ -82,7 +82,9 @@ export const actions: Actions = {
 				.slice(0, 400),
 			timezone: String(form.get('timezone') ?? '').trim(),
 			theme: String(form.get('theme') ?? 'auto'),
-			socialLinks: JSON.stringify(official),
+			// Not written by the loop below - retired after it.
+			socialLinks: '[]',
+			socialsMessage,
 			trendFields: JSON.stringify(trendIds)
 		};
 		if (!next.siteName) return fail(400, { message: 'The site needs a name.' });
@@ -100,10 +102,13 @@ export const actions: Actions = {
 			'welcomeText',
 			'timezone',
 			'theme',
-			'socialLinks',
+			'socialsMessage',
 			'trendFields'
 		] as const) {
-			if (current[prop] !== next[prop]) {
+			// The message compares against what members were shown, so a
+			// site on the old links logs the switch once, not every save.
+			const before = prop === 'socialsMessage' ? socialsMessageOf(current) : current[prop];
+			if (before !== next[prop]) {
 				await saveSetting(db, prop, next[prop]);
 				await logAdmin(
 					db,
@@ -114,23 +119,24 @@ export const actions: Actions = {
 							? 'site name'
 							: prop === 'welcomeText'
 								? 'welcome text'
-								: prop === 'socialLinks'
-									? 'group links'
+								: prop === 'socialsMessage'
+									? 'Socials message'
 									: prop === 'trendFields'
 										? 'trend graphs'
 										: prop
 					}`,
 					null,
-					prop === 'welcomeText'
+					prop === 'welcomeText' || prop === 'socialsMessage'
 						? null
-						: prop === 'socialLinks'
-							? `${official.length} link${official.length === 1 ? '' : 's'}`
-							: prop === 'trendFields'
-								? `${trendIds.length} field${trendIds.length === 1 ? '' : 's'}`
-								: next[prop]
+						: prop === 'trendFields'
+							? `${trendIds.length} field${trendIds.length === 1 ? '' : 's'}`
+							: next[prop]
 				);
 			}
 		}
+		// Retire the old link slots for good, or an emptied message would
+		// bring them back as the fallback.
+		if (current.socialLinks !== '[]') await saveSetting(db, 'socialLinks', '[]');
 		return { done: 'Saved.' };
 	}
 };

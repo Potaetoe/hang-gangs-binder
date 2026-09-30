@@ -24,12 +24,17 @@ import {
 } from '$lib/server/stats';
 import {
 	calendarGrid,
+	eventById,
 	eventEpoch,
 	EVENTS_PER_PAGE,
 	eventTimeLabel,
 	imageIdsByEvent,
 	monthEvents,
 	monthOf,
+	rsvpCounts,
+	rsvpOpen,
+	rsvpsOf,
+	setRsvp,
 	validMonth
 } from '$lib/server/events';
 import { loadSettings, trendSet } from '$lib/server/settings';
@@ -96,10 +101,12 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 		to: (eventPage - 1) * EVENTS_PER_PAGE + pageRows.length,
 		total: eventRows.length
 	};
-	const imageIds = await imageIdsByEvent(
-		db,
-		pageRows.map((e) => e.id)
-	);
+	const pageIds = pageRows.map((e) => e.id);
+	const imageIds = await imageIdsByEvent(db, pageIds);
+	// RSVPs (owner rulings 2026-09-30): members see the count and their
+	// own answer, never who else.
+	const counts = await rsvpCounts(db, pageIds);
+	const mine = await rsvpsOf(db, memberId, pageIds);
 	const events: EventView[] = pageRows.map((e) => ({
 		id: e.id,
 		date: e.date,
@@ -109,7 +116,11 @@ export const load: PageServerLoad = async ({ locals, platform, url, cookies }) =
 		title: e.title,
 		place: e.place,
 		notes: e.notes,
-		imageIds: imageIds[e.id] ?? []
+		imageIds: imageIds[e.id] ?? [],
+		rsvpCount: counts[e.id] ?? 0,
+		rsvpMine: mine.has(e.id),
+		rsvpOpen: rsvpOpen(e, todayIso),
+		rsvpUntilLabel: e.rsvpUntil ? formatDate(e.rsvpUntil) : null
 	}));
 
 	const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
@@ -205,6 +216,28 @@ export const actions: Actions = {
 		// The confirmation shows in the units just typed in; the script
 		// strips ?u=, so the next load is the default again.
 		redirect(303, `/home?u=${units}`);
+	},
+
+	rsvp: async ({ request, locals, platform }) => {
+		if (!locals.member) redirect(303, '/');
+		const db = getDb(platform!.env.DB);
+		const form = await request.formData();
+		const event = await eventById(db, String(form.get('event') ?? ''));
+		if (!event) return fail(404, { rsvpProblem: 'That event is gone.' });
+		// Closed means closed, even for a form that was loaded while it
+		// was open (owner ruling 2026-09-30: the admin picks the day).
+		if (!rsvpOpen(event, today((await loadSettings(db)).timezone))) {
+			return fail(400, { rsvpProblem: `RSVPs for ${event.title} are closed.` });
+		}
+		await setRsvp(db, event.id, locals.member.memberId, form.get('on') === '1');
+		// Back to the same calendar page and the same card. The query is
+		// rebuilt from checked parts, never echoed - no open redirect.
+		const ev = Math.max(1, Math.floor(Number(form.get('ev')) || 1));
+		const page = Math.max(1, Math.floor(Number(form.get('page')) || 1));
+		let query = `?cal=${monthOf(event.date)}`;
+		if (ev > 1) query += `&ev=${ev}`;
+		if (page > 1) query += `&page=${page}`;
+		redirect(303, `/home${query}#ev-${event.id}`);
 	},
 
 	nudgeoff: async ({ cookies, locals }) => {

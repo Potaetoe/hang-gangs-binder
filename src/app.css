@@ -720,6 +720,38 @@ a.cal-day.has-event.today {
 	-webkit-box-orient: vertical;
 	overflow: hidden;
 }
+/* RSVP (owner rulings 2026-09-30): the count, then one toggle. The
+   "on" state goes quiet - an outline, not the accent fill - so the
+   call to act is only loud while there is something to do. */
+.event-rsvp {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.35rem 0.75rem;
+	margin-top: 0.5rem;
+}
+.event-rsvp p {
+	margin: 0;
+	font-size: 0.85rem;
+}
+.rsvp-count {
+	font-weight: 600;
+}
+.event-rsvp form {
+	margin: 0;
+}
+.event-rsvp button {
+	min-height: 2.25rem;
+	padding: 0.3rem 0.8rem;
+	font-size: 0.85rem;
+}
+.event-rsvp button.rsvp-on {
+	color: var(--color-accent);
+	background: transparent;
+}
+.rsvp-until {
+	flex-basis: 100%;
+}
 .events-pager {
 	display: flex;
 	align-items: center;
@@ -1545,19 +1577,55 @@ button.nudge-off {
 }
 
 /* ------------------------------------------------------------------ */
-/* Socials (DESIGN.md feature 6): the group's own links, then the     */
-/* roster - a name, then letter badges for where they are.            */
+/* Socials (DESIGN.md feature 6): the group's panel, then the roster */
+/* - a name, then letter badges for where they are.                   */
 
-.official-list {
-	list-style: none;
-	margin: 0;
-	padding: 0;
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.5rem 1.5rem;
+/* The admin-written panel (owner rulings 2026-09-30). It can only    */
+/* carry allowlisted tags, so these few rules are its whole look.     */
+.socials-message {
+	overflow-wrap: anywhere;
 }
-.official-list a {
+.socials-message > :first-child {
+	margin-top: 0;
+}
+.socials-message > :last-child {
+	margin-bottom: 0;
+}
+.socials-message h2,
+.socials-message h3,
+.socials-message h4 {
+	margin: 1rem 0 0.4rem;
+}
+.socials-message p,
+.socials-message ul,
+.socials-message ol,
+.socials-message blockquote {
+	margin: 0 0 0.6rem;
+}
+.socials-message ul,
+.socials-message ol {
+	padding-left: 1.25rem;
+}
+.socials-message blockquote {
+	padding-left: 0.75rem;
+	border-left: 3px solid var(--color-border-strong);
+	color: var(--color-text-muted);
+}
+.socials-message a {
 	font-weight: 600;
+}
+/* A link the cleaner took the address from reads as the plain words
+   it now is - never a red link that goes nowhere. */
+.socials-message a:not([href]) {
+	color: inherit;
+	font-weight: inherit;
+	text-decoration: none;
+	cursor: text;
+}
+.socials-message hr {
+	border: 0;
+	border-top: 1px solid var(--color-border-strong);
+	margin: 0.75rem 0;
 }
 .official-title {
 	font-weight: 600;

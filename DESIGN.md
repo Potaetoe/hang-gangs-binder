@@ -189,9 +189,29 @@ decisions.
    page scrolls inside it, headers pinned. The admin's date field is
    the browser's own date box: calendar flyout and typing both work.
 
+   **RSVPs** (owner rulings, 2026-09-30): each event card carries one
+   "I'm interested" toggle - tap in, tap out, a plain form. Members
+   see the count and whether they are in it, never who else; the
+   admin event page lists the names, and the admin events table
+   carries the count. The admin who makes the event picks the last
+   day it takes RSVPs ("RSVP open through", optional); blank means
+   the event's own day, and a past day closes it at once. Days are
+   read on the site's calendar, like everything else. After it
+   closes the button goes and the count stays. An RSVP row is an
+   opaque member id beside an event id, with no timestamp - when
+   someone tapped is an activity clock the binder does not keep.
+   Deleting an event takes its RSVPs; the departed purge sweeps a
+   member's.
+
 6. **Socials** (owner rulings, 2026-08-26) — its own rail page. The
-   group's official links sit up top (a short label+link list the
-   admins keep in site Settings, logged like any setting); below, a
+   group's panel sits up top: since 2026-09-30 (owner rulings) a
+   message the admins write in HTML in site Settings, logged like
+   any setting, replacing the four label+link slots. It is cut to a
+   safe allowlist - headings, paragraphs, emphasis, lists, quotes,
+   code, rules, and whole-https links that open in a new tab -
+   cleaned on save and again on render; scripts, styles, images and
+   anything else are removed, and the CSP stays as the security
+   review left it. Empty hides the panel. Below, a
    roster of every approved member who has listed links — a name,
    then small letter badges for X, Tumblr, Feabie, FetLife, and one
    labelled Other. Links open in a new tab. Handles for X and Tumblr

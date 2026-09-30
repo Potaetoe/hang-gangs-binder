@@ -58,8 +58,31 @@
 		/>
 		<label for="event-notes">Notes (optional)</label>
 		<textarea id="event-notes" name="notes" rows="3" maxlength="2000">{data.event.notes}</textarea>
+		<label for="event-rsvp-until">RSVP open through (optional — blank means the event's day)</label>
+		<input id="event-rsvp-until" name="rsvp_until" type="date" value={data.event.rsvpUntil} />
+		<p class="muted">
+			Members can tap "I'm interested" through this day. Pick an earlier day to close it sooner, or
+			a past day to close it now.
+		</p>
 		<button>Save the event</button>
 	</form>
+
+	<div class="card" id="interested">
+		<h3>Interested ({data.interested.length})</h3>
+		<p class="muted">
+			{data.rsvpOpen ? 'RSVP open through' : 'RSVP closed after'}
+			{data.rsvpLastDayLabel}. Members see only the count; these names are for admins.
+		</p>
+		{#if data.interested.length}
+			<ul class="rsvp-names">
+				{#each data.interested as person (person.id)}
+					<li><a href={resolve('/admin/members/[id]', { id: person.id })}>{person.name}</a></li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="muted">No one yet.</p>
+		{/if}
+	</div>
 
 	<div class="card" id="images">
 		<h3>Images</h3>

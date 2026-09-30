@@ -257,3 +257,100 @@ test('the events row shows three at a time, and the days know their page', async
 	const day4 = page.locator('a.cal-day.has-event', { hasText: '4' });
 	expect(await day4.getAttribute('href')).toContain('ev=2');
 });
+
+test('members tap interested, see only the count, and the admin sees who', async ({ page }) => {
+	// RSVP (owner rulings 2026-09-30): one "interested" toggle, a count
+	// for members, names on the admin event page, and the admin picks
+	// the last day it is open.
+	// Three accounts and many sign-ins: ~11s alone, past the 30s budget
+	// when the whole suite shares a laptop.
+	test.slow();
+	const stamp = Date.now();
+	const boss = `host${stamp}`;
+	const first = `keen${stamp}`;
+	const second = `maybe${stamp}`;
+	const open = `Picnic ${stamp}`;
+	const shut = `Gala ${stamp}`;
+	await register(page, boss);
+	expect((await page.request.post(`/test/admin?username=${boss}`)).ok()).toBeTruthy();
+	for (const who of [first, second]) {
+		await register(page, who);
+		expect((await page.request.post(`/test/approve?username=${who}`)).ok()).toBeTruthy();
+	}
+
+	// Two events: one open (blank close day = through its own day), one
+	// the admin already closed with a past day.
+	await signIn(page, boss);
+	for (const [title, day, until] of [
+		[open, '2035-06-10', ''],
+		[shut, '2035-06-12', '2020-01-01']
+	]) {
+		await page.goto('/admin/events');
+		await fillStable(page, /what is happening/i, title);
+		await fillStable(page, 'The day', day);
+		if (until) await fillStable(page, /rsvp open through/i, until);
+		await page.getByRole('button', { name: 'Add the event' }).click();
+		await expect(page.getByRole('heading', { name: title })).toBeVisible();
+	}
+	await signOut(page);
+
+	const card = (title: string) => page.locator('article.event').filter({ hasText: title });
+
+	// The first member: nobody yet, taps in, and is counted.
+	await signIn(page, first);
+	await page.goto('/home?cal=2035-06');
+	await expect(card(open).locator('.rsvp-count')).toHaveText('No one yet');
+	await card(open).getByRole('button', { name: "I'm interested" }).click();
+	await expect(card(open).locator('.rsvp-count')).toHaveText('1 interested · including you');
+	await expect(card(open).getByRole('button', { name: 'Interested ✓' })).toBeVisible();
+	// The redirect lands back on the same month and card.
+	await expect(page).toHaveURL(/cal=2035-06.*#ev-/);
+
+	// The closed one offers no button - and a hand-made POST is refused.
+	await expect(card(shut).getByText('RSVP closed')).toBeVisible();
+	await expect(card(shut).getByRole('button')).toHaveCount(0);
+	const shutId = (await card(shut).getAttribute('id'))!.slice(3);
+	const forced = await page.request.post('/home?/rsvp', {
+		form: { event: shutId, on: '1' },
+		// A browser's own no-script form post: same origin, wants HTML.
+		headers: { origin: new URL(page.url()).origin, accept: 'text/html' }
+	});
+	expect(forced.status()).toBe(400);
+	await page.goto('/home?cal=2035-06');
+	await expect(card(shut).locator('.rsvp-count')).toHaveText('No one was interested');
+	await signOut(page);
+
+	// The second member sees the count, never the name; in, then out.
+	await signIn(page, second);
+	await page.goto('/home?cal=2035-06');
+	await expect(card(open).locator('.rsvp-count')).toHaveText('1 interested');
+	await expect(card(open).getByText(first)).toHaveCount(0);
+	await card(open).getByRole('button', { name: "I'm interested" }).click();
+	await expect(card(open).locator('.rsvp-count')).toHaveText('2 interested · including you');
+	await card(open).getByRole('button', { name: 'Interested ✓' }).click();
+	await expect(card(open).locator('.rsvp-count')).toHaveText('1 interested');
+	await signOut(page);
+
+	// The admin: the count in the list, the name on the event page.
+	await signIn(page, boss);
+	await page.goto('/admin/events');
+	const row = page.locator('.admin-table tbody tr').filter({ hasText: open });
+	await expect(row.locator('td').nth(5)).toHaveText('1');
+	await row.getByRole('link', { name: 'Open' }).click();
+	const who = page.locator('#interested');
+	await expect(who.getByRole('heading', { name: 'Interested (1)' })).toBeVisible();
+	await expect(who.getByRole('link', { name: first })).toBeVisible();
+	await expect(who.getByText(second)).toHaveCount(0);
+
+	// Closing early: a past close day shuts it, and the count stays.
+	await fillStable(page, /rsvp open through/i, '2020-01-01');
+	await page.getByRole('button', { name: 'Save the event' }).click();
+	await expect(page.getByText('Saved.')).toBeVisible();
+	await expect(who.getByText(/RSVP closed after/)).toBeVisible();
+	await signOut(page);
+	await signIn(page, first);
+	await page.goto('/home?cal=2035-06');
+	await expect(card(open).getByText('RSVP closed')).toBeVisible();
+	await expect(card(open).locator('.rsvp-count')).toHaveText('1 interested · including you');
+	await expect(card(open).getByRole('button')).toHaveCount(0);
+});

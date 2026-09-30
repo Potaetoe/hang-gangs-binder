@@ -52,9 +52,23 @@ test('a purged member leaves nothing behind but the unlinkable log line', async 
 	await register(page, departed);
 	expect((await page.request.post(`/test/approve?username=${departed}`)).ok()).toBeTruthy();
 
+	// An event for the member to be interested in, made in the admin's
+	// own context so the member's session stays the only one on `page`.
+	const setup = await browser.newContext();
+	const setupPage = await setup.newPage();
+	await signIn(setupPage, boss);
+	await setupPage.goto('/admin/events');
+	await fillStable(setupPage, /what is happening/i, `Farewell ${stamp}`);
+	await fillStable(setupPage, 'The day', '2034-02-14');
+	await setupPage.getByRole('button', { name: 'Add the event' }).click();
+	// The add lands on the new event's own admin page.
+	await expect(setupPage.getByRole('heading', { name: `Farewell ${stamp}` })).toBeVisible();
+	await setup.close();
+
 	// The member leaves tracks in every table a member can touch:
 	// entries and their values, a correction (the audit trail), a
-	// socials row, the sealed directory row, a login, a live session.
+	// socials row, an RSVP, the sealed directory row, a login, a live
+	// session.
 	await signIn(page, departed);
 	await fillStable(page, 'Weight', '200');
 	await page.getByRole('button', { name: 'Save entry' }).click();
@@ -69,6 +83,10 @@ test('a purged member leaves nothing behind but the unlinkable log line', async 
 	await fillStable(page, 'X handle', `goner${stamp}`);
 	await page.getByRole('button', { name: 'Save socials' }).click();
 	await expect(page.getByText('Saved.')).toBeVisible();
+	await page.goto('/home?cal=2034-02');
+	const farewell = page.locator('article.event').filter({ hasText: `Farewell ${stamp}` });
+	await farewell.getByRole('button', { name: "I'm interested" }).click();
+	await expect(farewell.locator('.rsvp-count')).toHaveText('1 interested · including you');
 
 	// The opaque id, captured while it can still be looked up - after
 	// the purge there is no path from a name to it, which is the point.
@@ -109,7 +127,8 @@ test('a purged member leaves nothing behind but the unlinkable log line', async 
 		sessions: 0,
 		entries: 0,
 		orphanValues: 0,
-		memberAudit: 0
+		memberAudit: 0,
+		rsvps: 0
 	});
 
 	// The member's own next click meets a signed-out site: their

@@ -26,18 +26,13 @@
 		>
 	{/if}
 
-	{#if data.official.length}
-		<section class="official card">
-			<h2>The group's own</h2>
-			<ul class="official-list">
-				<!-- eslint-disable svelte/no-navigation-without-resolve -- admin-entered https links to the outside world -->
-				{#each data.official as link (link.label)}
-					<li>
-						<a href={link.url} target="_blank" rel="noreferrer noopener">{link.label}</a>
-					</li>
-				{/each}
-				<!-- eslint-enable svelte/no-navigation-without-resolve -->
-			</ul>
+	{#if data.message}
+		<!-- The group's panel (owner rulings 2026-09-30): whatever the
+		     admins wrote, cut to the rich.ts allowlist on save and again
+		     on load - no script, style or image survives either pass. -->
+		<section class="card socials-message">
+			<!-- eslint-disable-next-line svelte/no-at-html-tags -- allowlist-sanitized in rich.ts -->
+			{@html data.message}
 		</section>
 	{/if}
 
