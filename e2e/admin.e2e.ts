@@ -116,9 +116,19 @@ test('the admin sees everything, and the passphrase walls the member off', async
 
 	// A temporary passphrase, typed by the admin.
 	await page.getByText('Reset password', { exact: true }).click();
+	// It types as dots; Show reveals it to catch a typo, Hide covers it.
+	const box = page.getByLabel(/temporary passphrase/i);
+	await expect(box).toHaveAttribute('type', 'password');
 	await fillStable(page, /temporary passphrase/i, 'temp-pass-12345');
+	await page.getByRole('button', { name: 'Show' }).click();
+	await expect(box).toHaveAttribute('type', 'text');
+	await expect(box).toHaveValue('temp-pass-12345');
+	await page.getByRole('button', { name: 'Hide' }).click();
+	await expect(box).toHaveAttribute('type', 'password');
 	await page.getByRole('button', { name: 'Set passphrase' }).click();
 	await expect(page.getByText(/hand it over out of band/i)).toBeVisible();
+	// The confirmation names the username to type at the door.
+	await expect(page.locator('.done strong')).toHaveText(pat);
 	await signOut(page);
 
 	// The old password is dead; the temporary one leads to a wall.

@@ -306,6 +306,20 @@ a {
 .flap > form {
 	margin-top: 0.75rem;
 }
+/* A password box with its Show button beside it. */
+.reveal-row {
+	display: flex;
+	gap: 0.5rem;
+	align-items: center;
+}
+.reveal-row > input {
+	flex: 1;
+	min-width: 0;
+}
+.reveal-row > button {
+	flex: none;
+	margin: 0;
+}
 .flap > summary {
 	font-family: var(--font-text);
 	font-size: 0.9rem;

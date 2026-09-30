@@ -5,6 +5,10 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 </script>
 
+<svelte:head>
+	<script src="/reveal.js" defer></script>
+</svelte:head>
+
 <section>
 	<h2>
 		{data.member.name}
@@ -21,7 +25,12 @@
 		<p class="error">{form.message}</p>
 	{/if}
 	{#if form?.done}
-		<p class="muted done">{form.done}</p>
+		<p class="muted done">
+			{form.done}
+			<!-- The name to type at the door is the username, not the display
+			     name above - say it where the passphrase is handed over. -->
+			{#if data.member.username}They sign in as <strong>{data.member.username}</strong>.{/if}
+		</p>
 	{/if}
 
 	<div class="admin-actions card">
@@ -43,7 +52,12 @@
 				<summary>Reset password</summary>
 				<form method="POST" action="?/passphrase">
 					<label for="passphrase">Temporary passphrase ({data.passwordMin}+ characters)</label>
-					<input id="passphrase" name="passphrase" autocomplete="off" />
+					<div class="reveal-row">
+						<input id="passphrase" name="passphrase" type="password" autocomplete="new-password" />
+						<!-- Hidden until reveal.js wakes it: without a script the
+						     field simply stays dots. -->
+						<button type="button" class="quiet" data-reveal="passphrase" hidden>Show</button>
+					</div>
 					<p class="muted">
 						Hand it to them yourself — Telegram, in person, anywhere but here. Their next sign-in
 						demands a password of their own, and every open session is signed out now.
