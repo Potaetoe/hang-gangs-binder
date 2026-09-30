@@ -1,8 +1,8 @@
 """migration-guard (WORKING.md, Enforcement #8): what passes locally
 must be shaped to survive production.
 
-Born 2026-08-26, the day migration 0010 passed the whole local suite
-and was rolled back by production. Local D1 applies a migration file
+A migration can pass the whole local suite and still be rolled back
+by production, as 0010 once was. Local D1 applies a migration file
 as ONE transaction; remote D1 commits it statement by statement. So
 `PRAGMA defer_foreign_keys` holds a local apply together and does
 nothing remotely, and `PRAGMA foreign_keys` is refused by D1 outright
@@ -38,9 +38,7 @@ def migration_files():
 def strip_sql_comments(sql):
     """The rule is about STATEMENTS. A migration's -- commentary may
     name a pragma while explaining why it is absent (0010 does exactly
-    that), and that must not read as using one - the guard denied its
-    own good example on 2026-08-26, which is this function's
-    birthday."""
+    that), and that must not read as using one."""
     sql = re.sub(r"--[^\n]*", "", sql)
     sql = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
     return sql
@@ -58,7 +56,7 @@ def check_migration_files():
         name = os.path.basename(path)
         if REFUSED.search(sql):
             deny("migration-guard: %s uses a PRAGMA that remote D1 refuses "
-                 "(it rolled production back on 2026-08-26). Rewrite the "
+                 "(it once rolled production back). Rewrite the "
                  "migration without it: rebuild tables PARENT FIRST so every "
                  "statement boundary satisfies every foreign key on its own - "
                  "see drizzle/0010_the-hardening.sql for the shape." % name)
@@ -66,7 +64,7 @@ def check_migration_files():
             deny("migration-guard: %s leans on PRAGMA defer_foreign_keys. "
                  "Remote D1 commits a migration statement by statement, so "
                  "the deferral will not span them - it passes locally and "
-                 "fails production (learned 2026-08-26). Reorder the rebuild "
+                 "fails production. Reorder the rebuild "
                  "parent-first instead; drizzle/0010_the-hardening.sql shows "
                  "the shape." % name)
 

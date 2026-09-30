@@ -1,9 +1,8 @@
-/* The Binder's face, carried over from the old world (DESIGN.md, "The
-   look"): Playfair Display for the wordmark and headings, DM Sans for
-   text, JetBrains Mono for data. These tokens are the daylight and
-   midnight palettes following the device; the pinned palettes (plum
-   and meadow included) override them from src/lib/server/settings.ts
-   via the layout's injected style. */
+/* The Binder's look (DESIGN.md, "The look"): Playfair Display for the
+   wordmark and headings, DM Sans for text, JetBrains Mono for data.
+   These tokens are daylight and midnight following the device; a
+   pinned palette overrides them through the layout's injected style
+   (src/lib/server/settings/palettes.ts). */
 
 @font-face {
 	font-family: 'Playfair Display';
@@ -43,10 +42,9 @@
 
 :root {
 	/* Native widgets (the date picker's button, dropdowns, scrollbars)
-	   follow the palette. The pinned palettes carry their own
-	   color-scheme (settings.ts); this pair covers 'auto'. Without it
-	   the date box's calendar button painted black on midnight - an
-	   invisible control (owner report, 2026-08-26). */
+	   follow the palette. Pinned palettes carry their own color-scheme;
+	   this pair covers 'auto'. Without it the date box's calendar button
+	   paints black on midnight and disappears. */
 	color-scheme: light;
 
 	--font-text: 'DM Sans', system-ui, sans-serif;
@@ -105,15 +103,13 @@ body {
 	display: contents;
 }
 
-/* The app shell (owner rulings 2026-08-26, after two iPhone drives):
-   iOS bounces the whole document, ignores overscroll-behavior on it,
-   and floats position:fixed bars - the installed app showed the rail
-   hovering above the bottom edge. So on the phone NOTHING is fixed
-   and the document cannot scroll: the page is a flex column exactly
-   one screen tall - a status-bar scrim, the scrolling main, and the
-   rail resting in flow on the bottom edge. A scrolling card inside
-   keeps its own momentum. Desktop keeps document scroll and its
-   sticky top bar. */
+/* The phone app shell. iOS bounces the whole document, ignores
+   overscroll-behavior on it, and floats position:fixed bars above the
+   bottom edge of the installed app. So on the phone nothing is fixed
+   and the document never scrolls: the page is a flex column exactly one
+   screen tall, with a status-bar scrim, the scrolling main, and the rail
+   resting in flow on the bottom edge. A scrolling card inside keeps its
+   own momentum. Desktop keeps document scroll and a sticky top bar. */
 @media (max-width: 899.98px) {
 	html:has(main.with-rail),
 	body:has(main.with-rail) {
@@ -141,8 +137,8 @@ body {
 		min-height: 0;
 		overflow-y: auto;
 		overscroll-behavior: contain;
-		/* Full width, so a touch anywhere scrolls; the padding draws
-		   the same centered column the max-width used to. */
+		/* Full width, so a touch anywhere scrolls; the padding draws the
+		   centered column a max-width would. */
 		width: 100%;
 		max-width: none;
 		padding-inline: max(1rem, calc(50% - 12rem));
@@ -153,11 +149,10 @@ body {
 	}
 }
 
-/* iOS 26's installed-app container miscalculates 100% and 100dvh as
-   if Safari's toolbar were still on screen, leaving a dead strip
-   under the page (owner drive 2026-08-26; the web agrees). Plain
-   100vh reads the true screen there. Only for the installed app -
-   in a browser 100vh would overshoot under the toolbar. */
+/* iOS 26's installed-app container works out 100% and 100dvh as if
+   Safari's toolbar were still on screen, leaving a dead strip under the
+   page. Plain 100vh reads the true screen there. Installed app only: in
+   a browser 100vh would overshoot under the toolbar. */
 @media (max-width: 899.98px) and (display-mode: standalone) {
 	html:has(main.with-rail),
 	body:has(main.with-rail),
@@ -182,16 +177,15 @@ h2 {
 .wordmark {
 	font-family: var(--font-mono);
 	font-size: 0.8rem;
-	/* 0.12em, not more - wider tracking pulled "Hang" and "Gang" apart
-	   (owner, 2026-08-24). */
+	/* 0.12em, not more: wider tracking pulls "Hang" and "Gang" apart. */
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
 	color: var(--color-accent);
 	margin: 0.5rem 0 0;
 }
 
-/* The brand pair, where both words appear: Hang Gang carries the
-   size, Binder sits quietly underneath (owner ruling 2026-08-24). */
+/* The brand pair: the site name carries the size, Binder sits quietly
+   underneath. */
 .brand-title {
 	font-style: italic;
 	font-size: 2.2rem;
@@ -211,9 +205,8 @@ h2 {
 	font-size: 2rem;
 }
 
-/* An admin's greeting carries their standing in the name itself -
-   the accent is the one bright color every palette ships (owner
-   ruling 2026-08-26). */
+/* An admin's name wears the accent, the one bright color every palette
+   ships, instead of a tagline saying they are an admin. */
 .admin-name {
 	color: var(--color-accent);
 }
@@ -243,6 +236,12 @@ input {
 	background: var(--color-bg);
 	border: 1px solid var(--color-border-strong);
 	border-radius: var(--radius);
+}
+
+/* Any author display rule beats the browser's own [hidden] style, so
+   without this a hidden button still shows. */
+[hidden] {
+	display: none;
 }
 
 button,
@@ -445,9 +444,8 @@ select {
 	margin: 0 0 0.75rem;
 }
 
-/* Trends: small server-drawn lines, latest value underneath. On the
-   phone every card takes the full column (owner ruling 2026-08-26);
-   the desktop media query packs them tighter. */
+/* Trends: small server-drawn lines, latest value underneath. Full
+   width on the phone; the desktop media query packs them tighter. */
 .trends {
 	display: grid;
 	grid-template-columns: 1fr;
@@ -504,9 +502,9 @@ select {
 }
 
 /* The entries table: one column per field, the edit link at the row's
-   end. Cells hold their line; a wide row scrolls inside its card. The
-   card also caps its height (owner ruling 2026-08-26) - a deep page
-   scrolls in place, headers pinned, instead of stretching the fold. */
+   end. A wide row scrolls inside its card, and the card caps its height
+   so a deep page scrolls in place, headers pinned, instead of
+   stretching the fold. */
 .entries-table td {
 	white-space: nowrap;
 }
@@ -540,7 +538,7 @@ select {
 }
 
 /* ------------------------------------------------------------------ */
-/* The rail: fixed bottom bar on the phone, top bar on the desktop.   */
+/* The rail: bottom bar on the phone, top bar on the desktop.         */
 
 .rail {
 	position: fixed;
@@ -558,9 +556,8 @@ select {
 	padding-right: env(safe-area-inset-right);
 }
 
-/* Four stops on the phone (owner ruling 2026-08-26): Sign out lives
-   in Settings there, and admin work is desktop work. The desktop top
-   bar has the room and keeps both. */
+/* Four stops on the phone: Sign out lives in Settings there, and admin
+   work is desktop work. The desktop top bar has room for both. */
 .rail .rail-wide {
 	display: none;
 }
@@ -586,8 +583,7 @@ select {
 	color: var(--color-accent);
 	font-weight: 600;
 }
-/* Sign out lives in the rail (owner, 2026-08-24), dressed exactly
-   like its neighbours despite being a form button. */
+/* Sign out is a form button dressed exactly like its link neighbours. */
 .rail-out {
 	flex: 1;
 	display: flex;
@@ -687,9 +683,8 @@ a.cal-day.has-event.today {
 	border-color: var(--color-text);
 }
 
-/* The month's events under the grid: wide rows, three at a time
-   (owner ruling 2026-08-26, reshaped on the drive) - each event gets
-   the fold's full width, the words left and the gallery at the side. */
+/* The month's events under the grid, three at a time: each gets the
+   fold's full width, the words left and the gallery at the side. */
 .events-empty {
 	margin: 1rem 0 0;
 }
@@ -734,9 +729,9 @@ a.cal-day.has-event.today {
 	-webkit-box-orient: vertical;
 	overflow: hidden;
 }
-/* RSVP (owner rulings 2026-09-30): the count, then one toggle. The
-   "on" state goes quiet - an outline, not the accent fill - so the
-   call to act is only loud while there is something to do. */
+/* RSVP: the count, then one toggle. The "on" state goes quiet, an
+   outline instead of the accent fill, so the button is only loud while
+   there is something to do. */
 .event-rsvp {
 	display: flex;
 	flex-wrap: wrap;
@@ -837,9 +832,9 @@ button.gallery-remove {
 	font-size: 0.8rem;
 }
 
-/* The image preview overlay (owner ruling 2026-08-26): CSS :target
-   does the opening, plain links do the rest - no JavaScript. The
-   backdrop is a close link; arrows step through the gallery. */
+/* The image overlay: CSS :target opens it and plain links do the rest,
+   so it needs no script. The backdrop is a close link; arrows step
+   through the gallery. */
 .lightbox {
 	display: none;
 	position: fixed;
@@ -973,9 +968,8 @@ span.lightbox-step.off {
 	margin: 0;
 	font-family: var(--font-mono);
 	font-size: 0.95rem;
-	/* Choice tiles name their leaders with counts (owner ruling
-	   2026-08-26); a long list clamps to the tile instead of
-	   wrapping it out of shape. */
+	/* Choice tiles name their leaders with counts; a long list clamps to
+	   the tile instead of wrapping it out of shape. */
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -1010,8 +1004,7 @@ span.lightbox-step.off {
 	background: transparent;
 	border: 0;
 	border-radius: 0;
-	/* No scrollbar; the fading right edge says there is more to swipe
-	   (owner, 2026-08-24). */
+	/* No scrollbar; the fading right edge says there is more to swipe. */
 	scrollbar-width: none;
 	-webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
 	mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
@@ -1226,8 +1219,8 @@ span.lightbox-step.off {
 }
 
 /* ------------------------------------------------------------------ */
-/* The desktop face (owner ruling 2026-08-24): a top nav bar and real */
-/* desktop layouts, not a stretched phone column.                     */
+/* The desktop face: a top nav bar and real desktop layouts, not a    */
+/* stretched phone column.                                            */
 
 @media (min-width: 900px) {
 	/* Things the desktop face already covers - like the Mobile Admin
@@ -1307,20 +1300,17 @@ span.lightbox-step.off {
 	main.with-rail {
 		padding-bottom: 3rem;
 	}
-	/* Your page on desktop is a tri-fold (owner ruling 2026-08-26):
-	   the calendar on the left, the entry form in the middle, trends
-	   and the entries on the right, filling the page. The DOM keeps
-	   the phone's reading order; the grid areas do the folding. */
-	/* Beats main.wide's 72rem cap (same specificity alone, and that
-	   rule sits later in this file) - the tri-fold gets the whole
-	   screen. */
+	/* Home on desktop is three columns filling the page: the calendar,
+	   the entry form, then entries over trends. The DOM keeps the phone's
+	   reading order; grid areas do the folding. The doubled selector
+	   beats main.wide's 72rem cap, which sits later in this file. */
 	main.wide.home-main {
 		max-width: none;
 	}
 	.home-folds {
 		display: grid;
-		/* Weighted, not equal thirds (owner correction on the drive):
-		   the entries table earns the most width, the form the least. */
+		/* Weighted, not equal thirds: the entries table earns the most
+		   width, the form the least. */
 		grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr) minmax(0, 1.5fr);
 		grid-template-rows: auto 1fr;
 		grid-template-areas:
@@ -1344,9 +1334,8 @@ span.lightbox-step.off {
 	.trends {
 		grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
 	}
-	/* The top bar already wears the brand - the in-page eyebrow would
-	   say it twice (owner, 2026-08-24). The phone rail carries no
-	   brand, so the eyebrow stays there. */
+	/* The top bar already wears the brand, so the in-page eyebrow would
+	   say it twice. The phone rail carries no brand, so it stays there. */
 	main.with-rail .wordmark {
 		display: none;
 	}
@@ -1438,8 +1427,8 @@ textarea {
 	resize: vertical;
 }
 
-/* The date box keeps the browser's own flyout and typing (owner
-   ruling 2026-08-26); its calendar button just has to be seen. */
+/* The date box keeps the browser's own flyout and typing; its calendar
+   button just has to be seen. */
 input[type='date']::-webkit-calendar-picker-indicator {
 	cursor: pointer;
 	opacity: 0.85;
@@ -1491,8 +1480,7 @@ button.quiet {
 	margin-top: 0;
 }
 
-/* Log and corrections read as tables (owner, 2026-08-24); wide ones
-   scroll inside their card, never the page. */
+/* Admin tables: wide ones scroll inside their card, never the page. */
 .table-scroll {
 	overflow-x: auto;
 	padding: 0.5rem 1rem;
@@ -1527,7 +1515,7 @@ button.quiet {
 	border-bottom: 0;
 }
 
-/* The brand is a way home (owner, 2026-08-24). */
+/* The brand is a way home. */
 a.rail-brand {
 	text-decoration: none;
 	color: var(--color-text);
@@ -1594,8 +1582,8 @@ button.nudge-off {
 /* Socials (DESIGN.md feature 6): the group's panel, then the roster */
 /* - a name, then letter badges for where they are.                   */
 
-/* The admin-written panel (owner rulings 2026-09-30). It can only    */
-/* carry allowlisted tags, so these few rules are its whole look.     */
+/* The admin-written panel can only carry allowlisted tags, so these  */
+/* few rules are its whole look.                                      */
 .socials-message {
 	overflow-wrap: anywhere;
 }
@@ -1717,8 +1705,7 @@ a.wordmark {
 	margin-bottom: 0;
 }
 
-/* Settings as one divided list, not a stack of boxes (owner,
-   2026-08-24). */
+/* Settings as one divided list, not a stack of boxes. */
 .settings-list {
 	display: flex;
 	flex-direction: column;
@@ -1753,10 +1740,9 @@ a.wordmark {
 	flex: none;
 }
 
-/* The bar's bubble: hover on a mouse, tap on a phone, no JavaScript
-   (owner, 2026-08-24). On the phone the bubble is a full-width strip
-   above the chart, so it can never clip at the walls; the desktop
-   media query floats it over the bar instead. */
+/* The bar's bubble: hover on a mouse, tap on a phone, no script. On the
+   phone it is a full-width strip above the chart, so it never clips at
+   the walls; the desktop media query floats it over the bar instead. */
 .dist {
 	position: relative;
 }

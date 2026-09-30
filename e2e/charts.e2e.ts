@@ -1,39 +1,7 @@
-// The charts (build order step 3, owner rulings 2026-08-24): the
-// board, a focused field, combined filters - floorless - and units,
+// The charts: the board, a focused field, combined filters - floorless - and units,
 // walked the way a person walks them.
 import { expect, test, type Page } from '@playwright/test';
-
-async function fillStable(page: Page, label: string | RegExp, value: string) {
-	await expect(async () => {
-		await page.getByLabel(label).fill(value);
-		expect(await page.getByLabel(label).inputValue()).toBe(value);
-	}).toPass({ timeout: 10_000 });
-}
-
-async function openPasswordFlap(page: Page) {
-	await expect(async () => {
-		await page.getByText('With a password').click();
-		await expect(page.getByLabel('Username')).toBeVisible({ timeout: 1000 });
-	}).toPass({ timeout: 10_000 });
-}
-
-async function signInFreshMember(page: Page, username: string) {
-	await page.goto('/register');
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', 'a-decent-password');
-	await page.getByRole('button', { name: /ask for the account/i }).click();
-	await expect(page.getByText(/an admin has to approve/i)).toBeVisible();
-	const approved = await page.request.post(`/test/approve?username=${username}`);
-	expect(approved.ok()).toBeTruthy();
-	await page.goto('/');
-	await openPasswordFlap(page);
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', 'a-decent-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-	await expect(
-		page.getByRole('heading', { name: new RegExp(`hello, ${username}`, 'i') })
-	).toBeVisible();
-}
+import { fillStable, signOut, signInFreshMember } from './helpers';
 
 async function logEntry(
 	page: Page,
@@ -46,12 +14,6 @@ async function logEntry(
 	await page.getByLabel('Country').selectOption(entry.country);
 	await page.getByRole('button', { name: 'Save entry' }).click();
 	await expect(page.locator('.entries-table tbody tr').first()).toBeVisible();
-}
-
-async function signOut(page: Page) {
-	await page.goto('/home');
-	await page.getByRole('button', { name: 'Sign out' }).click();
-	await expect(page.getByRole('heading', { name: 'Hang Gang' })).toBeVisible();
 }
 
 test('three members chart, and one filter finds the average', async ({ page }) => {
@@ -75,7 +37,7 @@ test('three members chart, and one filter finds the average', async ({ page }) =
 	await logEntry(page, { weight: '150', gender: 'Female', country: 'Iceland' });
 
 	// The rail carries them to the board. The page title is for screen
-	// readers only - the rail says where you are (owner, 2026-08-26).
+	// readers only - the rail says where you are.
 	await page.locator('.rail').getByRole('link', { name: 'Group Stats' }).click();
 	await expect(page.getByText(/\d+ members/)).toBeVisible();
 	await expect(page.locator('.tile').filter({ hasText: 'Weight' })).toBeVisible();
@@ -128,15 +90,14 @@ test('the rail is a bottom bar on the phone and wears the brand on desktop', asy
 	await expect(page.locator('.rail-brand-name')).toBeVisible();
 	await expect(page.locator('.rail-brand-name')).toHaveText('Hang Gang');
 
-	// Phone: the brand hides and the rail slims to four stops (owner
-	// ruling 2026-08-26) - Sign out moves into Settings there.
+	// Phone: the brand hides and the rail slims to four stops; Sign out
+	// moves into Settings there.
 	await page.setViewportSize({ width: 375, height: 812 });
 	await page.reload();
 	await expect(page.locator('.rail-brand-name')).not.toBeVisible();
 	await expect(page.locator('.rail').getByRole('link', { name: 'Group Stats' })).toBeVisible();
 
-	// The app shell (owner rulings 2026-08-26): on the phone nothing
-	// is position:fixed and the document cannot scroll - the main
+	// The app shell: on the phone nothing is position:fixed and the document cannot scroll - the main
 	// column is the one scroller and the rail sits in flow, flush
 	// with the bottom of the screen. iOS has nothing left to bounce
 	// or float.

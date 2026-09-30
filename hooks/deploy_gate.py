@@ -10,8 +10,7 @@ record it:
     py -3 hooks/record.py migrations-applied <newest-file-name>
 
 A record command standing EARLIER in an unbroken && chain also counts:
-if the record fails, && never reaches the deploy. Denying that twice
-taught the gate to read it (owner, 2026-08-24).
+if the record fails, && never reaches the deploy.
 
 A deploy is also refused when the built worker still contains the
 /test/* hooks (SECURITY-REVIEW.md finding 2). A production build

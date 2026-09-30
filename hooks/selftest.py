@@ -217,8 +217,7 @@ with tempfile.TemporaryDirectory() as tmp:
         f.write("-- the first draft leaned on PRAGMA defer_foreign_keys\n"
                 "-- and PRAGMA foreign_keys is refused by remote D1\n"
                 "DROP TABLE x;\n")
-    check("a pragma named only in a COMMENT is not a pragma - the "
-          "guard denied its own good example (2026-08-26)",
+    check("a pragma named only in a COMMENT is not a pragma",
           "migration_guard.py",
           bash("npx wrangler d1 migrations apply binder-db --remote"),
           False, env_mig2)

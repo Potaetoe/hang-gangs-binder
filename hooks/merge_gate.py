@@ -9,7 +9,7 @@ The sign-off is recorded when the owner gives it:
 It names one branch and is consumed by the merge that uses it, so an
 old OK can never cover a new change. A signoff recording standing
 EARLIER in an unbroken && chain also counts - if the record fails, &&
-never reaches the merge (owner, 2026-08-24).
+never reaches the merge.
 """
 
 import re

@@ -1,44 +1,8 @@
-// The admin surface (build order step 4, owner rulings 2026-08-24):
-// approvals, the roster, roles, the temporary passphrase and its
+// The admin surface: approvals, the roster, roles, the temporary passphrase and its
 // wall, settings, and the change log - walked as the admin and as the
 // member on the other side.
 import { expect, test, type Page } from '@playwright/test';
-
-async function fillStable(page: Page, label: string | RegExp, value: string) {
-	await expect(async () => {
-		await page.getByLabel(label).fill(value);
-		expect(await page.getByLabel(label).inputValue()).toBe(value);
-	}).toPass({ timeout: 10_000 });
-}
-
-async function openPasswordFlap(page: Page) {
-	await expect(async () => {
-		await page.getByText('With a password').click();
-		await expect(page.getByLabel('Username')).toBeVisible({ timeout: 1000 });
-	}).toPass({ timeout: 10_000 });
-}
-
-async function register(page: Page, username: string, password = 'a-decent-password') {
-	await page.goto('/register');
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', password);
-	await page.getByRole('button', { name: /ask for the account/i }).click();
-	await expect(page.getByText(/an admin has to approve/i)).toBeVisible();
-}
-
-async function signIn(page: Page, username: string, password = 'a-decent-password') {
-	await page.goto('/');
-	await openPasswordFlap(page);
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', password);
-	await page.getByRole('button', { name: 'Sign in' }).click();
-}
-
-async function signOut(page: Page) {
-	await page.goto('/home');
-	await page.getByRole('button', { name: 'Sign out' }).click();
-	await expect(page.getByRole('heading', { name: 'Hang Gang' })).toBeVisible();
-}
+import { fillStable, register, signIn, signOut } from './helpers';
 
 async function makeAdmin(page: Page, username: string) {
 	const done = await page.request.post(`/test/admin?username=${username}`);
@@ -214,7 +178,7 @@ test('a removed admin loses the keys on the next click', async ({ browser }) => 
 	await expect(seniorPage.getByRole('button', { name: 'Make admin' })).toBeVisible();
 
 	// The deputy's SAME session is shut out on the very next click - no
-	// new sign-in needed for the change to hold (fix pass 2026-08-25).
+	// new sign-in needed for the change to hold.
 	await deputyPage.goto('/admin/members');
 	await expect(deputyPage).toHaveURL(/\/home$/);
 	await expect(deputyPage.locator('.rail').getByRole('link', { name: 'Admin' })).not.toBeVisible();
@@ -258,8 +222,7 @@ test('the admin curates which fields carry trend lines', async ({ page }) => {
 	await fillStable(page, 'Weight', '185');
 	await page.getByRole('button', { name: 'Save entry' }).click();
 
-	// Out of the box: Weight and BMI trend; adult height does not
-	// (owner ruling 2026-08-26).
+	// Out of the box: Weight and BMI trend; adult height does not.
 	await expect(page.locator('.trend').filter({ hasText: 'Weight' })).toBeVisible();
 	await expect(page.locator('.trend').filter({ hasText: 'BMI' })).toBeVisible();
 	await expect(page.locator('.trend').filter({ hasText: 'Height' })).not.toBeVisible();
@@ -287,8 +250,7 @@ test('the admin curates which fields carry trend lines', async ({ page }) => {
 	await page.goto('/admin/log');
 	await expect(page.getByText('changed the trend graphs').first()).toBeVisible();
 
-	// Put the singleton back (flake hunt, 2026-08-26): the trend set is
-	// site-wide, and leaving it flipped is a trap for any future test
+	// Put the singleton back: the trend set is site-wide, and leaving it flipped is a trap for any future test
 	// in another file that assumes the default. Writers stay serial in
 	// this file; this keeps the state they hand each other the default.
 	await page.goto('/admin/settings');
@@ -337,16 +299,14 @@ test('settings shape the site', async ({ page }) => {
 });
 
 test('the Socials panel is admin HTML, cut down to the safe allowlist', async ({ page }) => {
-	// Lives here, not in socials.e2e.ts (2026-08-26): saving admin
-	// settings writes the WHOLE settings form, so every settings writer
+	// Lives here, not in socials.e2e.ts: saving admin settings writes the WHOLE settings form, so every settings writer
 	// shares this file and runs in order.
 	const boss = `msgboss${Date.now()}`;
 	await register(page, boss);
 	await makeAdmin(page, boss);
 	await signIn(page, boss);
 	await page.goto('/admin/settings');
-	// What an admin might paste, good parts and hostile parts together
-	// (owner rulings 2026-09-30: safe allowlist, no styling).
+	// What an admin might paste, good parts and hostile parts together.
 	await fillStable(
 		page,
 		/the group's panel on the socials page/i,
@@ -404,7 +364,7 @@ test('an admin calls the Admin door onto the phone rail for one sitting', async 
 	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).toBeVisible();
 
 	// The phone rail runs four stops - no Admin - but Settings offers
-	// Mobile Admin Mode to an admin (owner ruling 2026-08-26).
+	// Mobile Admin Mode to an admin.
 	await page.setViewportSize({ width: 375, height: 812 });
 	await page.goto('/settings');
 	await expect(page.locator('.rail').getByRole('link', { name: 'Admin' })).not.toBeVisible();

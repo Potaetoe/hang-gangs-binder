@@ -1,9 +1,9 @@
 """git-guard (WORKING.md, Enforcement #4): no force-pushes, no pushes
-to the frozen old branches, no skipping checks - and the prose-by-file
-rules (owner order 2026-08-26, after repeated PowerShell 5.1 argument
-mangling): commit messages and gh bodies travel in files, never
-inline, and a sign-off recording never shares a command with the
-merge it unlocks unless && makes the pair atomic."""
+to the frozen old branches, no skipping checks - and prose by file:
+commit messages and gh bodies travel in files, never inline, because
+PowerShell 5.1 mangles quotes and newlines in native arguments. A
+sign-off recording never shares a command with the merge it unlocks
+unless && makes the pair atomic."""
 
 import re
 
@@ -24,8 +24,7 @@ for seg in segments(command):
     if is_git_push and re.search(
             r"\b(single_use_scenario|attempt_for_custom_crypto)\b", seg):
         deny("single_use_scenario and attempt_for_custom_crypto are "
-             "frozen history (the 2026-08-24 reset; renamed by owner "
-             "order 2026-08-27). Nothing is pushed there, ever.")
+             "frozen history. Nothing is pushed there, ever.")
 
     if re.search(r"\bgit\s+(commit|push|merge)\b", seg) and \
             "--no-verify" in seg:
@@ -33,11 +32,10 @@ for seg in segments(command):
              "(WORKING.md, git-guard). Fix what the check refuses "
              "instead.")
 
-    # Prose travels by file (owner order 2026-08-26). PowerShell 5.1
-    # rebuilds native-command arguments naively: any message holding a
-    # double quote or a newline gets word-split into garbage - git saw
-    # fragments of a commit message as pathspecs twice before this
-    # rule. The file path is never wrong, so the file path is the law.
+    # Prose travels by file. PowerShell 5.1 rebuilds native-command
+    # arguments naively: a message holding a double quote or a newline
+    # is word-split into garbage, and git reads the fragments as
+    # pathspecs. A file path never gets mangled.
     if re.search(r"\bgit\s+commit\b", seg) and \
             re.search(r"(\s|^)(-[a-zA-Z]*m|--message(=|\s|$))", seg):
         deny("Inline commit messages are blocked (WORKING.md, "

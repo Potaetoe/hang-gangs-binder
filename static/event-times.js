@@ -1,9 +1,7 @@
-// Event times land in the viewer's own clock (owner ruling
-// 2026-08-26): the server prints the event's wall time in its own
-// zone as a fallback, and this rewrites each one from its epoch into
-// the browser's timezone. When the conversion crosses into a
-// different calendar day than the event's own, the date comes along
-// so nobody shows up a day off.
+// Shows event times in the viewer's own clock. The server prints each
+// event's wall time in its own zone as the fallback; this rewrites it
+// from the epoch. When that lands on a different day than the event's
+// own, the date comes along, so nobody shows up a day off.
 (function () {
 	var nodes = document.querySelectorAll('[data-epoch]');
 	for (var i = 0; i < nodes.length; i++) {

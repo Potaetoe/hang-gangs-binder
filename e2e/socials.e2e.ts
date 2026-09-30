@@ -1,44 +1,8 @@
-// The socials page (DESIGN.md feature 6, owner rulings 2026-08-26),
-// walked as the people who use it: a member lists where they are, the
+// The socials page (DESIGN.md feature 6), walked as the people who use it: a member lists where they are, the
 // roster tells the gang, the nudges chase the quiet ones, and the
 // admin holds the moderation lever.
-import { expect, test, type Page } from '@playwright/test';
-
-async function fillStable(page: Page, label: string | RegExp, value: string) {
-	await expect(async () => {
-		await page.getByLabel(label).fill(value);
-		expect(await page.getByLabel(label).inputValue()).toBe(value);
-	}).toPass({ timeout: 10_000 });
-}
-
-async function openPasswordFlap(page: Page) {
-	await expect(async () => {
-		await page.getByText('With a password').click();
-		await expect(page.getByLabel('Username')).toBeVisible({ timeout: 1000 });
-	}).toPass({ timeout: 10_000 });
-}
-
-async function register(page: Page, username: string) {
-	await page.goto('/register');
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', 'a-decent-password');
-	await page.getByRole('button', { name: /ask for the account/i }).click();
-	await expect(page.getByText(/an admin has to approve/i)).toBeVisible();
-}
-
-async function signIn(page: Page, username: string) {
-	await page.goto('/');
-	await openPasswordFlap(page);
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', 'a-decent-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-}
-
-async function signOut(page: Page) {
-	await page.goto('/home');
-	await page.getByRole('button', { name: 'Sign out' }).click();
-	await expect(page.getByRole('heading', { name: 'Hang Gang' })).toBeVisible();
-}
+import { expect, test } from '@playwright/test';
+import { fillStable, register, signIn, signOut } from './helpers';
 
 test('a member lists their socials and the roster carries them', async ({ page }) => {
 	const stamp = Date.now();
@@ -122,8 +86,8 @@ test('bad links are refused all at once, and clearing leaves the roster', async 
 });
 
 test('the admin lever clears a member', async ({ page }) => {
-	// The group-links half of this walk moved to admin.e2e.ts
-	// (2026-08-26): saving admin settings writes the WHOLE settings
+	// The group-links half of this walk lives in admin.e2e.ts: saving
+	// admin settings writes the WHOLE settings
 	// form, so two FILES saving in parallel lose each other's fields -
 	// the same shared-singleton care as the site name over there. This
 	// file keeps the half that never touches settings.

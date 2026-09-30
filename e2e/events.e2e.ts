@@ -1,49 +1,13 @@
-// The calendar and events feature (DESIGN.md feature 5, owner rulings
-// 2026-08-26), walked the way people use it: an admin puts an event on
+// The calendar and events feature (DESIGN.md feature 5), walked the way people use it: an admin puts an event on
 // the calendar, and every member's home page shows it - grid, list,
 // and gallery - with no code change anywhere.
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { fillStable, register, signIn, signOut } from './helpers';
 
 // A London clock, so the timed-event checks PROVE the conversion ran:
 // 7 PM Central is past midnight there, and the fallback label (7:00
 // PM CDT) cannot be mistaken for the converted one.
 test.use({ timezoneId: 'Europe/London' });
-
-async function fillStable(page: Page, label: string | RegExp, value: string) {
-	await expect(async () => {
-		await page.getByLabel(label).fill(value);
-		expect(await page.getByLabel(label).inputValue()).toBe(value);
-	}).toPass({ timeout: 10_000 });
-}
-
-async function openPasswordFlap(page: Page) {
-	await expect(async () => {
-		await page.getByText('With a password').click();
-		await expect(page.getByLabel('Username')).toBeVisible({ timeout: 1000 });
-	}).toPass({ timeout: 10_000 });
-}
-
-async function register(page: Page, username: string) {
-	await page.goto('/register');
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', 'a-decent-password');
-	await page.getByRole('button', { name: /ask for the account/i }).click();
-	await expect(page.getByText(/an admin has to approve/i)).toBeVisible();
-}
-
-async function signIn(page: Page, username: string) {
-	await page.goto('/');
-	await openPasswordFlap(page);
-	await fillStable(page, 'Username', username);
-	await fillStable(page, 'Password', 'a-decent-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-}
-
-async function signOut(page: Page) {
-	await page.goto('/home');
-	await page.getByRole('button', { name: 'Sign out' }).click();
-	await expect(page.getByRole('heading', { name: 'Hang Gang' })).toBeVisible();
-}
 
 /** A real 1x1 PNG, small enough to live in the test. */
 const PNG = Buffer.from(
@@ -67,7 +31,7 @@ test('an event an admin adds reaches every member home, gallery included', async
 	await fillStable(page, /what is happening/i, title);
 	await fillStable(page, 'The day', '2031-05-15');
 	// 7 PM in the preselected site zone (US Central) - the admin picks
-	// the zone, nothing is assumed (owner ruling 2026-08-26).
+	// the zone, nothing is assumed.
 	await fillStable(page, /^time/i, '19:00');
 	await fillStable(page, /where/i, 'The park');
 	await fillStable(page, /notes/i, 'Bring a chair.');
@@ -118,8 +82,8 @@ test('an event an admin adds reaches every member home, gallery included', async
 	expect(img.ok()).toBeTruthy();
 	expect(img.headers()['content-type']).toBe('image/png');
 
-	// The desktop is a tri-fold: calendar, form, entries, left to
-	// right (owner ruling 2026-08-26).
+	// The desktop home is three columns: calendar, form, entries, left
+	// to right.
 	const entryBox = await page.locator('.fold-entry').boundingBox();
 	const eventsBox = await page.locator('.fold-events').boundingBox();
 	const entriesBox = await page.locator('.fold-entries').boundingBox();
@@ -127,7 +91,7 @@ test('an event an admin adds reaches every member home, gallery included', async
 	expect(entriesBox!.x).toBeGreaterThan(entryBox!.x);
 
 	// A tapped image opens the preview overlay; the arrows walk the
-	// gallery; the close puts it away (owner ruling 2026-08-26).
+	// gallery; the close puts it away.
 	await event.locator('.gallery a').first().click();
 	await expect(page.locator('.lightbox:visible')).toContainText('1 of 4');
 	await page.locator('.lightbox:visible').getByLabel('Next image').click();
@@ -259,7 +223,7 @@ test('the events row shows three at a time, and the days know their page', async
 });
 
 test('members tap interested, see only the count, and the admin sees who', async ({ page }) => {
-	// RSVP (owner rulings 2026-09-30): one "interested" toggle, a count
+	// RSVP: one "interested" toggle, a count
 	// for members, names on the admin event page, and the admin picks
 	// the last day it is open.
 	// Three accounts and many sign-ins: ~11s alone, past the 30s budget
